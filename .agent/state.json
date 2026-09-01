@@ -1,0 +1,25 @@
+{
+  "goal": "Capture day-by-day visual proof of Baseline (Pixel 10 export) vs Cleaned Version for 2014, cataloging all UI anomalies and resolutions.",
+  "active_step_id": 1,
+  "steps": [
+    {
+      "id": 1,
+      "description": "Capture on-device visual comparisons across representative 2014 days between Baseline and Cleaned datasets",
+      "status": "completed"
+    },
+    {
+      "id": 2,
+      "description": "Generate comprehensive side-by-side visual gallery and anomaly breakdown for 2014 for user review",
+      "status": "in_progress"
+    }
+  ],
+  "context_cache": {
+    "target_files": [
+      "docs/YEAR_2014_VERIFICATION_AND_GAP_REPORT.md",
+      "pixel10_export/Timeline-latest.json",
+      "timeline_viewer.db"
+    ],
+    "test_files": [],
+    "scratch_logs": []
+  }
+}
