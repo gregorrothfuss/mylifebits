@@ -1,25 +1,42 @@
 {
-  "goal": "Capture day-by-day visual proof of Baseline (Pixel 10 export) vs Cleaned Version for 2014, cataloging all UI anomalies and resolutions.",
+  "goal": "Formalize acceptance criteria, fix activity enum mappings (subway vs tram), stitch consecutive transit legs, eliminate GPS spikes, and execute full verification.",
   "active_step_id": 1,
   "steps": [
     {
       "id": 1,
-      "description": "Capture on-device visual comparisons across representative 2014 days between Baseline and Cleaned datasets",
+      "description": "Formalize acceptance criteria and present implementation plan for user review",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Generate comprehensive side-by-side visual gallery and anomaly breakdown for 2014 for user review",
-      "status": "completed"
+      "description": "Correct activity type enum mappings (set IN_SUBWAY to 9, IN_TRAM to 10, IN_BUS to 7, IN_TRAIN to 8)",
+      "status": "pending"
+    },
+    {
+      "id": 3,
+      "description": "Implement segment stitcher to merge consecutive subway/transit legs and remove sub-30s noise events",
+      "status": "pending"
+    },
+    {
+      "id": 4,
+      "description": "Clean polyline geometries, eliminate Jan 10 vertical spike and mid-block grid cuts",
+      "status": "pending"
+    },
+    {
+      "id": 5,
+      "description": "Recompile master dataset, deploy to Pixel 8, and execute full-year visual verification harness",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "docs/YEAR_2014_VERIFICATION_AND_GAP_REPORT.md",
-      "pixel10_export/Timeline-latest.json",
+      "scripts/build_master_odlh_pure.py",
+      "scripts/build_pixel10_baseline_odlh.py",
       "timeline_viewer.db"
     ],
-    "test_files": [],
+    "test_files": [
+      "scripts/audit_database_days.py"
+    ],
     "scratch_logs": []
   }
 }
