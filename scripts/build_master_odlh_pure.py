@@ -389,12 +389,35 @@ def main():
             else:
                 cid, fp, fp_signed = get_place_fprint_and_cell(pid, pname, paddr, lat, lng)
 
-            blob_vis = build_visit_proto(sts, ets, cid, fp, lat, lng, seg_id, tz_offset_m=-240)
-            insert_rows.append((
-                None, sts * 1000, 1787254103124001536, curr_origin, seg_id, blob_vis,
-                GAIA_ID, 1, 1, sts, ets, 1, 0, fp_signed
-            ))
-            curr_origin += 1
+            # Determine timezone offset (EST -300 vs EDT -240)
+            dt_check = datetime.datetime.fromtimestamp(sts, datetime.timezone.utc)
+            tz_offset_m = -240 if (dt_check.month > 3 and dt_check.month < 11) else -300
+            tz = datetime.timezone(datetime.timedelta(minutes=tz_offset_m))
+
+            st_dt = datetime.datetime.fromtimestamp(sts, tz)
+            et_dt = datetime.datetime.fromtimestamp(ets, tz)
+
+            # Split visit slices across local midnights
+            slices = []
+            curr_dt = st_dt
+            while True:
+                next_midnight = datetime.datetime(curr_dt.year, curr_dt.month, curr_dt.day, tzinfo=tz) + datetime.timedelta(days=1)
+                if next_midnight >= et_dt:
+                    slices.append((int(curr_dt.timestamp()), int(et_dt.timestamp())))
+                    break
+                else:
+                    slices.append((int(curr_dt.timestamp()), int(next_midnight.timestamp())))
+                    curr_dt = next_midnight
+
+            for slice_idx, (slice_sts, slice_ets) in enumerate(slices):
+                if slice_ets <= slice_sts: continue
+                slice_seg_id = seg_id if len(slices) == 1 else f"{seg_id}_d{slice_idx+1}"
+                blob_vis = build_visit_proto(slice_sts, slice_ets, cid, fp, lat, lng, slice_seg_id, tz_offset_m=tz_offset_m)
+                insert_rows.append((
+                    None, slice_sts * 1000, 1787254103124001536, curr_origin, slice_seg_id, blob_vis,
+                    GAIA_ID, 1, 1, slice_sts, slice_ets, 1, 0, fp_signed
+                ))
+                curr_origin += 1
 
         elif stype == 'activity':
             act_code = ACTIVITY_ENUM_MAP.get((atype or 'WALKING').upper(), 2)

@@ -20,12 +20,12 @@
     {
       "id": 4,
       "description": "Clean polyline geometries, eliminate Jan 10 vertical spike and mid-block grid cuts",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 5,
       "description": "Recompile master dataset, deploy to Pixel 8, and execute full-year visual verification harness",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "context_cache": {
