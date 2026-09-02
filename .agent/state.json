@@ -15,12 +15,12 @@
     {
       "id": 3,
       "description": "Implement segment stitcher to merge consecutive subway/transit legs and remove sub-30s noise events",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Clean polyline geometries, eliminate Jan 10 vertical spike and mid-block grid cuts",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 5,
