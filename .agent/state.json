@@ -10,12 +10,12 @@
     {
       "id": 2,
       "description": "Correct activity type enum mappings (set IN_SUBWAY to 9, IN_TRAM to 10, IN_BUS to 7, IN_TRAIN to 8)",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Implement segment stitcher to merge consecutive subway/transit legs and remove sub-30s noise events",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 4,
