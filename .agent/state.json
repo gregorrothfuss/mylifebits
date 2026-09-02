@@ -1,6 +1,6 @@
 {
-  "goal": "Formalize acceptance criteria, fix activity enum mappings (subway vs tram), stitch consecutive transit legs, eliminate GPS spikes, and execute full verification.",
-  "active_step_id": 1,
+  "goal": "Execute full 365-day on-device visual verification for the entire year 2014, capturing all 12 months for Authentic Baseline vs Cleaned Master Dataset, and generate comprehensive year report.",
+  "active_step_id": 7,
   "steps": [
     {
       "id": 1,
@@ -24,19 +24,28 @@
     },
     {
       "id": 5,
-      "description": "Recompile master dataset, deploy to Pixel 8, and execute full-year visual verification harness",
+      "description": "Deploy authentic Pixel 10 GMS baseline and verify physical rendering integrity",
+      "status": "completed"
+    },
+    {
+      "id": 6,
+      "description": "Capture all 365 days of Year 2014 for Authentic Baseline and Cleaned Master Dataset on physical Pixel 8",
+      "status": "completed"
+    },
+    {
+      "id": 7,
+      "description": "Compile full-year 2014 verification artifact report across all 12 months (365 days)",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/build_master_odlh_pure.py",
-      "scripts/build_pixel10_baseline_odlh.py",
-      "timeline_viewer.db"
+      "scripts/capture_baseline_2014_all365.py",
+      "scripts/capture_cleaned_2014_all365.py",
+      "scripts/compile_2014_full_audit.py",
+      "YEAR_2014_FULL_VERIFICATION_REPORT.md"
     ],
-    "test_files": [
-      "scripts/audit_database_days.py"
-    ],
+    "test_files": [],
     "scratch_logs": []
   }
 }
