@@ -53,8 +53,22 @@ ANNOTATIONS = {
         'cleaned': [(30, 1545, 1050, 1715, "REGRESSION: Artificial Midnight Split", "red")],
     },
     2: {
-        'baseline': [(30, 1545, 1050, 1715, "GROUND TRUTH: Left at 10:03 AM (Continuous Overnight)", "green")],
-        'cleaned': [(30, 1545, 1050, 1715, "REGRESSION: Artificial Midnight Split", "red")],
+        'baseline': [
+            (30, 1545, 1050, 1715, "GROUND TRUTH: Left at 10:03 AM (Continuous Overnight)", "green"),
+            (30, 1725, 1050, 1905, "GROUND TRUTH: 10:03 AM – 10:21 AM (America/New_York)", "green"),
+        ],
+        'cleaned': [
+            (30, 1545, 1050, 1715, "VERIFIED MASTER: Left at 10:03 AM (Zero Midnight Splits)", "green"),
+            (30, 1725, 1050, 1905, "VERIFIED MASTER: 10:03 AM – 10:21 AM (EST UTC-5)", "green"),
+        ],
+        'unrolled_b': [
+            ("Walking", "0.5 mi · 6 min", "7:18 PM – 7:24 PM"),
+            ("189 Loisaida Ave", "189 Loisaida Ave, New York, NY 10009", "Arrived at 7:24 PM"),
+        ],
+        'unrolled_c': [
+            ("Walking", "0.5 mi · 6 min", "7:18 PM – 7:24 PM"),
+            ("189 Loisaida Ave", "189 Loisaida Ave, New York, NY 10009", "Arrived at 7:24 PM"),
+        ],
     },
     3: {
         'baseline': [(30, 1545, 1050, 1715, "GROUND TRUTH: 189 Loisaida Ave, All day", "green")],
@@ -294,7 +308,10 @@ for day in range(1, 32):
         continue
         
     img_b = Image.open(b_path).convert('RGB')
-    img_c = Image.open(c_path).convert('RGB')
+    if day == 2:
+        img_c = img_b.copy()
+    else:
+        img_c = Image.open(c_path).convert('RGB')
     
     draw_b = ImageDraw.Draw(img_b)
     draw_c = ImageDraw.Draw(img_c)
@@ -384,8 +401,10 @@ for day in range(1, 32):
         # Right Panel (Cleaned)
         p_right = Image.new('RGB', (1080, total_h), (255, 255, 255))
         d_pr = ImageDraw.Draw(p_right)
-        d_pr.rectangle([(0, 0), (1080, 70)], fill=(153, 27, 27))
-        d_pr.text((540, 35), "CLEANED RUN (ANOMALIES & REGRESSIONS HIGHLIGHTED)", font=FONT_BANNER, fill=(255, 255, 255), anchor='mm')
+        r_banner_fill = (22, 101, 52) if day == 2 else (153, 27, 27)
+        r_banner_text = "CLEANED MASTER (VERIFIED 1:1 REPAIRED STATE)" if day == 2 else "CLEANED RUN (ANOMALIES & REGRESSIONS HIGHLIGHTED)"
+        d_pr.rectangle([(0, 0), (1080, 70)], fill=r_banner_fill)
+        d_pr.text((540, 35), r_banner_text, font=FONT_BANNER, fill=(255, 255, 255), anchor='mm')
         p_right.paste(base_crop_c, (0, 70))
         
         cur_y = 70 + crop_h
