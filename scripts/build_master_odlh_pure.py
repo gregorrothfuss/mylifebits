@@ -125,23 +125,22 @@ def encode_len(tag: int, val: bytes) -> bytes:
     return encode_varint_64((tag << 3) | 2) + encode_varint_64(len(val)) + val
 
 def get_place_fprint_and_cell(place_id: str, name: str, addr: str, lat: float, lng: float) -> Tuple[int, int, int]:
-    if place_id and place_id.startswith('ChIJ') and len(place_id) == 27 and not place_id.startswith('ChIJAAAAAAAAAAA'):
-        raw_b64 = place_id[4:].replace('-', '+').replace('_', '/')
-        pad = len(raw_b64) % 4
-        if pad: raw_b64 += '=' * (4 - pad)
+    if place_id and place_id.startswith('ChIJ'):
         try:
-            b = base64.b64decode(raw_b64)
-            if len(b) >= 17 and b[8] == 0x11:
-                cid = struct.unpack('<Q', b[:8])[0]
-                fp = struct.unpack('<Q', b[9:17])[0]
-                if fp != 0 and cid != 0:
-                    fp_signed = struct.unpack('<q', struct.pack('<Q', fp))[0]
+            pad = len(place_id) % 4
+            padded = place_id + ('=' * ((4 - pad) % 4))
+            raw = base64.urlsafe_b64decode(padded)
+            if len(raw) >= 20 and raw[0] == 0x0a and raw[1] == 0x12 and raw[2] == 0x09 and raw[11] == 0x11:
+                cid = struct.unpack('<Q', raw[3:11])[0]
+                fp = struct.unpack('<Q', raw[12:20])[0]
+                fp_signed = struct.unpack('<q', raw[12:20])[0]
+                if cid != 0 and fp != 0:
                     return cid, fp, fp_signed
-            elif len(b) >= 16:
-                cid = struct.unpack('<Q', b[:8])[0]
-                fp = struct.unpack('<Q', b[8:16])[0]
-                if fp != 0 and cid != 0:
-                    fp_signed = struct.unpack('<q', struct.pack('<Q', fp))[0]
+            elif len(raw) >= 16:
+                cid = struct.unpack('<Q', raw[:8])[0]
+                fp = struct.unpack('<Q', raw[8:16])[0]
+                fp_signed = struct.unpack('<q', raw[8:16])[0]
+                if cid != 0 and fp != 0:
                     return cid, fp, fp_signed
         except Exception:
             pass
