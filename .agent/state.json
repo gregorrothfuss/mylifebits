@@ -1,6 +1,6 @@
 {
   "goal": "Generate and deliver verified January 2014 side-by-side full-scroll stitched screenshots with visual discrepancy highlights and baseline 1:1 ground-truth fidelity.",
-  "active_step_id": 1,
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
