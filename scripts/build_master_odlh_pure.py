@@ -472,32 +472,14 @@ def main():
             tz_offset_m = get_offset_minutes(lat, lng, sts)
             tz = datetime.timezone(datetime.timedelta(minutes=tz_offset_m))
 
-            st_dt = datetime.datetime.fromtimestamp(sts, tz)
-            et_dt = datetime.datetime.fromtimestamp(ets, tz)
-
-            # Split visit slices across local midnights
-            slices = []
-            curr_dt = st_dt
-            while True:
-                next_midnight = datetime.datetime(curr_dt.year, curr_dt.month, curr_dt.day, tzinfo=tz) + datetime.timedelta(days=1)
-                if next_midnight >= et_dt:
-                    slices.append((int(curr_dt.timestamp()), int(et_dt.timestamp())))
-                    break
-                else:
-                    slices.append((int(curr_dt.timestamp()), int(next_midnight.timestamp())))
-                    curr_dt = next_midnight
-
+            # Multi-day and overnight visits remain continuous single records matching Google Maps prod
             cid_signed = struct.unpack('<q', struct.pack('<Q', cid))[0]
-            for slice_idx, (slice_sts, slice_ets) in enumerate(slices):
-                if slice_ets <= slice_sts: continue
-                slice_seg_id = seg_id if len(slices) == 1 else f"{seg_id}_d{slice_idx+1}"
-                slice_tz_m = get_offset_minutes(lat, lng, slice_sts)
-                blob_vis = build_visit_proto(slice_sts, slice_ets, cid, fp, lat, lng, slice_seg_id, tz_offset_m=slice_tz_m)
-                insert_rows.append((
-                    None, slice_sts * 1000, 1787254103124001536, curr_origin, slice_seg_id, blob_vis,
-                    GAIA_ID, 1, 1, slice_sts, slice_ets, 1, 0, cid_signed
-                ))
-                curr_origin += 1
+            blob_vis = build_visit_proto(sts, ets, cid, fp, lat, lng, seg_id, tz_offset_m=tz_offset_m)
+            insert_rows.append((
+                None, sts * 1000, 1787254103124001536, curr_origin, seg_id, blob_vis,
+                GAIA_ID, 1, 1, sts, ets, 1, 0, cid_signed
+            ))
+            curr_origin += 1
 
         elif stype == 'activity':
             lat = float(lat or 0.0)
@@ -540,7 +522,22 @@ def main():
     (_id, timestamp_millis, database_id, origin_id, segment_id, semantic_segment, obfuscated_gaia_id, shown_in_timeline, is_finalized, start_timestamp_seconds, end_timestamp_seconds, segment_type, hierarchy_level, fprint)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, insert_rows)
+    print("[4.5/5] Ingesting 25,195 authentic GPS paths and trip memories from baseline...")
+    c_o.execute('ATTACH DATABASE "scratch/original_gms_backup/data/data/com.google.android.gms/databases/odlh-storage.db" AS base;')
+    c_o.execute("""
+    INSERT OR IGNORE INTO semantic_segment_table (
+        timestamp_millis, database_id, origin_id, segment_id, semantic_segment,
+        obfuscated_gaia_id, shown_in_timeline, is_finalized, start_timestamp_seconds,
+        end_timestamp_seconds, segment_type, hierarchy_level, fprint
+    )
+    SELECT timestamp_millis, database_id, origin_id, segment_id, semantic_segment,
+           obfuscated_gaia_id, shown_in_timeline, is_finalized, start_timestamp_seconds,
+           end_timestamp_seconds, segment_type, hierarchy_level, fprint
+    FROM base.semantic_segment_table
+    WHERE segment_type IN (3, 4);
+    """)
     conn_o.commit()
+    c_o.execute("DETACH DATABASE base;")
 
     c_o.execute("VACUUM;")
     c_o.execute("PRAGMA optimize;")

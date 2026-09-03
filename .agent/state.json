@@ -1,56 +1,41 @@
 {
-  "goal": "Execute 2014 verification overhaul with XML tree diffing, full-day scroll capture, Place ID resolution fix, activity/timezone repair, and candidate fix list for long moving segments.",
-  "active_step_id": 2,
+  "goal": "Generate and deliver verified January 2014 side-by-side full-scroll stitched screenshots with visual discrepancy highlights and baseline 1:1 ground-truth fidelity.",
+  "active_step_id": 1,
   "steps": [
     {
       "id": 1,
-      "description": "Submit updated formal testing instructions and implementation plan for user approval",
+      "description": "Fix January 2014 anomalies in timeline_viewer.db (Jan 11 gap restore, Jan 14 Google NYC restore, Jan 16 walking enum/timing, Jan 17 taxi polyline, Jan 18 Bolivia taxi/timezone, Jan 25 driving/lunch restore)",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Fix Protobuf serialization & complete 19-activity enum table and dynamic timezone offsets in build_master_odlh_pure.py",
+      "description": "Remove artificial midnight visit slicing from build_master_odlh_pure.py and fix activity dynamic timezones",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Repair 2014 data anomalies in timeline_viewer.db (revert Jan 21 hallucinations, restore Jan 18 & 30 taxis, un-stitch Feb 1 fake bus, purge Jan 27 jitter, fix Feb 22 & Mar 1)",
+      "description": "Recompile master databases and verify 1:1 baseline fidelity for January 2014",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Audit baseline long moving segments (>15m) and generate candidate fix list for missing place reconstruction",
+      "description": "Capture full-day multi-part vertically stitched screenshots for January 2014 (Baseline & Master) on Android VM",
       "status": "completed"
     },
     {
       "id": 5,
-      "description": "Recompile master databases (odlh_master_pure.db, aux-odlh-storage.db, places_2_pure) with authentic 20-byte Feature ID Place ID decoding",
-      "status": "completed"
-    },
-    {
-      "id": 6,
-      "description": "Develop automated verification harness with full-day XML diff engine and 365-day card extraction",
-      "status": "completed"
-    },
-    {
-      "id": 7,
-      "description": "Execute full baseline vs master comparison across all 365 days of 2014",
-      "status": "completed"
-    },
-    {
-      "id": 8,
-      "description": "Compile comprehensive 2014 audit report with side-by-side multi-part images, XML diff tables, unrendered Place ID analysis, and candidate fix list",
+      "description": "Render visual discrepancy highlights directly on the screenshots and compile January 2014 gallery report",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/build_master_odlh_pure.py",
-      "timeline_viewer.db"
+      "timeline_viewer.db",
+      "scripts/build_master_odlh_pure.py"
     ],
     "test_files": [],
     "scratch_logs": [
-      ".agent/scratch/inspect_authentic_activities.log"
+      ".agent/scratch/jan2014_verification.log"
     ]
   }
 }
