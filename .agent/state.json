@@ -20,12 +20,12 @@
     {
       "id": 4,
       "description": "Audit baseline long moving segments (>15m) and generate candidate fix list for missing place reconstruction",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 5,
       "description": "Recompile master databases (odlh_master_pure.db, aux-odlh-storage.db, places_2_pure) and deploy to physical Pixel 8",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 6,
