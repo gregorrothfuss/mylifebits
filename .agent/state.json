@@ -15,12 +15,12 @@
     {
       "id": 3,
       "description": "Repair 2014 data anomalies in timeline_viewer.db (revert Jan 21 hallucinations, restore Jan 18 & 30 taxis, un-stitch Feb 1 fake bus, purge Jan 27 jitter, fix Feb 22 & Mar 1)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Audit baseline long moving segments (>15m) and generate candidate fix list for missing place reconstruction",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 5,
