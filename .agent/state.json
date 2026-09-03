@@ -1,51 +1,56 @@
 {
-  "goal": "Execute full 365-day on-device visual verification for the entire year 2014, capturing all 12 months for Authentic Baseline vs Cleaned Master Dataset, and generate comprehensive year report.",
-  "active_step_id": 7,
+  "goal": "Execute 2014 verification overhaul with XML tree diffing, full-day scroll capture, Place ID resolution fix, activity/timezone repair, and candidate fix list for long moving segments.",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Formalize acceptance criteria and present implementation plan for user review",
+      "description": "Submit updated formal testing instructions and implementation plan for user approval",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Correct activity type enum mappings (set IN_SUBWAY to 9, IN_TRAM to 10, IN_BUS to 7, IN_TRAIN to 8)",
+      "description": "Fix Protobuf serialization & complete 19-activity enum table and dynamic timezone offsets in build_master_odlh_pure.py",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Implement segment stitcher to merge consecutive subway/transit legs and remove sub-30s noise events",
-      "status": "completed"
+      "description": "Repair 2014 data anomalies in timeline_viewer.db (revert Jan 21 hallucinations, restore Jan 18 & 30 taxis, un-stitch Feb 1 fake bus, purge Jan 27 jitter, fix Feb 22 & Mar 1)",
+      "status": "in_progress"
     },
     {
       "id": 4,
-      "description": "Clean polyline geometries, eliminate Jan 10 vertical spike and mid-block grid cuts",
-      "status": "completed"
+      "description": "Audit baseline long moving segments (>15m) and generate candidate fix list for missing place reconstruction",
+      "status": "pending"
     },
     {
       "id": 5,
-      "description": "Deploy authentic Pixel 10 GMS baseline and verify physical rendering integrity",
-      "status": "completed"
+      "description": "Recompile master databases (odlh_master_pure.db, aux-odlh-storage.db, places_2_pure) and deploy to physical Pixel 8",
+      "status": "pending"
     },
     {
       "id": 6,
-      "description": "Capture all 365 days of Year 2014 for Authentic Baseline and Cleaned Master Dataset on physical Pixel 8",
-      "status": "completed"
+      "description": "Develop automated verification harness with full-day multi-part scroll capture and uiautomator XML diff engine",
+      "status": "pending"
     },
     {
       "id": 7,
-      "description": "Compile full-year 2014 verification artifact report across all 12 months (365 days)",
-      "status": "completed"
+      "description": "Run on-device verification across 2014, capturing multi-part screenshots and XML dumps",
+      "status": "pending"
+    },
+    {
+      "id": 8,
+      "description": "Compile comprehensive 2014 audit report with side-by-side multi-part images, XML diff tables, and candidate fix list",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/capture_baseline_2014_all365.py",
-      "scripts/capture_cleaned_2014_all365.py",
-      "scripts/compile_2014_full_audit.py",
-      "YEAR_2014_FULL_VERIFICATION_REPORT.md"
+      "scripts/build_master_odlh_pure.py",
+      "timeline_viewer.db"
     ],
     "test_files": [],
-    "scratch_logs": []
+    "scratch_logs": [
+      ".agent/scratch/inspect_authentic_activities.log"
+    ]
   }
 }

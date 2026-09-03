@@ -1,4 +1,4 @@
-import os, sys, json, sqlite3, struct, hashlib, urllib.parse, time, datetime, base64, math
+import os, sys, json, sqlite3, struct, hashlib, urllib.parse, time, datetime, base64, math, zoneinfo
 from typing import List, Tuple, Dict, Any
 
 WORKSPACE_DIR = os.getcwd()
@@ -14,20 +14,69 @@ OUT_PLACES2_PATH = os.path.join(WORKSPACE_DIR, 'scratch', 'places_2_pure')
 
 GAIA_ID = '104819208193648646391'
 
-# Official Google Maps APK Dex Bytecode Activity Enum Specification
+def get_tz_name(lat: float, lng: float) -> str:
+    # US East Coast (NYC, Miami, Boston)
+    if 24 <= lat <= 50 and -85 <= lng <= -65:
+        return 'America/New_York'
+    # Bolivia (La Paz, Lake Titicaca, Sucre, Uyuni)
+    if -23 <= lat <= -9 and -70 <= lng <= -57:
+        return 'America/La_Paz'
+    # Chile (Atacama, San Pedro, Santiago)
+    if -56 <= lat <= -17 and -76 <= lng <= -66:
+        return 'America/Santiago'
+    # Peru (Cusco, Lima)
+    if -18 <= lat <= 0 and -82 <= lng <= -68:
+        return 'America/Lima'
+    # Switzerland / Central Europe
+    if 45 <= lat <= 55 and 5 <= lng <= 16:
+        return 'Europe/Zurich'
+    # UK
+    if 50 <= lat <= 60 and -8 <= lng <= 2:
+        return 'Europe/London'
+    return None
+
+def get_offset_minutes(lat: float, lng: float, ts: int) -> int:
+    tz_name = get_tz_name(lat, lng)
+    if tz_name:
+        try:
+            tz = zoneinfo.ZoneInfo(tz_name)
+            dt = datetime.datetime.fromtimestamp(ts, tz=tz)
+            return int(dt.utcoffset().total_seconds() // 60)
+        except Exception:
+            pass
+    return int(round(lng / 15.0) * 60)
+
+# Official Google Maps APK Dex Bytecode & Authentic GMS Baseline Activity Enum Specification
 ACTIVITY_ENUM_MAP = {
-    "IN_PASSENGER_VEHICLE": 1,
-    "DRIVING": 1,
+    "UNKNOWN": 0,
+    "MOVING": 0,
     "WALKING": 2,
     "CYCLING": 3,
     "FLYING": 5,
     "RUNNING": 6,
     "IN_BUS": 7,
     "IN_TRAIN": 8,
-    "IN_SUBWAY": 9,      # Verified APK bytecode: 9 = IN_SUBWAY ("On subway" / "In subway")
-    "IN_TRAM": 10,       # 10 = IN_TRAM ("On a tram")
+    "IN_SUBWAY": 9,
+    "IN_TRAM": 10,
     "IN_FERRY": 11,
-    "MOTORCYCLING": 30
+    "IN_CABLECAR": 12,
+    "IN_FUNICULAR": 13,
+    "HIKING": 14,
+    "SNOWSHOEING": 15,
+    "SKIING": 20,
+    "SLEDDING": 20,
+    "SNOWBOARDING": 20,
+    "KAYAKING": 25,
+    "IN_PASSENGER_VEHICLE": 29,
+    "DRIVING": 29,
+    "IN_VEHICLE": 29,
+    "MOTORCYCLING": 30,
+    "BOATING": 31,
+    "SAILING": 31,
+    "ROWING": 31,
+    "IN_GONDOLA_LIFT": 34,
+    "IN_TAXI": 36,
+    "IN_TAXICAB": 36,
 }
 
 def ramer_douglas_peucker(pts: List[List[float]], epsilon: float = 0.00004) -> List[List[float]]:
@@ -159,7 +208,8 @@ def build_visit_proto(start_ts: int, end_ts: int, cell_id: int, fprint: int, lat
     lat_e7 = int(round(lat * 1e7))
     lng_e7 = int(round(lng * 1e7))
     
-    feature_id_bytes = b'\x09' + struct.pack('<Q', fprint & 0xffffffffffffffff) + b'\x11' + struct.pack('<Q', cell_id & 0xffffffffffffffff)
+    # Official GMS FeatureIdProto: Tag 1 (0x09) = cell_id, Tag 2 (0x11) = fprint
+    feature_id_bytes = b'\x09' + struct.pack('<Q', cell_id & 0xffffffffffffffff) + b'\x11' + struct.pack('<Q', fprint & 0xffffffffffffffff)
     pt_bytes = b'\x0d' + struct.pack('<i', lat_e7) + b'\x15' + struct.pack('<i', lng_e7)
     
     cand = bytearray()
@@ -219,7 +269,7 @@ def build_raw_path_segment_proto(start_s: int, end_s: int, coords: list, seg_id:
     seg += b"\x50\x01"
     return bytes(seg)
 
-def build_activity_proto_snapped(start_ts: int, end_ts: int, act_type_code: int, dist_m: float, segment_id: str, snapped_coords: list, s_lat: float, s_lng: float, e_lat: float, e_lng: float, tz_offset_m: int = -240) -> bytes:
+def build_activity_proto_snapped(start_ts: int, end_ts: int, act_type_code: int, dist_m: float, segment_id: str, snapped_coords: list, s_lat: float, s_lng: float, e_lat: float, e_lng: float, s_tz_offset_m: int = -240, e_tz_offset_m: int = -240) -> bytes:
     s_ts_bytes = b'\x08' + encode_varint_64(start_ts)
     e_ts_bytes = b'\x08' + encode_varint_64(end_ts)
     
@@ -252,9 +302,8 @@ def build_activity_proto_snapped(start_ts: int, end_ts: int, act_type_code: int,
     if segment_id:
         seg += encode_len(6, segment_id.encode('utf-8'))
     
-    tz_bytes = encode_varint_64(tz_offset_m)
-    seg += b'\x38' + tz_bytes
-    seg += b'\x40' + tz_bytes
+    seg += b'\x38' + encode_varint_64(s_tz_offset_m)
+    seg += b'\x40' + encode_varint_64(e_tz_offset_m)
     seg += b'\x50\x01'
     return bytes(seg)
 
@@ -389,9 +438,8 @@ def main():
             else:
                 cid, fp, fp_signed = get_place_fprint_and_cell(pid, pname, paddr, lat, lng)
 
-            # Determine timezone offset (EST -300 vs EDT -240)
-            dt_check = datetime.datetime.fromtimestamp(sts, datetime.timezone.utc)
-            tz_offset_m = -240 if (dt_check.month > 3 and dt_check.month < 11) else -300
+            # Determine localized timezone offset
+            tz_offset_m = get_offset_minutes(lat, lng, sts)
             tz = datetime.timezone(datetime.timedelta(minutes=tz_offset_m))
 
             st_dt = datetime.datetime.fromtimestamp(sts, tz)
@@ -409,23 +457,29 @@ def main():
                     slices.append((int(curr_dt.timestamp()), int(next_midnight.timestamp())))
                     curr_dt = next_midnight
 
+            cid_signed = struct.unpack('<q', struct.pack('<Q', cid))[0]
             for slice_idx, (slice_sts, slice_ets) in enumerate(slices):
                 if slice_ets <= slice_sts: continue
                 slice_seg_id = seg_id if len(slices) == 1 else f"{seg_id}_d{slice_idx+1}"
-                blob_vis = build_visit_proto(slice_sts, slice_ets, cid, fp, lat, lng, slice_seg_id, tz_offset_m=tz_offset_m)
+                slice_tz_m = get_offset_minutes(lat, lng, slice_sts)
+                blob_vis = build_visit_proto(slice_sts, slice_ets, cid, fp, lat, lng, slice_seg_id, tz_offset_m=slice_tz_m)
                 insert_rows.append((
                     None, slice_sts * 1000, 1787254103124001536, curr_origin, slice_seg_id, blob_vis,
-                    GAIA_ID, 1, 1, slice_sts, slice_ets, 1, 0, fp_signed
+                    GAIA_ID, 1, 1, slice_sts, slice_ets, 1, 0, cid_signed
                 ))
                 curr_origin += 1
 
         elif stype == 'activity':
-            act_code = ACTIVITY_ENUM_MAP.get((atype or 'WALKING').upper(), 2)
             lat = float(lat or 0.0)
             lng = float(lng or 0.0)
             elat = float(elat or lat)
             elng = float(elng or lng)
             dist_m = float(dist_m or 0.0)
+
+            s_tz = get_offset_minutes(lat, lng, sts)
+            e_tz = get_offset_minutes(elat, elng, ets)
+
+            act_code = ACTIVITY_ENUM_MAP.get((atype or 'UNKNOWN').upper(), 0 if atype in ('MOVING', 'UNKNOWN', None) else 2)
 
             try:
                 raw_coords = json.loads(path_json) if path_json else [[lat, lng], [elat, elng]]
@@ -443,7 +497,7 @@ def main():
                 coords[-1] = [elat, elng]
 
             # ActivitySegment (type = 2) - Native single entry with embedded waypoints
-            blob_act = build_activity_proto_snapped(sts, ets, act_code, dist_m, seg_id, coords, lat, lng, elat, elng, tz_offset_m=-240)
+            blob_act = build_activity_proto_snapped(sts, ets, act_code, dist_m, seg_id, coords, lat, lng, elat, elng, s_tz_offset_m=s_tz, e_tz_offset_m=e_tz)
             insert_rows.append((
                 None, sts * 1000, 1787254103124001536, curr_origin, seg_id, blob_act,
                 GAIA_ID, 1, 1, sts, ets, 2, 0, None
