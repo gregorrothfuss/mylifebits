@@ -380,6 +380,9 @@ def main():
 
     conn_o = sqlite3.connect(OUT_ODLH_DB)
     c_o = conn_o.cursor()
+    c_o.execute("CREATE TABLE android_metadata (locale TEXT);")
+    c_o.execute("INSERT INTO android_metadata VALUES ('en_US');")
+    c_o.execute("CREATE TABLE geller_metadata(_id INTEGER PRIMARY KEY,key TEXT NOT NULL UNIQUE,value TEXT);")
     c_o.execute("""
     CREATE TABLE semantic_segment_table (
         _id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -404,6 +407,34 @@ def main():
     c_o.execute("CREATE INDEX index_semantic_segment_table_type_fprint ON semantic_segment_table (segment_type, fprint);")
     c_o.execute("CREATE INDEX index_semantic_segment_table_type_start ON semantic_segment_table (segment_type, start_timestamp_seconds);")
     c_o.execute("CREATE INDEX index_semantic_segment_table_time_range ON semantic_segment_table (start_timestamp_seconds, end_timestamp_seconds);")
+    c_o.execute("""
+    CREATE TABLE "edited_segment_table"(
+        _id INTEGER PRIMARY KEY,
+        segment_id TEXT NOT NULL UNIQUE,
+        semantic_segment BLOB NOT NULL,
+        obfuscated_gaia_id TEXT NOT NULL,
+        start_timestamp_seconds INTEGER NOT NULL,
+        end_timestamp_seconds INTEGER NOT NULL,
+        block_start_timestamp_seconds INTEGER NOT NULL,
+        block_end_timestamp_seconds INTEGER NOT NULL,
+        segment_type INTEGER NOT NULL,
+        hierarchy_level INTEGER,
+        is_edit_uploaded INTEGER
+    );
+    """)
+    c_o.execute("""
+    CREATE TABLE "geller_sync_status"(
+        _id INTEGER PRIMARY KEY,
+        timestamp INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        table_name TEXT,
+        table_filter TEXT NOT NULL DEFAULT '',
+        min_id INTEGER,
+        max_id INTEGER,
+        row_count INTEGER,
+        max_timestamp_millis INTEGER
+    );
+    """)
+    c_o.execute("CREATE UNIQUE INDEX table_name_min_id_max_id_index ON geller_sync_status (table_name, table_filter, min_id, max_id);")
 
     # 3. Extract authentic segments from timeline_viewer.db
     print("[3/5] Compiling authentic segments with RDP decimation...")
@@ -520,6 +551,8 @@ def main():
     if os.path.exists(OUT_AUX_DB): os.remove(OUT_AUX_DB)
     conn_aux = sqlite3.connect(OUT_AUX_DB)
     c_aux = conn_aux.cursor()
+    c_aux.execute("CREATE TABLE android_metadata (locale TEXT);")
+    c_aux.execute("INSERT INTO android_metadata VALUES ('en_US');")
     c_aux.execute("""
     CREATE TABLE aux_semantic_segment_table (
         _id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -534,8 +567,12 @@ def main():
     c_o.execute("SELECT _id, segment_id, obfuscated_gaia_id, start_timestamp_seconds, end_timestamp_seconds, segment_type FROM semantic_segment_table ORDER BY _id ASC;")
     aux_rows = [(r[0], r[1], None, r[2], r[3], r[4], r[5]) for r in c_o.fetchall()]
     c_aux.executemany("INSERT INTO aux_semantic_segment_table VALUES (?, ?, ?, ?, ?, ?, ?);", aux_rows)
+    c_aux.execute("PRAGMA user_version = 12;")
     conn_aux.commit()
     conn_aux.close()
+
+    c_o.execute("PRAGMA user_version = 12;")
+    conn_o.commit()
 
     c_o.execute("SELECT COUNT(*), COUNT(DISTINCT fprint) FROM semantic_segment_table WHERE segment_type = 1;")
     vis_count, distinct_places = c_o.fetchone()
