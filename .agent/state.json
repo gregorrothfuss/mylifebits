@@ -31,7 +31,8 @@
   "context_cache": {
     "target_files": [
       "timeline_viewer.db",
-      "scripts/build_master_odlh_pure.py"
+      "scripts/build_master_odlh_pure.py",
+      "scripts/generate_authentic_comparison_suite.py"
     ],
     "test_files": [],
     "scratch_logs": [
