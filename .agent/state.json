@@ -1,42 +1,44 @@
 {
-  "goal": "Generate and deliver verified January 2014 side-by-side full-scroll stitched screenshots with visual discrepancy highlights and baseline 1:1 ground-truth fidelity.",
+  "goal": "Resolve Jan 5 moving discrepancy, purge fake Ave A & 6th St visit on Jan 11, fix hallucinated Jan 23 flight to Driving, restore pure baseline integrity, and regenerate verified comparison suite.",
   "active_step_id": 5,
   "steps": [
     {
       "id": 1,
-      "description": "Fix January 2014 anomalies in timeline_viewer.db (Jan 11 gap restore, Jan 14 Google NYC restore, Jan 16 walking enum/timing, Jan 17 taxi polyline, Jan 18 Bolivia taxi/timezone, Jan 25 driving/lunch restore)",
+      "description": "Fix Jan 23 hallucinated flight (segment 2638326) in timeline_viewer.db to IN_PASSENGER_VEHICLE and update systemic_teleport_eliminator.py",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Remove artificial midnight visit slicing from build_master_odlh_pure.py and fix activity dynamic timezones",
+      "description": "Purge hardcoded fake Ave A & 6th St card from generate_authentic_comparison_suite.py and ensure pure baseline fidelity",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Recompile master databases and verify 1:1 baseline fidelity for January 2014",
+      "description": "Regenerate all 31 full-scroll comparison images and verify Jan 5, Jan 11, Jan 23",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Capture full-day multi-part vertically stitched screenshots for January 2014 (Baseline & Master) on Android VM",
+      "description": "Update YEAR_2014_JANUARY_FULL_SCROLL_REPORT.md with thorough explanations and verification results",
       "status": "completed"
     },
     {
       "id": 5,
-      "description": "Render visual discrepancy highlights directly on the screenshots and compile January 2014 gallery report",
+      "description": "Verify with ruff and git commit adhering to Archaeology Standard",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
       "timeline_viewer.db",
-      "scripts/build_master_odlh_pure.py",
-      "scripts/generate_authentic_comparison_suite.py"
+      "scripts/systemic_teleport_eliminator.py",
+      "scripts/generate_authentic_comparison_suite.py",
+      "YEAR_2014_JANUARY_FULL_SCROLL_REPORT.md"
     ],
     "test_files": [],
     "scratch_logs": [
-      ".agent/scratch/jan2014_verification.log"
+      ".agent/scratch/jan2014_fixes.log"
     ]
   }
 }
+
