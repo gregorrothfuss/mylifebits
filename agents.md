@@ -146,3 +146,34 @@ State-Step: <step_id from state.json>
 
 7. **Map Viewport and List Alignment**:
    - **NEVER** pair an unedited raw baseline map crop (containing raw path polylines or `~` moving markers) with a cleaned semantic card list; **always** verify that the map visual layer strictly corresponds to the underlying database entities shown in the card list below.
+
+---
+
+## 7. Full-Life Multi-Source Reconstruction & Production vs. Test Visual Diff Standard
+
+### Strategic Goal: Lifelong Dataset Bootstrap (1976 – Present)
+The central objective of this system is the complete, high-fidelity digital reconstruction of every single day of the user's life. Rather than relying on a single fallible telemetry stream, the timeline is bootstrapped and corroborated across the user's entire multi-source digital footprint:
+1. **Historical Semantic Location Takeout**: Full multi-year archives (2008–2024, e.g. `lh-20241129T224901Z-001.zip`) preserving pre-deletion visits, raw GPS paths, and deprecated Place IDs before on-device FID purging occurred.
+2. **Geocoded Photos & EXIF Metadata**: Spatial-temporal coordinates, camera timestamps, and visual evidence extracted from photo archives to anchor physical presence during gaps.
+3. **Search & Web History**: Search queries, Google Maps lookups, navigation directions, and browsing signals.
+4. **Communications Archives**: Google Chat logs (83k+ messages with venue shares), Gmail mbox (160k+ emails, reservation confirmations, flight tickets, receipts), and legacy mail archives.
+5. **Transit & Micro-Mobility Logs**: Complete Citi Bike ride archives, Lyft records, and flight itineraries.
+6. **Financial Transaction Records**: Timestamped credit card/bank ledgers (`general-ledger_*.csv`, `cct-*.zip`) establishing commercial venue visits.
+7. **Social & Historical Check-ins**: Plazes check-ins (`plazes.zip`), Google Maps reviews (`google_contributor_reviews.json`), and saved place lists.
+8. **Chronological Spine**: Historical residences and workplace anchors (`synthetic_life_chronology.md`).
+
+### Full-Source Reverse Engineering Protocol (Maps & GMSCore)
+To ensure the reconstructed timeline faithfully matches native Google Maps Timeline behavior, agents must utilize full-source decompilation and Dalvik/DEX reverse engineering of `gmm_apk/base.apk`, `gms_apk/base.apk`, and `split_MapsDynamite.apk`:
+- **Data Model & Schema Parity**: Extract authoritative SQLite schemas (`odlh-storage.db`, `semantic_location_state`, `geller_metadata`, `edited_segment_table`) and exact protobuf wire field tags directly from decompiled source.
+- **FID Deletion & Deprecation Semantics**: Reverse engineer client/service logic governing place deprecation, FID deletion handling, unconfirmed place generation, and candidate generation to understand why Google deleted visits instead of marking places `PERMANENTLY_CLOSED`.
+- **Render Engine Reverse Engineering**: Reverse engineer Google Maps Timeline rendering pipelines to ensure that simulated bottom-sheet card unrolling, polyline rendering, and travel mode formatting match production bit-for-bit.
+
+### Mandatory Production vs. Test Visual & Data Diff Standard
+Data bootstrap and timeline repair operations must never be committed without verifiable, side-by-side proof:
+1. **Automated Dual-Source Visual Diff**:
+   - Every modified day must generate a side-by-side visual comparison image: **PROD BASELINE** (untouched authentic device/takeout source) vs. **TEST MASTER** (reconstructed/repaired timeline).
+   - Strict dual-source isolation: the test panel must reflect actual database/rendering state without borrowing crops, markers, or polylines from the baseline panel.
+2. **Comprehensive Data Diff**:
+   - Accompany visual diffs with explicit field-by-field diff audits (Visits, Activities, Gaps, Coordinates, Timestamps, Duration, Distance, Place IDs/FIDs).
+3. **Evidence-Based Provenance Tracking**:
+   - Every restored or inserted visit must have an immutable audit trail documenting its corroborating digital life source (Photo EXIF, Takeout, Mbox, Chat, etc.) and the root cause of its original absence (e.g. FID deletion by Google Maps).
