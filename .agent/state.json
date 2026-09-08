@@ -1,34 +1,35 @@
 {
-  "goal": "Verify all 11,085 Place IDs, classify their exact status (OPERATIONAL, CLOSED_PERMANENTLY, DELETED, CUSTOM), and identify deleted FIDs.",
+  "goal": "Implement raw signal preservation and strict 5-tier dominance audit suite for zero-loss production round-trip.",
   "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Add business_status, verification_status, and last_verified_at columns to places table in timeline_viewer.db",
+      "description": "Create raw_signals table in timeline_viewer.db and ingest 100% of rolling rawSignals (71,960+ records) and raw path segments (segment_type=3)",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Implement scripts/audit_and_verify_all_place_ids.py to audit all Place IDs across local caches, historical Takeout, and Places API",
+      "description": "Implement scripts/sync_from_prod_via_pixel8.py to automate backup extraction and raw signal ingestion from rooted Pixel 8",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Execute Place ID status audit, populate business_status for all 11,085 places, and export verified catalog report",
+      "description": "Implement scripts/audit_strict_dominance.py enforcing Tiers 1 through 5 (Zero Raw Signal Loss, Semantic Dominance, Physics/Monotonicity, Visual Dominance, Binary Wire Deserialization)",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Commit changes following Archaeology Standard",
+      "description": "Harden scripts/surgical_roundtrip_deploy.py with the mandatory dominance gate and verify end-to-end execution",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
       "timeline_viewer.db",
-      "scripts/audit_and_verify_all_place_ids.py",
-      "scripts/places_api_daemon.py",
-      "docs/PLACE_ID_STATUS_AUDIT_REPORT.md"
+      "pixel10_export/Timeline-latest.json",
+      "scripts/sync_from_prod_via_pixel8.py",
+      "scripts/audit_strict_dominance.py",
+      "scripts/surgical_roundtrip_deploy.py"
     ],
     "test_files": [],
     "scratch_logs": []
