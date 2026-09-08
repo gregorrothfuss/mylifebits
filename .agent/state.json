@@ -10,12 +10,12 @@
     {
       "id": 2,
       "description": "Synchronize places table visit counts, normalize categories, and merge duplicate Miami Airport",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Add /api/places/visits and visited-only default filtering to api/routes/places.py",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 4,
