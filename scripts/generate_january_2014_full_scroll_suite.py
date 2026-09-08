@@ -101,14 +101,13 @@ def get_day_cards(date_str):
         
         if prev_end_dt and (s_dt - prev_end_dt).total_seconds() > 300:
             gap_m = round((s_dt - prev_end_dt).total_seconds() / 60)
-            if d == 11 and gap_m > 30:
-                cards.append({
-                    'is_gap': True,
-                    'title': 'CANDIDATE MISSING VISIT: Ave A & 6th St',
-                    'sub1': f'{gap_m} min unstitched gap',
-                    'sub2': f'{format_time(prev_end_dt)} – {format_time(s_dt)}',
-                    'highlight': ('yellow', 'CANDIDATE MISSING VISIT (Ave A & 6th St)')
-                })
+            cards.append({
+                'is_gap': True,
+                'title': f'Unrecorded Interval ({gap_m} min)',
+                'sub1': f'{gap_m} min gap',
+                'sub2': f'{format_time(prev_end_dt)} – {format_time(s_dt)}',
+                'highlight': None
+            })
         
         if seg_type == 'visit':
             ico = 'visit'
@@ -285,10 +284,10 @@ for day in range(1, 32):
         if c.get('is_gap'):
             base_cards.append({
                 'is_gap': True,
-                'title': 'PROD GAP: Ave A & 6th St',
+                'title': c['title'],
                 'sub1': c['sub1'],
                 'sub2': c['sub2'],
-                'highlight': ('yellow', 'PROD GAP (Ave A & 6th St)')
+                'highlight': None
             })
         else:
             base_cards.append({
