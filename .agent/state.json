@@ -1,21 +1,27 @@
 {
-  "goal": "Update AGENTS.md with specific guidance for full-life multi-source reconstruction, GMSCore/Maps full-source reverse engineering, and prod vs test visual/data diff standard.",
+  "goal": "Codify Zero-Loss Production Round-Trip Standard and Strict Dominance Invariant into AGENTS.md and implementation plan.",
   "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Formulate and update AGENTS.md with Section 7: Full-Life Multi-Source Reconstruction & Visual Diff Standard",
+      "description": "Add Section 8 (Zero-Loss Production Round-Trip Standard & Strict Dominance Invariant) to AGENTS.md",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Commit AGENTS.md update following Archaeology Standard",
-      "status": "completed"
+      "description": "Commit AGENTS.md update adhering to Archaeology Standard",
+      "status": "in_progress"
+    },
+    {
+      "id": 3,
+      "description": "Update implementation_plan.md with 5-Tier Verification Suite and Dominance Gate",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "AGENTS.md"
+      "AGENTS.md",
+      "implementation_plan.md"
     ],
     "test_files": [],
     "scratch_logs": []

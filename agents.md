@@ -177,3 +177,36 @@ Data bootstrap and timeline repair operations must never be committed without ve
    - Accompany visual diffs with explicit field-by-field diff audits (Visits, Activities, Gaps, Coordinates, Timestamps, Duration, Distance, Place IDs/FIDs).
 3. **Evidence-Based Provenance Tracking**:
    - Every restored or inserted visit must have an immutable audit trail documenting its corroborating digital life source (Photo EXIF, Takeout, Mbox, Chat, etc.) and the root cause of its original absence (e.g. FID deletion by Google Maps).
+
+---
+
+## 8. Zero-Loss Production Round-Trip Standard & Strict Dominance Invariant
+
+### Absolute Gate: "Strictly Better Proven at All Levels"
+No deployment or round-trip of reconstructed timeline data back to the production device (`Pixel 10`) or Google Cloud Backup is permitted until **data loss is 100% ruled out** and the candidate master database is mathematically and empirically proven to be **strictly better (Pareto dominant)** than production across all five verification tiers:
+
+1. **Tier 1: Telemetry & Raw Signal Super-Set Invariant (Zero Signal Loss)**:
+   - **NEVER** drop, compress, truncate, or overwrite the rolling 30-day raw sensor buffer (`rawSignals`: 71,960+ Wi-Fi scans, cell fixes, GPS fixes, sensor samples) or the multi-year raw GPS path segments (`segment_type = 3` in `semantic_segment_table`).
+   - The candidate master timeline must contain $\ge 100\%$ of production raw signals. All raw telemetry from prod must be preserved bit-for-bit.
+
+2. **Tier 2: Semantic Entity Dominance (No Unexplained Omissions)**:
+   - Every authentic production visit and activity must be strictly accounted for. The candidate master entity set must satisfy:
+     $$\text{Visits}_{\text{Master}} \supseteq \text{Visits}_{\text{ProdValid}}$$
+   - Any removal or boundary adjustment of a production entity must be mathematically proven as an anomaly fix (e.g. eliminating an impossible teleport, merging a midnight-split visit) and accompanied by an automated, immutable audit log citing the exact reason and corroborating evidence.
+   - 100% of Place IDs and Feature IDs must preserve full 20-byte cell/fingerprint decoding integrity.
+
+3. **Tier 3: Spatio-Temporal Monotonicity & Physics Consistency**:
+   - The candidate timeline must have:
+     * **0 temporal overlaps** (no segment begins before the preceding segment finishes).
+     * **0 unhandled teleports** (no spatial jump $>300\text{ m}$ between adjacent segments without an explicit, physically valid transition leg).
+     * **0 midnight splits** (overnight stays across 00:00 remain single contiguous visit entities).
+     * **100% physical velocity compliance** (no `FLYING` without distance $>300\text{ km}$, speed $>250\text{ km/h}$, and airport anchors; ground movements match realistic road/rail speeds).
+
+4. **Tier 4: Visual Dominance & Full-Scroll Equivalence**:
+   - Automated side-by-side visual diffs across 100% of affected days must visually prove that the test master timeline renders cleanly without missing cards, truncated bottom sheets, clipped titles, or broken route polylines.
+   - Test rendering must look identical to or strictly cleaner than production Google Maps Timeline.
+
+5. **Tier 5: Wire-Level Binary Deserialization & On-Device Smoke Gate**:
+   - `PRAGMA integrity_check` on all databases (`odlh-storage.db`, `portable_geller_*.db`, `aux-odlh-storage.db`) must return `ok`.
+   - 100% of protobuf blobs in `semantic_segment_table` must deserialize cleanly through standard Google Maps / GMS Protobuf parsers with zero unrecognized tag drops or byte truncations.
+   - The master database must first be deployed to the rooted `Pixel 8` and pass live UI smoke tests (opening Google Maps Timeline, navigating days, verifying bottom sheet unrolling, and zero GMS crashes) *before* triggering E2EE cloud backup to production.
