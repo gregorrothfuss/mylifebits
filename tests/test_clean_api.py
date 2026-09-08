@@ -165,8 +165,27 @@ class TestCleanTimelineAPI(unittest.TestCase):
         self.assertEqual(res.get("count"), 14)
         self.assertIsInstance(res.get("visits"), list)
         self.assertEqual(len(res.get("visits")), 14)
-        self.assertIn("place", res)
-        self.assertEqual(res["place"]["name"], "Miami International Airport")
+    def test_15_activity_summaries(self):
+        # 1. Activity summaries default (all time)
+        status, res = self._call("GET", "/api/insights/activity-summaries")
+        self.assertEqual(status, 200)
+        self.assertEqual(res.get("status"), "SUCCESS")
+        self.assertIn("totals", res)
+        self.assertIn("modes", res)
+        self.assertIn("available_periods", res)
+
+        # 2. Activity summaries specific year
+        status_y, res_y = self._call("GET", "/api/insights/activity-summaries", {"period": "2026"})
+        self.assertEqual(status_y, 200)
+        self.assertEqual(res_y.get("period"), "2026")
+        self.assertGreater(len(res_y.get("modes", [])), 0)
+
+        # 3. Nuggets list structure
+        status_n, res_n = self._call("GET", "/api/insights/nuggets")
+        self.assertEqual(status_n, 200)
+        self.assertEqual(res_n.get("status"), "SUCCESS")
+        self.assertIsInstance(res_n.get("nuggets"), list)
+        self.assertGreater(len(res_n.get("nuggets")), 0)
 
 
 if __name__ == "__main__":

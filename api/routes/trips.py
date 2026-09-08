@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 from api.db import DEFAULT_DB_PATH
 from api.response import Response, json_response
 from api.router import Request, router
-from enrichment.nuggets_engine import extract_archive_nuggets
+from enrichment.nuggets_engine import extract_archive_nuggets, get_activity_summaries
 from enrichment.trip_inferencer import get_country_passport_stats
 from trips_engine import get_all_trips
 
@@ -30,11 +30,27 @@ def get_trip_stats(req: Request) -> Response:
     return json_response(stats)
 
 
+@router.get("/api/insights/activity-summaries")
+def get_activity_summaries_route(req: Request) -> Response:
+    """Returns activity breakdowns, mode distributions, and nuggets by period."""
+    period = req.get_str("period", "all")
+    data = get_activity_summaries(DEFAULT_DB_PATH, period=period)
+    return json_response(data)
+
+
 @router.get("/api/insights/nuggets")
 def get_nuggets(req: Request) -> Response:
     """Returns interesting algorithmic facts and nuggets extracted from the timeline."""
-    nuggets = extract_archive_nuggets(DEFAULT_DB_PATH)
-    return json_response({"status": "SUCCESS", "nuggets": nuggets})
+    raw = extract_archive_nuggets(DEFAULT_DB_PATH)
+    return json_response({
+        "status": "SUCCESS",
+        "nuggets": raw.get("nuggets", []),
+        "extremes": raw.get("extremes", {}),
+        "rare_modes": raw.get("rare_modes", []),
+        "mode_summary": raw.get("mode_summary", {}),
+        "night_treks": raw.get("night_treks", []),
+        "top_sanctuaries": raw.get("top_sanctuaries", []),
+    })
 
 
 @router.get("/api/trips/flythrough")

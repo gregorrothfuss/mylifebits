@@ -20,12 +20,12 @@
     {
       "id": 4,
       "description": "Implement /api/insights/activity-summaries in api/routes/trips.py",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 5,
       "description": "Consolidate to single global search, remove duplicate search inputs, and fix hardcoded dates in index.html",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 6,
