@@ -1,27 +1,34 @@
 {
-  "goal": "Codify Zero-Loss Production Round-Trip Standard and Strict Dominance Invariant into AGENTS.md and implementation plan.",
-  "active_step_id": 3,
+  "goal": "Verify all 11,085 Place IDs, classify their exact status (OPERATIONAL, CLOSED_PERMANENTLY, DELETED, CUSTOM), and identify deleted FIDs.",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Add Section 8 (Zero-Loss Production Round-Trip Standard & Strict Dominance Invariant) to AGENTS.md",
+      "description": "Add business_status, verification_status, and last_verified_at columns to places table in timeline_viewer.db",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Commit AGENTS.md update adhering to Archaeology Standard",
+      "description": "Implement scripts/audit_and_verify_all_place_ids.py to audit all Place IDs across local caches, historical Takeout, and Places API",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Update implementation_plan.md with 5-Tier Verification Suite and Dominance Gate",
+      "description": "Execute Place ID status audit, populate business_status for all 11,085 places, and export verified catalog report",
       "status": "completed"
+    },
+    {
+      "id": 4,
+      "description": "Commit changes following Archaeology Standard",
+      "status": "in_progress"
     }
   ],
   "context_cache": {
     "target_files": [
-      "AGENTS.md",
-      "implementation_plan.md"
+      "timeline_viewer.db",
+      "scripts/audit_and_verify_all_place_ids.py",
+      "scripts/places_api_daemon.py",
+      "docs/PLACE_ID_STATUS_AUDIT_REPORT.md"
     ],
     "test_files": [],
     "scratch_logs": []
