@@ -1,6 +1,6 @@
 {
   "goal": "Ingest pristine Pixel 10 GeoJSON, repair server/frontend date navigation, path coverage, Citi Bike docks, and contrast, then harden AGENTS.md.",
-  "active_step_id": 4,
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
@@ -20,12 +20,12 @@
     {
       "id": 4,
       "description": "Reconcile Citi Bike stations and link CYCLING legs to canonical dock stations",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 5,
       "description": "Fix place title illegibility, contrast, and flexbox ellipsis truncation (static/style.css, static/app.js)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 6,
