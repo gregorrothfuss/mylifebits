@@ -1,38 +1,54 @@
 {
-  "goal": "Implement raw signal preservation and strict 5-tier dominance audit suite for zero-loss production round-trip.",
-  "active_step_id": 4,
+  "goal": "Systematically refactor server code, contract auditing, test suite, and AGENTS.md to permanently eliminate client-server desync and blind spot regressions.",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Create raw_signals table in timeline_viewer.db and ingest 100% of rolling rawSignals (71,960+ records) and raw path segments (segment_type=3)",
+      "description": "Audit and catalog all frontend API contracts from static/app.js to establish the immutable client-server contract matrix",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Implement scripts/sync_from_prod_via_pixel8.py to automate backup extraction and raw signal ingestion from rooted Pixel 8",
-      "status": "completed"
+      "description": "Refactor api/schemas.py with strict, typed response models for all client endpoints",
+      "status": "in_progress"
     },
     {
       "id": 3,
-      "description": "Implement scripts/audit_strict_dominance.py enforcing Tiers 1 through 5 (Zero Raw Signal Loss, Semantic Dominance, Physics/Monotonicity, Visual Dominance, Binary Wire Deserialization)",
-      "status": "completed"
+      "description": "Implement scripts/audit_api_contracts.py to statically and dynamically verify 100% field, key, and type parity between static/app.js and api/routes/",
+      "status": "pending"
     },
     {
       "id": 4,
-      "description": "Harden scripts/surgical_roundtrip_deploy.py with the mandatory dominance gate and verify end-to-end execution",
-      "status": "completed"
+      "description": "Implement tests/test_e2e_server.py testing live HTTP endpoints, asset proxies, and full-stack integration",
+      "status": "pending"
+    },
+    {
+      "id": 5,
+      "description": "Update AGENTS.md with Section 9: Full-Stack Consumer Contract Verification Standard and Learned Invariant rules",
+      "status": "pending"
+    },
+    {
+      "id": 6,
+      "description": "Verify all gates (contract audit, e2e suite, ruff) and commit",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "timeline_viewer.db",
-      "pixel10_export/Timeline-latest.json",
-      "scripts/sync_from_prod_via_pixel8.py",
-      "scripts/audit_strict_dominance.py",
-      "scripts/surgical_roundtrip_deploy.py"
+      "AGENTS.md",
+      "api/schemas.py",
+      "api/routes/*.py",
+      "scripts/audit_api_contracts.py",
+      "tests/test_e2e_server.py"
     ],
-    "test_files": [],
-    "scratch_logs": []
+    "test_files": [
+      "tests/test_e2e_server.py",
+      "tests/test_clean_api.py"
+    ],
+    "scratch_logs": [
+      ".agent/scratch/pytest.log",
+      ".agent/scratch/contract_audit.log"
+    ]
   }
 }
 
