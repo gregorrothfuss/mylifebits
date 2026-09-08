@@ -1,6 +1,6 @@
 {
   "goal": "Ingest pristine Pixel 10 GeoJSON, repair server/frontend date navigation, path coverage, Citi Bike docks, and contrast, then harden AGENTS.md.",
-  "active_step_id": 2,
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
@@ -10,12 +10,12 @@
     {
       "id": 2,
       "description": "Fix frontend date navigation, today jump, max date, and back button (static/app.js, static/index.html)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Run systemic path repair (adjacent visit endpoint propagation and road snapping)",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 4,
