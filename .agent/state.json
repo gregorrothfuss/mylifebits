@@ -1,6 +1,6 @@
 {
   "goal": "Systematically refactor server code, contract auditing, test suite, and AGENTS.md to permanently eliminate client-server desync and blind spot regressions.",
-  "active_step_id": 2,
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
@@ -10,12 +10,12 @@
     {
       "id": 2,
       "description": "Refactor api/schemas.py with strict, typed response models for all client endpoints",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Implement scripts/audit_api_contracts.py to statically and dynamically verify 100% field, key, and type parity between static/app.js and api/routes/",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 4,
