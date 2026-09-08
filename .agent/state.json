@@ -25,12 +25,12 @@
     {
       "id": 5,
       "description": "Consolidate to single global search, remove duplicate search inputs, and fix hardcoded dates in index.html",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 6,
       "description": "Implement Places tab caching, full visit history modal, Activities & Insights tab, and audit all UI targets in app.js",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 7,

@@ -34,8 +34,9 @@
       <nav class="nav-tabs">
         <button class="tab-btn" data-tab="timeline"><i class="fa-solid fa-route"></i> Daily Timeline</button>
         <button class="tab-btn" data-tab="calendar"><i class="fa-solid fa-calendar-days"></i> Calendar Matrix</button>
+        <button class="tab-btn" data-tab="activities"><i class="fa-solid fa-chart-line"></i> Activities & Insights</button>
         <button class="tab-btn" data-tab="trips"><i class="fa-solid fa-plane-departure"></i> Trips & Expeditions <span id="badge-trips" class="pill-badge purple">150</span></button>
-        <button class="tab-btn" data-tab="places"><i class="fa-solid fa-location-dot"></i> Places & Categories <span id="badge-places" class="pill-badge blue">8.7k</span></button>
+        <button class="tab-btn" data-tab="places"><i class="fa-solid fa-location-dot"></i> Places & Categories <span id="badge-places" class="pill-badge blue">7.7k</span></button>
         <button class="tab-btn" data-tab="heatmap"><i class="fa-solid fa-map-location-dot"></i> Street Discovery & Heatmap</button>
         <button class="tab-btn" data-tab="fixes"><i class="fa-solid fa-wand-magic-sparkles"></i> Fix Proposals <span id="badge-fixes" class="pill-badge red">1.3k</span></button>
       </nav>
@@ -141,7 +142,7 @@
             <div class="gmm-panel-header">
               <div class="gmm-header-left">
                 <div class="device-status-badge"><span class="device-dot"></span> <span id="gmm-device-name">Pixel 8a (Live ADB)</span></div>
-                <span id="gmm-active-date" class="gmm-date-badge">2026-08-19</span>
+                <span id="gmm-active-date" class="gmm-date-badge">--</span>
               </div>
               <div class="gmm-header-actions">
                 <button id="btn-gmm-sync-day" class="btn btn-sm btn-primary" title="Intent device straight to active Studio date"><i class="fa-solid fa-bolt"></i> Intent Date</button>
@@ -194,7 +195,7 @@
           <div class="calendar-header-bar">
             <div class="cal-nav-group">
               <button id="btn-cal-prev-week" class="icon-btn" title="Previous Week"><i class="fa-solid fa-chevron-left"></i></button>
-              <input type="date" id="cal-date-picker" value="2005-08-15">
+              <input type="date" id="cal-date-picker">
               <button id="btn-cal-next-week" class="icon-btn" title="Next Week"><i class="fa-solid fa-chevron-right"></i></button>
               <span id="cal-range-label" class="cal-range-title">Loading Calendar Matrix...</span>
             </div>
@@ -212,7 +213,7 @@
               <button class="cal-jump-btn" data-date="2005-08-15">2005 Cambridge</button>
               <button class="cal-jump-btn" data-date="2007-06-15">2007 Google NYC</button>
               <button class="cal-jump-btn" data-date="2010-05-15">2010 East Village</button>
-              <button class="cal-jump-btn active" data-date="2026-08-19">Today</button>
+              <button class="cal-jump-btn" id="cal-jump-today-btn">Today</button>
             </div>
 
             <!-- Legend and Anomaly Highlights -->
@@ -238,6 +239,94 @@
               <!-- Rendered dynamically with 7 day columns and absolute time blocks -->
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- TAB: ACTIVITIES & INSIGHTS (TIMELINE ACTIVITY SUMMARIES) -->
+      <section id="tab-activities" class="tab-panel">
+        <div class="activities-container" style="max-width:1400px;margin:0 auto;padding:20px;">
+          
+          <!-- Period Selector Toolbar -->
+          <div class="activities-header card" style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:40px;height:40px;border-radius:10px;background:rgba(59,130,246,0.15);color:var(--accent-blue);display:flex;align-items:center;justify-content:center;font-size:18px;">
+                <i class="fa-solid fa-chart-line"></i>
+              </div>
+              <div>
+                <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text-main);">Activity Summaries & Insights</h2>
+                <span class="sub-text" id="activities-period-sub">Distance and time breakdowns across your authentic timeline movements</span>
+              </div>
+            </div>
+            <!-- Period Selector Pills -->
+            <div class="activities-period-pills" id="activities-period-pills-container" style="display:flex;gap:6px;flex-wrap:wrap;">
+              <!-- Rendered dynamically: e.g. All Time, 2026, 2025, 2024 -->
+            </div>
+          </div>
+
+          <!-- Hero Metrics Cards -->
+          <div class="activities-hero-grid" id="activities-hero-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:20px;">
+            <!-- Rendered dynamically -->
+          </div>
+
+          <!-- Mode Breakdown Visual Progress Bar & Cards -->
+          <div class="card" style="margin-bottom:20px;padding:20px;">
+            <h3 style="margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+              <i class="fa-solid fa-route" style="color:var(--accent-blue);"></i> Travel Mode Breakdown
+            </h3>
+            <!-- Stacked Color Bar -->
+            <div class="mode-progress-bar" id="mode-progress-bar" style="display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--bg-main);margin-bottom:16px;">
+              <!-- Dynamic segment bars -->
+            </div>
+            <!-- Mode Cards Grid -->
+            <div class="mode-cards-grid" id="mode-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Curated Archive Nuggets Grid -->
+          <div class="card" style="margin-bottom:20px;padding:20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:36px;height:36px;border-radius:8px;background:rgba(245,158,11,0.15);color:#d97706;display:flex;align-items:center;justify-content:center;font-size:16px;">
+                  <i class="fa-solid fa-gem"></i>
+                </div>
+                <div>
+                  <h3 style="margin:0;font-size:15px;font-weight:700;color:var(--text-main);">Archive Nuggets & Superlatives</h3>
+                  <span class="sub-text">Cosmic milestones, polar frontiers, and unique endurance records</span>
+                </div>
+              </div>
+              <button class="btn btn-sm btn-secondary" id="btn-refresh-activity-nuggets">
+                <i class="fa-solid fa-rotate"></i> Refresh Nuggets
+              </button>
+            </div>
+            <div class="nuggets-grid" id="activities-nuggets-container" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:14px;">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Top Visited Sanctuaries & Rare Micro-Adventures Two-Column -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(360px, 1fr));gap:20px;">
+            <!-- Top Places -->
+            <div class="card" style="padding:20px;">
+              <h3 style="margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-star" style="color:#f59e0b;"></i> Top Visited Venues
+              </h3>
+              <div id="activities-top-places" style="display:flex;flex-direction:column;gap:8px;">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <!-- Rare Micro-Adventures -->
+            <div class="card" style="padding:20px;">
+              <h3 style="margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-person-snowboarding" style="color:#8b5cf6;"></i> Rare & Exotic Micro-Adventures
+              </h3>
+              <div id="activities-rare-modes" style="display:flex;flex-wrap:wrap;gap:8px;">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+          </div>
+
         </div>
       </section>
 
@@ -320,12 +409,6 @@
                 <h3 id="trips-filter-heading" style="margin:0 0 4px 0;font-size:16px;"><i class="fa-solid fa-earth-americas" style="color:var(--accent-purple);"></i> All Expeditions & Journeys</h3>
                 <span class="sub-text" id="trips-count-sub">Showing 158 trips with 3D Flythrough and Night Walk mode</span>
               </div>
-              <div class="trip-filters">
-                <div class="search-input-wrapper" style="width:340px;">
-                  <i class="fa-solid fa-magnifying-glass"></i>
-                  <input type="text" id="trips-search-input" placeholder="Search trips (e.g. 'Singapore', 'Bali', 'Tokyo', 'Alps')...">
-                </div>
-              </div>
             </div>
           </div>
 
@@ -367,10 +450,6 @@
 
           <!-- Filter Toolbar -->
           <div class="places-toolbar card">
-            <div class="search-input-wrapper">
-              <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="places-search-input" placeholder="Search 10,202 places by name, address, city, category (e.g. 'Citi Bike', 'Home', 'Google', 'beer', 'pizza')...">
-            </div>
 
             <!-- Category Filter Pills -->
             <div class="category-pills-row" id="category-pills-container">
@@ -966,6 +1045,30 @@
         <button class="btn-primary" id="btn-save-edit-place" style="background:var(--accent-green);font-size:12px;padding:8px 20px;cursor:pointer;font-weight:700;">
           <i class="fa-solid fa-floppy-disk"></i> Save & Resolve Proposal
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Place Full Visits History Modal -->
+  <div id="place-visits-modal" class="modal-overlay hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.8);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);">
+    <div class="modal-card" style="max-width:760px;width:100%;max-height:85vh;display:flex;flex-direction:column;background:var(--bg-card);border-radius:14px;border:1px solid var(--border-color);overflow:hidden;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
+      <div class="modal-header" style="padding:16px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;background:var(--bg-subtle);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(59,130,246,0.15);color:var(--accent-blue);display:flex;align-items:center;justify-content:center;font-size:16px;">
+            <i class="fa-solid fa-location-dot"></i>
+          </div>
+          <div>
+            <h3 id="place-visits-title" style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);">Place Visits</h3>
+            <span id="place-visits-subtitle" class="sub-text" style="font-size:12px;color:var(--text-muted);">All recorded visits from your authentic timeline</span>
+          </div>
+        </div>
+        <button id="btn-close-place-visits" class="icon-btn" style="background:transparent;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="place-visits-body" style="padding:16px 20px;overflow-y:auto;flex:1;">
+        <!-- Loaded dynamically -->
+      </div>
+      <div class="modal-footer" style="padding:12px 20px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;background:var(--bg-subtle);">
+        <button id="btn-done-place-visits" class="btn btn-secondary" style="padding:6px 16px;font-size:13px;cursor:pointer;">Done</button>
       </div>
     </div>
   </div>
