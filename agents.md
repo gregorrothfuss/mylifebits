@@ -147,6 +147,30 @@ State-Step: <step_id from state.json>
 7. **Map Viewport and List Alignment**:
    - **NEVER** pair an unedited raw baseline map crop (containing raw path polylines or `~` moving markers) with a cleaned semantic card list; **always** verify that the map visual layer strictly corresponds to the underlying database entities shown in the card list below.
 
+8. **Anti-Tautological Testing Mandate**:
+   - **NEVER** write or commit unit tests that assert whatever structure the backend implementation happens to return (e.g. asserting `assertIn("days", data)` without validating whether `days` is a date-keyed dictionary or a flat list); **always** validate responses against explicit typed schemas and actual consumer code expectations (`static/app.js`).
+
+9. **Zero Frontend Contract Drift & Strict Key/Type Preservation**:
+   - **NEVER** alter, rename, or truncate API payload keys or data types (e.g., returning `[lat, lng]` coordinate arrays when the consumer accesses `.latitude` / `.longitude` object properties, or renaming `fixes` to `proposals`, or omitting facet counts like `counts.pending`); **always** maintain 100% key, field, and nested type parity with frontend consumers.
+
+10. **Environment Isolation & Asset Proxy Awareness**:
+    - **NEVER** deploy or background network-dependent services (e.g. image caching proxies, Google User Content photo proxying) in sandboxed subshells that silently fail or return 403/404; **always** assert network egress and verify external asset fetching end-to-end with verified network permissions (`BypassSandbox: true`).
+
+11. **Strict Device Cloud Backup Isolation & Fresh GeoJSON Supremacy**:
+    - **NEVER** treat cloud backup archives (`odlh-storage.db` from device backups) as authoritative ground truth over authentic raw client exports (`pixel10_export/Timeline-*.json` or official Google Takeout); **always** treat client GeoJSON exports as the unalterable ground-truth spine, enforce `has_snapped_path` non-interference rules, and quarantine cloud backup databases from overwriting verified pristine telemetry intervals.
+
+12. **Dynamic Date Initialization & Pure Integer Date Stepping**:
+    - **NEVER** hardcode static default dates (e.g. `"2026-08-20"`) or restrictive `max` attributes in web templates or frontend controllers, and **NEVER** use `new Date(dateStr).setDate(...)` for day navigation; **always** initialize dates dynamically from URL query parameters (`?date=`) falling back to the user's local date (`getLocalToday()`), perform day stepping using deterministic UTC integer date arithmetic (`stepDate(dateStr, delta)`), and register initial history state via `replaceState` to guarantee flawless browser Back/Forward navigation.
+
+13. **Zero-Stub Polylines & Synchronized Activation Invariant**:
+    - **NEVER** leave multi-point road polylines (JSON arrays with $\ge 3$ coordinates) with `has_snapped_path = 0` in database tables or diagnostics scorecards, and **NEVER** leave zero-span activity legs (`start == end`) when adjacent visits have distinct physical coordinates; **always** activate `has_snapped_path = 1` across 100% of valid road curves and propagate departure/arrival coordinates from adjacent visits to ensure continuous, gapless street geometries.
+
+14. **Micro-Mobility Dock Reconciliation & Canonical Place Integrity**:
+    - **NEVER** leave micro-mobility trip legs (`CYCLING`, `ON_BICYCLE`, `SCOOTER`) unflanked by verified origin and destination dock stops, and **NEVER** insert synthetic UUID place IDs (`citi_bike_<uuid>`) when canonical `ChIJ` place entities exist in the catalog; **always** reconcile dock stops ($\le 80\text{ m}$) against the canonical places catalog and link physical 15-second arrival/departure dock visits with authentic local timezone timestamps.
+
+15. **Strict Typographic Contrast & Flexbox Truncation Integrity**:
+    - **NEVER** use light text colors (e.g. `#f8fafc`, `#facc15`, light pastels, or unconstrained cyan) on white (`#ffffff` or `#f8f9fa`) card surfaces, and **NEVER** render unescaped text in HTML `title="..."` attributes or omit `min-width: 0; flex: 1;` on flexbox text truncation elements; **always** verify WCAG AA compliant text contrast ($\ge 4.5:1$), enforce `escapeHtml()` on all user-facing strings, and assign `min-width: 0; flex: 1;` with `flex-shrink: 0` on time labels to prevent typography clashing or truncation bugs.
+
 ---
 
 ## 7. Full-Life Multi-Source Reconstruction & Production vs. Test Visual Diff Standard
@@ -210,3 +234,40 @@ No deployment or round-trip of reconstructed timeline data back to the productio
    - `PRAGMA integrity_check` on all databases (`odlh-storage.db`, `portable_geller_*.db`, `aux-odlh-storage.db`) must return `ok`.
    - 100% of protobuf blobs in `semantic_segment_table` must deserialize cleanly through standard Google Maps / GMS Protobuf parsers with zero unrecognized tag drops or byte truncations.
    - The master database must first be deployed to the rooted `Pixel 8` and pass live UI smoke tests (opening Google Maps Timeline, navigating days, verifying bottom sheet unrolling, and zero GMS crashes) *before* triggering E2EE cloud backup to production.
+
+---
+
+## 9. Web Server, REST API & Full-Stack Consumer Contract Verification Standard
+
+### Strategic Goal: Zero Frontend-Backend Desync & Strict Contract Compliance
+Local web studios and viewer backends (`server.py`, `api/`) are first-class production components. Server code refactoring or feature additions must never break frontend consumers (`static/app.js`, `static/index.html`). To permanently eliminate blind spot regressions and tautological tests, all changes must pass this 4-tier contract verification gate:
+
+### Mandatory 4-Tier Web Verification Gate
+
+1. **Tier 1: Static Route & Field Coverage Gate**:
+   - **Command:** `uv run python scripts/audit_api_contracts.py` (Must exit `0`).
+   - 100% of `/api/` fetch routes called in `static/app.js` must be registered in `api.router`.
+   - Any missing endpoint or misspelled route fails the gate immediately.
+
+2. **Tier 2: Typed Consumer Contract & Schema Assertion Gate**:
+   - All server response payloads must strictly conform to typed schemas in `api/schemas.py`.
+   - **Object vs. Array Invariant:** Endpoints consumed as objects (e.g. `/api/places/map-points` expecting `{latitude, longitude, name}`) must **never** return raw coordinate tuples (`[lat, lng]`) that trigger browser `TypeError`s.
+   - **Dictionary vs. List Invariant:** Multi-day matrix endpoints (e.g. `/api/calendar-range`) must return dictionaries indexed by date string (`days[dateStr]`), not flat lists.
+   - **Facet Counts Invariant:** Endpoints providing status filters (e.g. `/api/fixes`) must return complete facet count objects (`counts: {pending, accepted, rejected, total}`) preventing `undefined` UI badge interpolations.
+
+3. **Tier 3: End-to-End HTTP Wire Integration Gate**:
+   - **Commands:**
+     * `uv run python -m unittest tests/test_e2e_server.py` (Must exit `0`).
+     * `uv run python -m unittest tests/test_clean_api.py` (Must exit `0`).
+   - Tests must exercise full HTTP/1.1 wire parsing, headers, routing, static asset delivery (`/`, `/index.html`, `/app.js`, `/style.css`), gzip compression, and database mutations (segment CRUD, fix apply/reject).
+
+4. **Tier 4: Asset Proxy & Network Egress Smoke Gate**:
+   - When running services proxying remote assets (e.g. Google User Content `/api/photo`), the service must be launched with network egress permissions (`BypassSandbox: true`).
+   - The photo proxy must verify HTTP 200 delivery, image header validation (`image/jpeg`), and local disk caching under `~/.quick_galileo/photo_cache/`.
+
+### Mandatory Pre-Commit Checklist for Web & API Changes
+No commit modifying `server.py`, `api/`, `static/`, or related scripts is permitted without verifying:
+1. `uv run python scripts/audit_api_contracts.py` (Exit 0)
+2. `uv run python -m unittest tests/test_e2e_server.py` (Exit 0)
+3. `uv run python -m unittest tests/test_clean_api.py` (Exit 0)
+4. `uv run python -m py_compile api/*.py api/routes/*.py server.py` (Exit 0)
