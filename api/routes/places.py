@@ -23,9 +23,14 @@ def get_places(req: Request) -> Response:
     city = req.get_str("city")
     reviewed_only = req.get_bool("reviewed_only", False)
     sort_by = req.get_str("sort_by", "visits")
+    min_visits = req.get_int("min_visits", 1)
 
     where: List[str] = ["1=1"]
     params: List[Any] = []
+
+    if min_visits > 0:
+        where.append("visit_count >= ?")
+        params.append(min_visits)
 
     if q:
         where.append("(name LIKE ? OR address LIKE ? OR semantic_type LIKE ? OR city LIKE ? OR review_text LIKE ?)")
@@ -79,23 +84,24 @@ def get_places(req: Request) -> Response:
         else:
             p["review_photos"] = []
 
-    # Category and City Facets
+    # Category and City Facets (filtered by min_visits)
+    facet_min = max(0, min_visits)
     categories = query_all("""
         SELECT category, COUNT(*) as cnt, SUM(visit_count) as visits 
         FROM places 
-        WHERE category IS NOT NULL AND category != '' 
+        WHERE category IS NOT NULL AND category != '' AND visit_count >= ?
         GROUP BY category 
         ORDER BY visits DESC;
-    """)
+    """, [facet_min])
 
     cities = query_all("""
         SELECT city, country, COUNT(*) as cnt, SUM(visit_count) as visits
         FROM places
-        WHERE city IS NOT NULL AND city NOT IN ('Unknown', 'Other', '')
+        WHERE city IS NOT NULL AND city NOT IN ('Unknown', 'Other', '') AND visit_count >= ?
         GROUP BY city, country
         ORDER BY visits DESC
         LIMIT 30;
-    """)
+    """, [facet_min])
 
     # Total count for pagination
     total_row = query_one(f"SELECT COUNT(*) as cnt FROM places {where_sql};", params)
@@ -112,15 +118,51 @@ def get_places(req: Request) -> Response:
     })
 
 
+@router.get("/api/places/visits")
+def get_place_visits(req: Request) -> Response:
+    """Returns complete list of visits for a given place_id."""
+    place_id = req.get_str("place_id")
+    if not place_id:
+        return error_response("Missing place_id parameter", status_code=400)
+
+    visits = query_all("""
+        SELECT id, date, start_time, end_time, duration_minutes, place_name, 
+               place_address, latitude, longitude, category, semantic_type
+        FROM segments
+        WHERE place_id = ?
+        ORDER BY start_time DESC;
+    """, (place_id,))
+
+    place_meta = query_one("""
+        SELECT place_id, name, address, category, city, country, latitude, longitude, 
+               visit_count, review_rating, first_visit_time, last_visit_time
+        FROM places
+        WHERE place_id = ?;
+    """, (place_id,))
+
+    return json_response({
+        "status": "SUCCESS",
+        "place_id": place_id,
+        "place": place_meta,
+        "count": len(visits),
+        "visits": visits,
+    })
+
+
 @router.get("/api/places/map-points")
 def get_places_map_points(req: Request) -> Response:
     """Returns lightweight coordinates and metadata objects for interactive map clustering."""
     category = req.get_str("category")
     city = req.get_str("city")
     q = req.get_str("q")
+    min_visits = req.get_int("min_visits", 1)
 
     where: List[str] = ["latitude IS NOT NULL", "longitude IS NOT NULL", "latitude != 0.0"]
     params: List[Any] = []
+
+    if min_visits > 0:
+        where.append("visit_count >= ?")
+        params.append(min_visits)
 
     if category and category.upper() != "ALL":
         where.append("category = ?")

@@ -15,12 +15,12 @@
     {
       "id": 3,
       "description": "Add /api/places/visits and visited-only default filtering to api/routes/places.py",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Implement /api/insights/activity-summaries in api/routes/trips.py",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 5,
