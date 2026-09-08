@@ -1,6 +1,6 @@
 {
   "goal": "Optimize Places tab snappiness/caching, list all place visits, single global search, Activities & Insights tab, authentic place IDs, dynamic dates, and AGENTS.md hardening.",
-  "active_step_id": 1,
+  "active_step_id": 9,
   "steps": [
     {
       "id": 1,
@@ -30,22 +30,22 @@
     {
       "id": 6,
       "description": "Implement Places tab caching, full visit history modal, Activities & Insights tab, and audit all UI targets in app.js",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 7,
       "description": "Add styles for Activities tab and Place Visits modal in style.css",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 8,
       "description": "Run 4-tier verification gates (contracts audit, e2e tests, clean api tests, py_compile)",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 9,
       "description": "Update AGENTS.md with learned invariants 16-19 and commit changes",
-      "status": "pending"
+      "status": "completed"
     }
   ],
   "context_cache": {

@@ -171,6 +171,18 @@ State-Step: <step_id from state.json>
 15. **Strict Typographic Contrast & Flexbox Truncation Integrity**:
     - **NEVER** use light text colors (e.g. `#f8fafc`, `#facc15`, light pastels, or unconstrained cyan) on white (`#ffffff` or `#f8f9fa`) card surfaces, and **NEVER** render unescaped text in HTML `title="..."` attributes or omit `min-width: 0; flex: 1;` on flexbox text truncation elements; **always** verify WCAG AA compliant text contrast ($\ge 4.5:1$), enforce `escapeHtml()` on all user-facing strings, and assign `min-width: 0; flex: 1;` with `flex-shrink: 0` on time labels to prevent typography clashing or truncation bugs.
 
+16. **Zero Synthetic / Stale Proposal Invariant**:
+    - **NEVER** insert, stage, or leave synthetic place IDs or fake placeholder entities (e.g. `citi_bike_<slug>`, `target_id = 0`) in fix proposal tables or place catalogs; **always** map physical station docks and stopovers directly to authentic canonical Google Maps `ChIJ` place entities with valid 20-byte cell/fingerprint encodings, and verify that 100% of candidate fix proposals target existing, valid segments.
+
+17. **Strict Visit-Synchronized Place Facets & Zero-Visit Clutter Elimination**:
+    - **NEVER** expose random unvisited category clusters (e.g. `airport`, `Transit`, `Leisure & Park`) or zero-visit place entities in default UI filter pills, dropdowns, or map point layers; **always** enforce `visit_count >= 1` default filtering across `/api/places` and `/api/places/map-points`, normalize raw categories into canonical taxonomies (`Travel & Transit`, `Arts & Entertainment`, `Food & Drink`), and recompute catalog `visit_count` aggregations strictly against authentic database visits. When a place card reports $N$ visits, **always** provide an exhaustive modal/list of all $N$ recorded visits with timestamps, durations, and jump buttons.
+
+18. **Single Universal Search Architecture**:
+    - **NEVER** fragment search inputs across tabs with separate, disconnected search inputs (e.g. separate places, trips, and header search boxes); **always** provide exactly 1 universal global search box (`#global-search-input`) in the top navigation header that searches holistically across days, months, places, countries, and categories, actively synchronizing results with whichever view or tab is active.
+
+19. **Dynamic Temporal State & Zero Hardcoded Epoch Defaults**:
+    - **NEVER** hardcode static past dates (e.g. `"2005-08-15"`, `"2026-08-19"`) into calendar matrices, date pickers, or jump buttons; **always** dynamically initialize views from URL query parameters (`?date=`) falling back to the user's local today (`getLocalToday()`), and wire all era jump buttons (including Today) with deterministic temporal arithmetic.
+
 ---
 
 ## 7. Full-Life Multi-Source Reconstruction & Production vs. Test Visual Diff Standard
