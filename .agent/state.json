@@ -30,12 +30,12 @@
     {
       "id": 6,
       "description": "Run verification gates (audit_api_contracts, e2e tests, clean api tests)",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 7,
       "description": "Conduct retrospective and update AGENTS.md with learned invariants 11-15",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "context_cache": {
