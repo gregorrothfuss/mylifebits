@@ -657,7 +657,7 @@ document.addEventListener("DOMContentLoaded", () => {
             childHtml = `
               <div class="nested-child-box" style="margin-top:8px;padding:8px 10px;background:rgba(6,182,212,0.08);border-left:3px solid #06b6d4;border-radius:6px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                  <span style="font-size:10px;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:0.5px;">
+                  <span style="font-size:10px;font-weight:700;color:#0e7490;text-transform:uppercase;letter-spacing:0.5px;">
                     <i class="fa-solid fa-sitemap"></i> Venues Inside:
                   </span>
                 </div>
@@ -666,7 +666,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   const totStr = g.totalMins >= 60 ? `${(g.totalMins/60).toFixed(1)}h` : `${Math.round(g.totalMins)}m`;
                   return `
                     <div style="margin-top:4px;font-size:12px;display:flex;align-items:center;gap:6px;">
-                      <strong style="color:#f8fafc;"><i class="fa-solid ${getPlaceIcon(g.name, g.category)}" style="color:#22d3ee;font-size:11px;"></i> ${escapeHtml(g.name)}</strong>
+                      <strong style="color:var(--text-main);"><i class="fa-solid ${getPlaceIcon(g.name, g.category)}" style="color:#0284c7;font-size:11px;"></i> ${escapeHtml(g.name)}</strong>
                       <span class="tag-badge child-tag" style="font-size:10px;"><i class="fa-regular fa-clock"></i> ${totStr}</span>
                     </div>
                   `;
@@ -681,17 +681,17 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
             <div class="item-body">
               <div class="item-title-row">
-                <span class="item-title" title="${title}">${title}</span>
+                <span class="item-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
                 <span class="item-time">${timeStr}</span>
               </div>
-              <div class="item-address" title="${addr}">${addr}</div>
+              <div class="item-address" title="${escapeHtml(addr)}">${escapeHtml(addr)}</div>
               <div class="item-tags">
                 <span class="tag-badge"><i class="fa-regular fa-clock"></i> ${durStr}</span>
-                ${isPrevDayStart ? '<span class="tag-badge" style="background:rgba(192,132,252,0.15);color:#c084fc;font-size:10px;"><i class="fa-solid fa-moon"></i> Overnight Stay</span>' : ''}
-                <span class="tag-badge category-tag">${cat}</span>
-                ${s.source === 'plazes' ? '<span class="tag-badge" style="background:rgba(234,179,8,0.15);color:#eab308;font-size:10px;font-weight:600;"><i class="fa-solid fa-bolt"></i> Plazes</span>' : ''}
+                ${isPrevDayStart ? '<span class="tag-badge" style="background:#f3e8ff;color:#6b21a8;border:1px solid #e9d5ff;font-size:10px;font-weight:600;"><i class="fa-solid fa-moon"></i> Overnight Stay</span>' : ''}
+                <span class="tag-badge category-tag">${escapeHtml(cat)}</span>
+                ${s.source === 'plazes' ? '<span class="tag-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;font-weight:600;"><i class="fa-solid fa-bolt"></i> Plazes</span>' : ''}
                 ${rating ? `<span class="tag-badge review-tag" title="Your Personal Rating: ${rating} Stars">${renderStars(rating)}</span>` : ''}
-                ${s.review_photos && s.review_photos.length ? `<span class="tag-badge" style="font-size:10px;background:rgba(59,130,246,0.15);color:#60a5fa;"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
+                ${s.review_photos && s.review_photos.length ? `<span class="tag-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
                 <button class="icon-btn edit-place-btn" style="width:20px;height:20px;font-size:10px;margin-left:auto;" title="Edit Visit Details"><i class="fa-solid fa-pen"></i></button>
               </div>
               ${s.review_text || (s.review_photos && s.review_photos.length) ? `
@@ -820,19 +820,21 @@ document.addEventListener("DOMContentLoaded", () => {
             displayDistKm = (estM / 1000.0).toFixed(1);
           }
 
+          const actTitle = `${actType.replace(/_/g, ' ')}${isSameDockLoop ? ' (Round-Trip Loop)' : (isStationaryActivity ? ' · Stationary Dwell / Pause' : '')}`;
+
           card.innerHTML = `
             <div class="item-icon ${modeClass}">
               <i class="fa-solid ${iconClass}"></i>
             </div>
             <div class="item-body">
               <div class="item-title-row">
-                <span class="item-title">${actType.replace(/_/g, ' ')}${isSameDockLoop ? ' (Round-Trip Loop)' : (isStationaryActivity ? ' · Stationary Dwell / Pause' : '')}</span>
+                <span class="item-title" title="${escapeHtml(actTitle)}">${escapeHtml(actTitle)}</span>
                 <span class="item-time">${timeStr}</span>
               </div>
               <div class="item-address">${isStationaryActivity ? `Stationary dwell (${durStr})` : `${displayDistKm} km · ${durStr}${isSameDockLoop ? ' · Out & Back' : ''}`}</div>
               <div class="item-tags">
                 ${isStationaryActivity 
-                  ? `<span class="tag-badge" style="background:rgba(234,179,8,0.12);color:#facc15;font-size:10px;"><i class="fa-solid fa-pause"></i> Stationary Pause (${durStr})</span>`
+                  ? `<span class="tag-badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fef08a;font-size:10px;font-weight:600;"><i class="fa-solid fa-pause"></i> Stationary Pause (${durStr})</span>`
                   : `<span class="tag-badge"><i class="fa-solid fa-arrows-left-right"></i> ${displayDistKm} km</span>`
                 }
                 ${hasSnapped ? '<span class="tag-badge snapped"><i class="fa-solid fa-route"></i> Snapped Route</span>' : ''}
