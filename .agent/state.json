@@ -1,6 +1,6 @@
 {
   "goal": "Systematically refactor server code, contract auditing, test suite, and AGENTS.md to permanently eliminate client-server desync and blind spot regressions.",
-  "active_step_id": 5,
+  "active_step_id": 6,
   "steps": [
     {
       "id": 1,
@@ -25,12 +25,12 @@
     {
       "id": 5,
       "description": "Update AGENTS.md with Section 9: Full-Stack Consumer Contract Verification Standard and Learned Invariant rules",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 6,
       "description": "Verify all gates (contract audit, e2e suite, ruff) and commit",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "context_cache": {
