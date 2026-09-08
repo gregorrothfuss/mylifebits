@@ -1,53 +1,60 @@
 {
-  "goal": "Systematically refactor server code, contract auditing, test suite, and AGENTS.md to permanently eliminate client-server desync and blind spot regressions.",
-  "active_step_id": 6,
+  "goal": "Ingest pristine Pixel 10 GeoJSON, repair server/frontend date navigation, path coverage, Citi Bike docks, and contrast, then harden AGENTS.md.",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Audit and catalog all frontend API contracts from static/app.js to establish the immutable client-server contract matrix",
+      "description": "Ingest pristine Pixel 10 GeoJSON into timeline_viewer.db (Aug 20 - Sep 8, 2026)",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Refactor api/schemas.py with strict, typed response models for all client endpoints",
-      "status": "completed"
+      "description": "Fix frontend date navigation, today jump, max date, and back button (static/app.js, static/index.html)",
+      "status": "in_progress"
     },
     {
       "id": 3,
-      "description": "Implement scripts/audit_api_contracts.py to statically and dynamically verify 100% field, key, and type parity between static/app.js and api/routes/",
-      "status": "completed"
+      "description": "Run systemic path repair (adjacent visit endpoint propagation and road snapping)",
+      "status": "pending"
     },
     {
       "id": 4,
-      "description": "Implement tests/test_e2e_server.py testing live HTTP endpoints, asset proxies, and full-stack integration",
-      "status": "completed"
+      "description": "Reconcile Citi Bike stations and link CYCLING legs to canonical dock stations",
+      "status": "pending"
     },
     {
       "id": 5,
-      "description": "Update AGENTS.md with Section 9: Full-Stack Consumer Contract Verification Standard and Learned Invariant rules",
-      "status": "completed"
+      "description": "Fix place title illegibility, contrast, and flexbox ellipsis truncation (static/style.css, static/app.js)",
+      "status": "pending"
     },
     {
       "id": 6,
-      "description": "Verify all gates (contract audit, e2e suite, ruff) and commit",
-      "status": "completed"
+      "description": "Run verification gates (audit_api_contracts, e2e tests, clean api tests)",
+      "status": "pending"
+    },
+    {
+      "id": 7,
+      "description": "Conduct retrospective and update AGENTS.md with learned invariants 11-15",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "AGENTS.md",
-      "api/schemas.py",
-      "api/routes/*.py",
-      "scripts/audit_api_contracts.py",
-      "tests/test_e2e_server.py"
+      "pixel10_export/Timeline-20260908.json",
+      "timeline_viewer.db",
+      "static/app.js",
+      "static/index.html",
+      "static/style.css",
+      "AGENTS.md"
     ],
     "test_files": [
+      "scripts/audit_api_contracts.py",
       "tests/test_e2e_server.py",
       "tests/test_clean_api.py"
     ],
     "scratch_logs": [
       ".agent/scratch/pytest.log",
-      ".agent/scratch/contract_audit.log"
+      ".agent/scratch/ingest.log"
     ]
   }
 }
