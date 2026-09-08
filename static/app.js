@@ -344,6 +344,8 @@ document.addEventListener("DOMContentLoaded", () => {
       setTimeout(() => map && map.invalidateSize(), 150);
     } else if (targetTab === "calendar") {
       loadCalendarMatrix();
+    } else if (targetTab === "activities") {
+      loadActivitySummaries();
     } else if (targetTab === "trips") {
       loadPassportStats();
       loadTrips();
@@ -1400,26 +1402,52 @@ document.addEventListener("DOMContentLoaded", () => {
     "Leisure & Park": "#22c55e"
   };
 
+  // Places in-memory cache & state
+  const placesCache = new Map();
+  let cachedMapPoints = null;
+  let currentPlacesQuery = "";
+
   async function loadAllPlacesMap(query = "") {
     if (!placesMap) return;
     const countLabel = document.getElementById("places-map-count-label");
     if (countLabel) countLabel.textContent = "Loading places map...";
 
-    const url = `/api/places/map-points?category=${encodeURIComponent(currentCategory)}&city=${encodeURIComponent(currentCity)}&q=${encodeURIComponent(query)}`;
     try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.status !== "SUCCESS" || !data.points) return;
+      if (!cachedMapPoints) {
+        const res = await fetch("/api/places/map-points?min_visits=1");
+        const data = await res.json();
+        if (data.status === "SUCCESS" && data.points) {
+          cachedMapPoints = data.points;
+        }
+      }
 
       placesLayerGroup.clearLayers();
-      allPlacesMapData = data.points;
+      let points = cachedMapPoints || [];
+
+      // Filter in-memory for instant response
+      if (currentCategory && currentCategory !== "ALL") {
+        points = points.filter(p => p.category === currentCategory);
+      }
+      if (currentCity && currentCity !== "ALL") {
+        points = points.filter(p => p.city === currentCity);
+      }
+      if (query) {
+        const qLower = query.toLowerCase();
+        points = points.filter(p => 
+          (p.name || "").toLowerCase().includes(qLower) || 
+          (p.address || "").toLowerCase().includes(qLower) ||
+          (p.city || "").toLowerCase().includes(qLower)
+        );
+      }
+
+      allPlacesMapData = points;
 
       if (countLabel) {
-        countLabel.textContent = `${data.points.length.toLocaleString()} places plotted`;
+        countLabel.textContent = `${points.length.toLocaleString()} places plotted`;
       }
 
       const bounds = [];
-      data.points.forEach(p => {
+      points.forEach(p => {
         if (!p.latitude || !p.longitude) return;
         bounds.push([p.latitude, p.longitude]);
 
@@ -1463,19 +1491,24 @@ document.addEventListener("DOMContentLoaded", () => {
               <span style="background:var(--bg-main);border:1px solid var(--border-color);padding:2px 6px;border-radius:4px;font-weight:600;"><strong>${visits}</strong> visits</span>
             </div>
             ${dateRangeStr ? `<div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;"><i class="fa-regular fa-calendar"></i> ${dateRangeStr}</div>` : ''}
-            ${lastDate ? `
-              <button class="btn btn-sm btn-primary" style="width:100%;font-size:11px;padding:4px 8px;cursor:pointer;" onclick="window.jumpToTimelineDay('${lastDate}', true, 'places')">
-                <i class="fa-solid fa-route"></i> Jump to Last Visit (${lastDate})
+            <div style="display:flex;gap:6px;margin-top:4px;">
+              <button class="btn btn-sm btn-primary" style="flex:1;font-size:11px;padding:4px 8px;cursor:pointer;" onclick="openPlaceVisitsModal('${p.place_id}', '${escapeHtml(p.name || '').replace(/'/g, "\\'")}')">
+                <i class="fa-solid fa-list"></i> All Visits (${visits})
               </button>
-            ` : ''}
+              ${lastDate ? `
+                <button class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;cursor:pointer;" onclick="window.jumpToTimelineDay('${lastDate}', true, 'places')">
+                  <i class="fa-solid fa-route"></i> Last Visit
+                </button>
+              ` : ''}
+            </div>
           </div>
         `);
 
         marker.addTo(placesLayerGroup);
       });
 
-      // If filtered by query or city and bounds exist, fit bounds
-      if ((query || currentCity !== "ALL") && bounds.length > 0) {
+      // If filtered and bounds exist, fit bounds
+      if ((query || currentCity !== "ALL" || (currentCategory && currentCategory !== "ALL")) && bounds.length > 0) {
         placesMap.fitBounds(L.latLngBounds(bounds), { maxZoom: 15, padding: [30, 30] });
       }
     } catch (e) {
@@ -1484,122 +1517,250 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Load Places Catalog with Category & City Filtering
+  // Load Places Catalog with Category & City Filtering and in-memory caching
   async function loadPlaces(query = "") {
+    currentPlacesQuery = query;
     loadLifePeriods();
     loadAllPlacesMap(query);
-    const grid = document.getElementById("places-grid-container");
-    grid.innerHTML = '<div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading Places Catalog...</div>';
 
-    const url = `/api/places?q=${encodeURIComponent(query)}&category=${encodeURIComponent(currentCategory)}&city=${encodeURIComponent(currentCity)}&reviewed_only=${reviewedOnly ? 1 : 0}&sort_by=${currentSort}&limit=120`;
+    const grid = document.getElementById("places-grid-container");
+    const cacheKey = `${query}_${currentCategory}_${currentCity}_${reviewedOnly}_${currentSort}`;
+
+    // Render immediately from cache if available
+    if (placesCache.has(cacheKey)) {
+      renderPlacesData(placesCache.get(cacheKey));
+      return;
+    }
+
+    grid.innerHTML = '<div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading Places Catalog...</div>';
+    const url = `/api/places?q=${encodeURIComponent(query)}&category=${encodeURIComponent(currentCategory)}&city=${encodeURIComponent(currentCity)}&reviewed_only=${reviewedOnly ? 1 : 0}&sort_by=${currentSort}&limit=120&min_visits=1`;
 
     try {
       const res = await fetch(url);
       const data = await res.json();
-
       if (data.status === "SUCCESS") {
-        const pillsContainer = document.getElementById("category-pills-container");
-        if (pillsContainer && data.categories) {
-          pillsContainer.innerHTML = `<button class="cat-pill ${currentCategory === 'ALL' ? 'active' : ''}" data-cat="ALL">All Categories</button>`;
-          data.categories.forEach(c => {
-            const btn = document.createElement("button");
-            btn.className = `cat-pill ${currentCategory === c.category ? 'active' : ''}`;
-            btn.setAttribute("data-cat", c.category);
-            const icon = CATEGORY_ICONS[c.category] || 'fa-tag';
-            btn.innerHTML = `<i class="fa-solid ${icon}"></i> ${c.category} (${c.cnt})`;
-            btn.addEventListener("click", () => {
-              document.querySelectorAll(".cat-pill").forEach(p => p.classList.remove("active"));
-              btn.classList.add("active");
-              currentCategory = c.category;
-              loadPlaces(document.getElementById("places-search-input")?.value || "");
-            });
-            pillsContainer.appendChild(btn);
-          });
-          pillsContainer.querySelector('[data-cat="ALL"]')?.addEventListener("click", () => {
-            document.querySelectorAll(".cat-pill").forEach(p => p.classList.remove("active"));
-            pillsContainer.querySelector('[data-cat="ALL"]').classList.add("active");
-            currentCategory = "ALL";
-            loadPlaces(document.getElementById("places-search-input")?.value || "");
-          });
-        }
-
-        const citySelect = document.getElementById("places-city-select");
-        if (citySelect && data.cities && citySelect.options.length <= 1) {
-          data.cities.forEach(ct => {
-            if (ct.city && ct.city !== 'Unknown') {
-              const opt = document.createElement("option");
-              opt.value = ct.city;
-              opt.textContent = `${ct.city} (${ct.places_cnt} places, ${ct.visits} visits)`;
-              citySelect.appendChild(opt);
-            }
-          });
-        }
-
-        grid.innerHTML = "";
-        if (data.places.length === 0) {
-          grid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;"><p>No places found matching current filter.</p></div>';
-          return;
-        }
-
-        data.places.forEach(p => {
-          const card = document.createElement("div");
-          card.className = "place-card";
-          const cat = p.category || "Other / POI";
-          const catIcon = getPlaceIcon(p.name, cat, p.semantic_type);
-          const stars = renderStars(p.review_rating);
-
-          card.innerHTML = `
-            <div>
-              <div class="place-header">
-                <div>
-                  <span class="place-name">${p.name || 'Home/Place'}</span>
-                  ${stars ? `<div style="margin-top:2px;">${stars}</div>` : ''}
-                </div>
-                <span class="place-visits">${p.visit_count} visits</span>
-              </div>
-              <div class="place-address" style="margin-top:6px;">${p.address || (p.latitude ? `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}` : 'No address')}</div>
-              ${p.review_text ? `<div class="review-snippet-box">"${escapeHtml(p.review_text.slice(0, 100))}..."</div>` : ''}
-              ${p.review_photos && p.review_photos.length ? `
-                <div class="review-photos-strip" style="margin-top:6px;">
-                  ${p.review_photos.map((url, idx) => `
-                    <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(p.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(p.name || '').replace(/'/g, "\\'")}', '${escapeHtml(p.review_text || '').replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${p.review_photos.length})">
-                      <img class="review-photo-thumb" style="width:48px;height:48px;" src="${getPhotoUrl(url, 200)}" alt="Place photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
-                    </div>
-                  `).join('')}
-                </div>
-              ` : ''}
-            </div>
-            <div class="place-footer">
-              <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                <span class="tag-badge category-tag"><i class="fa-solid ${catIcon}"></i> ${cat}</span>
-                ${p.city && p.city !== 'Unknown' ? `<span class="tag-badge city-tag">${p.city}</span>` : ''}
-              </div>
-              <button class="btn-secondary view-place-btn" style="padding:4px 8px;font-size:11px;"><i class="fa-solid fa-map-pin"></i> View</button>
-            </div>
-          `;
-
-          card.querySelector(".view-place-btn")?.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (p.latitude && p.longitude && placesMap) {
-              placesMap.flyTo([p.latitude, p.longitude], 17, { duration: 0.8 });
-              document.getElementById("places-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-          });
-
-          card.addEventListener("click", () => {
-            if (p.latitude && p.longitude && placesMap) {
-              placesMap.flyTo([p.latitude, p.longitude], 17, { duration: 0.8 });
-              document.getElementById("places-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-          });
-
-          grid.appendChild(card);
-        });
+        placesCache.set(cacheKey, data);
+        renderPlacesData(data);
       }
     } catch (e) {
       console.error("Error loading places:", e);
+      grid.innerHTML = `<div class="empty-state">Error loading places: ${escapeHtml(e.message)}</div>`;
     }
   }
+
+  function renderPlacesData(data) {
+    const grid = document.getElementById("places-grid-container");
+    if (!grid) return;
+
+    const pillsContainer = document.getElementById("category-pills-container");
+    if (pillsContainer && data.categories) {
+      pillsContainer.innerHTML = `<button class="cat-pill ${currentCategory === 'ALL' ? 'active' : ''}" data-cat="ALL">All Categories</button>`;
+      data.categories.forEach(c => {
+        const btn = document.createElement("button");
+        btn.className = `cat-pill ${currentCategory === c.category ? 'active' : ''}`;
+        btn.setAttribute("data-cat", c.category);
+        const icon = CATEGORY_ICONS[c.category] || 'fa-tag';
+        btn.innerHTML = `<i class="fa-solid ${icon}"></i> ${c.category} (${c.cnt})`;
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".cat-pill").forEach(p => p.classList.remove("active"));
+          btn.classList.add("active");
+          currentCategory = c.category;
+          loadPlaces(currentPlacesQuery);
+        });
+        pillsContainer.appendChild(btn);
+      });
+      pillsContainer.querySelector('[data-cat="ALL"]')?.addEventListener("click", () => {
+        document.querySelectorAll(".cat-pill").forEach(p => p.classList.remove("active"));
+        pillsContainer.querySelector('[data-cat="ALL"]').classList.add("active");
+        currentCategory = "ALL";
+        loadPlaces(currentPlacesQuery);
+      });
+    }
+
+    const citySelect = document.getElementById("places-city-select");
+    if (citySelect && data.cities && citySelect.options.length <= 1) {
+      data.cities.forEach(ct => {
+        if (ct.city && ct.city !== 'Unknown') {
+          const opt = document.createElement("option");
+          opt.value = ct.city;
+          opt.textContent = `${ct.city} (${ct.cnt || ct.places_cnt} places, ${ct.visits} visits)`;
+          citySelect.appendChild(opt);
+        }
+      });
+    }
+
+    grid.innerHTML = "";
+    if (data.places.length === 0) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;"><p>No places found matching current filter.</p></div>';
+      return;
+    }
+
+    data.places.forEach(p => {
+      const card = document.createElement("div");
+      card.className = "place-card";
+      const cat = p.category || "Other / POI";
+      const catIcon = getPlaceIcon(p.name, cat, p.semantic_type);
+      const stars = renderStars(p.review_rating);
+
+      card.innerHTML = `
+        <div>
+          <div class="place-header">
+            <div>
+              <span class="place-name">${escapeHtml(p.name || 'Place')}</span>
+              ${stars ? `<div style="margin-top:2px;">${stars}</div>` : ''}
+            </div>
+            <span class="place-visits" style="cursor:pointer;" title="Click to view all ${p.visit_count} visits">${p.visit_count} visits</span>
+          </div>
+          <div class="place-address" style="margin-top:6px;">${escapeHtml(p.address || (p.latitude ? `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}` : 'No address'))}</div>
+          ${p.review_text ? `<div class="review-snippet-box">"${escapeHtml(p.review_text.slice(0, 100))}..."</div>` : ''}
+          ${p.review_photos && p.review_photos.length ? `
+            <div class="review-photos-strip" style="margin-top:6px;">
+              ${p.review_photos.map((url, idx) => `
+                <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(p.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(p.name || '').replace(/'/g, "\\'")}', '${escapeHtml(p.review_text || '').replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${p.review_photos.length})">
+                  <img class="review-photo-thumb" style="width:48px;height:48px;" src="${getPhotoUrl(url, 200)}" alt="Place photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+        <div class="place-footer">
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <span class="tag-badge category-tag"><i class="fa-solid ${catIcon}"></i> ${cat}</span>
+            ${p.city && p.city !== 'Unknown' ? `<span class="tag-badge city-tag">${escapeHtml(p.city)}</span>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-primary list-visits-btn" style="padding:4px 8px;font-size:11px;" title="View complete visit history"><i class="fa-solid fa-list"></i> Visits</button>
+            <button class="btn-secondary view-place-btn" style="padding:4px 8px;font-size:11px;" title="Fly to location on map"><i class="fa-solid fa-map-pin"></i> View</button>
+          </div>
+        </div>
+      `;
+
+      card.querySelector(".view-place-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (p.latitude && p.longitude && placesMap) {
+          placesMap.flyTo([p.latitude, p.longitude], 17, { duration: 0.8 });
+          document.getElementById("places-map")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+
+      card.querySelector(".list-visits-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openPlaceVisitsModal(p.place_id, p.name);
+      });
+
+      card.querySelector(".place-visits")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openPlaceVisitsModal(p.place_id, p.name);
+      });
+
+      card.addEventListener("click", () => {
+        openPlaceVisitsModal(p.place_id, p.name);
+      });
+
+      grid.appendChild(card);
+    });
+  }
+
+  // Place Visits History Modal
+  window.openPlaceVisitsModal = openPlaceVisitsModal;
+  async function openPlaceVisitsModal(placeId, placeName) {
+    const modal = document.getElementById("place-visits-modal");
+    const body = document.getElementById("place-visits-body");
+    const titleEl = document.getElementById("place-visits-title");
+    const subEl = document.getElementById("place-visits-subtitle");
+    if (!modal || !body) return;
+
+    modal.style.display = "flex";
+    modal.classList.remove("hidden");
+    if (titleEl) titleEl.textContent = placeName || "Place Visits";
+    if (subEl) subEl.textContent = "Loading visit records...";
+    body.innerHTML = '<div class="loading-spinner" style="padding:40px;text-align:center;"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading all visit records...</div>';
+
+    try {
+      const res = await fetch(`/api/places/visits?place_id=${encodeURIComponent(placeId)}`);
+      const data = await res.json();
+
+      if (data.status !== "SUCCESS" || !data.visits) {
+        body.innerHTML = '<div class="empty-state">No visits recorded for this place.</div>';
+        return;
+      }
+
+      if (titleEl) titleEl.textContent = data.place?.name || placeName || "Place Visits";
+      if (subEl) {
+        const addr = data.place?.address ? ` · ${data.place.address}` : '';
+        subEl.textContent = `${data.count} total recorded visits${addr}`;
+      }
+
+      if (data.visits.length === 0) {
+        body.innerHTML = '<div class="empty-state">No visits found.</div>';
+        return;
+      }
+
+      let html = `
+        <div class="place-visits-table-wrapper" style="overflow-x:auto;">
+          <table class="table" style="width:100%;font-size:12.5px;border-collapse:collapse;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border-color);text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;">
+                <th style="padding:8px 10px;">#</th>
+                <th style="padding:8px 10px;">Date</th>
+                <th style="padding:8px 10px;">Time Window</th>
+                <th style="padding:8px 10px;">Duration</th>
+                <th style="padding:8px 10px;text-align:right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      data.visits.forEach((v, idx) => {
+        const startStr = v.start_time ? v.start_time.slice(11, 16) : '--:--';
+        const endStr = v.end_time ? v.end_time.slice(11, 16) : '--:--';
+        const durMin = Math.round(v.duration_minutes || 0);
+        let durStr = `${durMin} min`;
+        if (durMin >= 60) {
+          const hrs = Math.floor(durMin / 60);
+          const rem = durMin % 60;
+          durStr = rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
+        }
+
+        html += `
+          <tr style="border-bottom:1px solid var(--border-color);transition:background 0.15s;" onmouseover="this.style.background='var(--bg-subtle)'" onmouseout="this.style.background='transparent'">
+            <td style="padding:8px 10px;color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${idx + 1}</td>
+            <td style="padding:8px 10px;font-weight:600;color:var(--text-main);font-family:var(--font-mono);">${v.date}</td>
+            <td style="padding:8px 10px;color:var(--text-muted);">${startStr} – ${endStr}</td>
+            <td style="padding:8px 10px;"><span class="tag-badge" style="font-size:11px;background:rgba(59,130,246,0.12);color:var(--accent-blue);font-weight:600;">${durStr}</span></td>
+            <td style="padding:8px 10px;text-align:right;">
+              <button class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:11px;cursor:pointer;" onclick="closePlaceVisitsModal(); window.jumpToTimelineDay('${v.date}', true, 'places')">
+                <i class="fa-solid fa-route"></i> Jump
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      body.innerHTML = html;
+    } catch (e) {
+      console.error("Error loading place visits:", e);
+      body.innerHTML = `<div class="empty-state">Error loading visit history: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  window.closePlaceVisitsModal = closePlaceVisitsModal;
+  function closePlaceVisitsModal() {
+    const modal = document.getElementById("place-visits-modal");
+    if (modal) {
+      modal.style.display = "none";
+      modal.classList.add("hidden");
+    }
+  }
+
+  document.getElementById("btn-close-place-visits")?.addEventListener("click", closePlaceVisitsModal);
+  document.getElementById("btn-done-place-visits")?.addEventListener("click", closePlaceVisitsModal);
 
   // Load Contributor Reviews Tab
   async function loadReviews(query = "") {
@@ -3523,46 +3684,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("gap-filter-duration")?.addEventListener("change", loadDiagnosticsGaps);
 
+    function getGlobalSearchQuery() {
+      return document.getElementById("global-search-input")?.value?.trim() || "";
+    }
+
     // Category Filter Pills
     document.querySelectorAll(".cat-pill").forEach(pill => {
       pill.addEventListener("click", () => {
         document.querySelectorAll(".cat-pill").forEach(p => p.classList.remove("active"));
         pill.classList.add("active");
         currentCategory = pill.getAttribute("data-cat");
-        loadPlaces(document.getElementById("places-search-input")?.value?.trim() || "");
+        loadPlaces(getGlobalSearchQuery());
       });
     });
 
     // City Selector
     document.getElementById("places-city-select")?.addEventListener("change", (e) => {
       currentCity = e.target.value;
-      loadPlaces(document.getElementById("places-search-input")?.value?.trim() || "");
+      loadPlaces(getGlobalSearchQuery());
     });
 
     // Sort Selector
     document.getElementById("places-sort-select")?.addEventListener("change", (e) => {
       currentSort = e.target.value;
-      loadPlaces(document.getElementById("places-search-input")?.value?.trim() || "");
+      loadPlaces(getGlobalSearchQuery());
     });
 
     // Reviewed Only Toggle
     document.getElementById("places-reviewed-only")?.addEventListener("change", (e) => {
       reviewedOnly = e.target.checked;
-      loadPlaces(document.getElementById("places-search-input")?.value?.trim() || "");
-    });
-
-    // Places Search Debounce
-    let searchTimeout = null;
-    document.getElementById("places-search-input")?.addEventListener("input", (e) => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(() => loadPlaces(e.target.value.trim()), 300);
-    });
-
-    // Trips Search Debounce
-    let tripTimeout = null;
-    document.getElementById("trips-search-input")?.addEventListener("input", (e) => {
-      clearTimeout(tripTimeout);
-      tripTimeout = setTimeout(() => loadTrips(e.target.value.trim()), 300);
+      loadPlaces(getGlobalSearchQuery());
     });
 
     const modalEl = document.getElementById("modal-container");
@@ -3606,7 +3757,7 @@ document.addEventListener("DOMContentLoaded", () => {
           document.querySelectorAll(".country-pill").forEach(p => p.classList.remove("active"));
           allPill.classList.add("active");
           currentTripCountry = "ALL";
-          loadTrips(document.getElementById("trips-search-input").value.trim(), "ALL");
+          loadTrips(getGlobalSearchQuery(), "ALL");
         });
         pillsContainer.appendChild(allPill);
 
@@ -3618,7 +3769,7 @@ document.addEventListener("DOMContentLoaded", () => {
             document.querySelectorAll(".country-pill").forEach(p => p.classList.remove("active"));
             pill.classList.add("active");
             currentTripCountry = c.country;
-            loadTrips(document.getElementById("trips-search-input").value.trim(), c.country);
+            loadTrips(getGlobalSearchQuery(), c.country);
           });
           pillsContainer.appendChild(pill);
         });
@@ -3629,6 +3780,219 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Error loading passport stats:", e);
     }
   }
+
+  // -------------------------------------------------------------
+  // Activity Summaries & Insights Tab Loader
+  // -------------------------------------------------------------
+  let currentActivityPeriod = "all";
+
+  async function loadActivitySummaries(period = null) {
+    if (period) currentActivityPeriod = period;
+    const heroGrid = document.getElementById("activities-hero-grid");
+    const pillsContainer = document.getElementById("activities-period-pills-container");
+    const bar = document.getElementById("mode-progress-bar");
+    const cardsGrid = document.getElementById("mode-cards-grid");
+    const nuggetsGrid = document.getElementById("activities-nuggets-container");
+    const topPlacesEl = document.getElementById("activities-top-places");
+    const rareModesEl = document.getElementById("activities-rare-modes");
+    const subLabel = document.getElementById("activities-period-sub");
+
+    if (heroGrid) heroGrid.innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;padding:30px;"><i class="fa-solid fa-circle-notch fa-spin"></i> Calculating Activity Summaries...</div>';
+
+    try {
+      const res = await fetch(`/api/insights/activity-summaries?period=${encodeURIComponent(currentActivityPeriod)}`);
+      const data = await res.json();
+      if (data.status !== "SUCCESS") return;
+
+      if (subLabel) {
+        subLabel.textContent = currentActivityPeriod === "all" ? 
+          "Comprehensive lifetime movement metrics across your entire timeline" : 
+          `Movement and distance breakdown for calendar year ${currentActivityPeriod}`;
+      }
+
+      // 1. Period Pills
+      if (pillsContainer && data.available_periods) {
+        pillsContainer.innerHTML = "";
+        data.available_periods.forEach(p => {
+          const btn = document.createElement("button");
+          btn.className = `cat-pill ${currentActivityPeriod === p ? 'active' : ''}`;
+          btn.textContent = p === "all" ? "All Time" : p;
+          btn.addEventListener("click", () => {
+            currentActivityPeriod = p;
+            loadActivitySummaries(p);
+          });
+          pillsContainer.appendChild(btn);
+        });
+      }
+
+      // 2. Hero Cards
+      if (heroGrid) {
+        const tot = data.totals || {};
+        heroGrid.innerHTML = `
+          <div class="stat-card card" style="padding:16px;">
+            <div style="font-size:11.5px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:4px;">Total Distance</div>
+            <div style="font-size:24px;font-weight:800;color:var(--accent-blue);font-family:var(--font-mono);">${tot.total_distance_km ? tot.total_distance_km.toLocaleString() : 0} <span style="font-size:14px;font-weight:600;">km</span></div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Across ${tot.total_activities ? tot.total_activities.toLocaleString() : 0} movements</div>
+          </div>
+          <div class="stat-card card" style="padding:16px;">
+            <div style="font-size:11.5px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:4px;">Time in Motion</div>
+            <div style="font-size:24px;font-weight:800;color:var(--accent-green);font-family:var(--font-mono);">${tot.total_hours ? tot.total_hours.toLocaleString() : 0} <span style="font-size:14px;font-weight:600;">hrs</span></div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Active transit & journey time</div>
+          </div>
+          <div class="stat-card card" style="padding:16px;">
+            <div style="font-size:11.5px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:4px;">Bicycle Travel</div>
+            <div style="font-size:24px;font-weight:800;color:#f59e0b;font-family:var(--font-mono);">${tot.cycle_km ? tot.cycle_km.toLocaleString() : 0} <span style="font-size:14px;font-weight:600;">km</span></div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${tot.transcon_cycles || 0}x Coast-to-Coast USA equivalents</div>
+          </div>
+          <div class="stat-card card" style="padding:16px;">
+            <div style="font-size:11.5px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:4px;">Cosmic Flight</div>
+            <div style="font-size:24px;font-weight:800;color:#a855f7;font-family:var(--font-mono);">${tot.fly_km ? tot.fly_km.toLocaleString() : 0} <span style="font-size:14px;font-weight:600;">km</span></div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${tot.earth_orbits || 0}x Earth orbits · ${tot.moon_trips || 0}x Moon distance</div>
+          </div>
+        `;
+      }
+
+      // 3. Mode Progress Bar
+      if (bar) {
+        bar.innerHTML = "";
+        (data.modes || []).forEach(m => {
+          if (m.pct_distance > 0.5) {
+            const seg = document.createElement("div");
+            seg.style.width = `${m.pct_distance}%`;
+            seg.style.background = m.color;
+            seg.title = `${m.label}: ${m.total_km.toLocaleString()} km (${m.pct_distance}%)`;
+            bar.appendChild(seg);
+          }
+        });
+      }
+
+      // 4. Mode Cards Grid
+      if (cardsGrid) {
+        cardsGrid.innerHTML = "";
+        (data.modes || []).forEach(m => {
+          const card = document.createElement("div");
+          card.className = "mode-summary-card card";
+          card.style.padding = "14px 16px";
+          card.style.display = "flex";
+          card.style.alignItems = "center";
+          card.style.gap = "12px";
+          card.style.borderLeft = `4px solid ${m.color}`;
+
+          card.innerHTML = `
+            <div style="width:38px;height:38px;border-radius:8px;background:${m.color}20;color:${m.color};display:flex;align-items:center;justify-content:center;font-size:16px;">
+              <i class="fa-solid ${m.icon}"></i>
+            </div>
+            <div style="flex:1;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <strong style="font-size:13.5px;color:var(--text-main);">${escapeHtml(m.label)}</strong>
+                <span class="tag-badge" style="font-size:10.5px;background:${m.color}20;color:${m.color};font-weight:700;">${m.pct_distance}%</span>
+              </div>
+              <div style="display:flex;gap:12px;margin-top:4px;font-size:12px;color:var(--text-muted);font-family:var(--font-mono);">
+                <span><strong style="color:var(--text-main);">${m.total_km.toLocaleString()}</strong> km</span>
+                <span><strong style="color:var(--text-main);">${m.total_hours.toLocaleString()}</strong> hrs</span>
+                <span><strong>${m.count.toLocaleString()}</strong> legs</span>
+              </div>
+            </div>
+          `;
+          cardsGrid.appendChild(card);
+        });
+      }
+
+      // 5. Curated Nuggets
+      if (nuggetsGrid) {
+        nuggetsGrid.innerHTML = "";
+        (data.curated_nuggets || []).forEach(n => {
+          const card = document.createElement("div");
+          card.className = "nugget-card card";
+          card.style.padding = "16px";
+          card.innerHTML = `
+            <div class="nugget-badge" style="background:${n.accent}20;color:${n.accent};font-size:11px;font-weight:700;display:inline-block;padding:3px 8px;border-radius:4px;margin-bottom:8px;">
+              <i class="fa-solid ${n.icon}"></i> ${escapeHtml(n.badge || n.category)}
+            </div>
+            <div class="nugget-title" style="font-size:14px;font-weight:700;color:var(--text-main);margin-bottom:4px;">${escapeHtml(n.title)}</div>
+            <div class="nugget-subtitle" style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">
+              <i class="fa-regular fa-calendar"></i> ${n.date} · ${escapeHtml(n.subtitle)}
+            </div>
+            <div class="nugget-why" style="font-size:12px;color:var(--text-muted);line-height:1.4;">
+              ${escapeHtml(n.why)}
+            </div>
+          `;
+          if (n.date && n.date !== "Lifetime") {
+            card.style.cursor = "pointer";
+            card.title = `Jump to timeline for ${n.date}`;
+            card.addEventListener("click", () => jumpToTimelineDay(n.date, true));
+          }
+          nuggetsGrid.appendChild(card);
+        });
+      }
+
+      // 6. Top Visited Venues
+      if (topPlacesEl) {
+        topPlacesEl.innerHTML = "";
+        (data.top_places || []).forEach((p, idx) => {
+          const row = document.createElement("div");
+          row.style.display = "flex";
+          row.style.alignItems = "center";
+          row.style.justifyContent = "space-between";
+          row.style.padding = "8px 12px";
+          row.style.background = "var(--bg-subtle)";
+          row.style.borderRadius = "8px";
+          row.style.fontSize = "12px";
+          row.style.cursor = "pointer";
+
+          row.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-weight:700;color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">#${idx + 1}</span>
+              <strong style="color:var(--text-main);">${escapeHtml(p.name)}</strong>
+              ${p.city ? `<span style="color:var(--text-muted);font-size:11px;">(${escapeHtml(p.city)})</span>` : ''}
+            </div>
+            <span class="tag-badge" style="font-size:10.5px;background:rgba(59,130,246,0.15);color:var(--accent-blue);font-weight:700;">
+              ${p.visit_count} visits
+            </span>
+          `;
+          row.addEventListener("click", () => openPlaceVisitsModal(p.place_id, p.name));
+          topPlacesEl.appendChild(row);
+        });
+      }
+
+      // 7. Rare Micro-Adventures
+      if (rareModesEl) {
+        rareModesEl.innerHTML = "";
+        (data.rare_modes || []).forEach(r => {
+          const pill = document.createElement("div");
+          pill.style.display = "flex";
+          pill.style.alignItems = "center";
+          pill.style.gap = "6px";
+          pill.style.padding = "6px 12px";
+          pill.style.background = `${r.color}18`;
+          pill.style.border = `1px solid ${r.color}40`;
+          pill.style.borderRadius = "20px";
+          pill.style.fontSize = "11.5px";
+          pill.style.color = r.color;
+          pill.style.fontWeight = "600";
+          pill.style.cursor = r.highlight_date ? "pointer" : "default";
+
+          pill.innerHTML = `
+            <i class="fa-solid ${r.icon}"></i>
+            <span>${escapeHtml(r.title)} (${r.count}x · ${r.total_km} km)</span>
+          `;
+          if (r.highlight_date) {
+            pill.title = `View peak session on ${r.highlight_date} (${r.highlight_dist_km} km)`;
+            pill.addEventListener("click", () => jumpToTimelineDay(r.highlight_date, true));
+          }
+          rareModesEl.appendChild(pill);
+        });
+      }
+
+    } catch (e) {
+      console.error("Error loading activity summaries:", e);
+      if (heroGrid) heroGrid.innerHTML = `<div class="empty-state">Error loading activity summaries: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  document.getElementById("btn-refresh-activity-nuggets")?.addEventListener("click", () => {
+    loadActivitySummaries(currentActivityPeriod);
+  });
 
   // -------------------------------------------------------------
   // Archive Nuggets & Curiosities Loader
@@ -4174,14 +4538,28 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
+    let tabLiveSearchTimer = null;
     input.addEventListener("input", () => {
       const q = input.value.trim();
       if (clearBtn) clearBtn.style.display = q ? "block" : "none";
+
+      const activeTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "";
+
       if (!q) {
         dropdown.style.display = "none";
         dropdown.innerHTML = "";
         currentResults = [];
+        if (activeTab === "places") loadPlaces("");
+        else if (activeTab === "trips") loadTrips("", currentTripCountry);
         return;
+      }
+
+      if (activeTab === "places") {
+        clearTimeout(tabLiveSearchTimer);
+        tabLiveSearchTimer = setTimeout(() => loadPlaces(q), 250);
+      } else if (activeTab === "trips") {
+        clearTimeout(tabLiveSearchTimer);
+        tabLiveSearchTimer = setTimeout(() => loadTrips(q, currentTripCountry), 250);
       }
 
       clearTimeout(debounceTimer);
@@ -4257,6 +4635,9 @@ document.addEventListener("DOMContentLoaded", () => {
       dropdown.style.display = "none";
       dropdown.innerHTML = "";
       input.focus();
+      const activeTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "";
+      if (activeTab === "places") loadPlaces("");
+      else if (activeTab === "trips") loadTrips("", currentTripCountry);
     });
 
     document.addEventListener("click", (e) => {
@@ -4344,18 +4725,42 @@ document.addEventListener("DOMContentLoaded", () => {
       dropdown.style.display = "none";
       if (!it) return;
 
+      if (it.type === "PLACE" || it.place_id) {
+        switchTab("places");
+        if (it.place_id) {
+          openPlaceVisitsModal(it.place_id, it.title);
+        } else {
+          loadPlaces(it.title);
+        }
+        if (it.latitude && it.longitude && typeof placesMap !== "undefined" && placesMap) {
+          setTimeout(() => {
+            placesMap.flyTo([it.latitude, it.longitude], 16, { duration: 0.8 });
+          }, 350);
+        }
+        return;
+      }
+
+      if (it.type === "CATEGORY") {
+        switchTab("places");
+        currentCategory = it.title.replace("Category: ", "").trim();
+        loadPlaces();
+        return;
+      }
+
+      if (it.type === "LOCATION") {
+        switchTab("trips");
+        loadTrips(it.title, "ALL");
+        return;
+      }
+
       const targetDate = it.date;
       if (targetDate) {
         jumpToTimelineDay(targetDate, true, "search");
-        if (it.latitude && it.longitude) {
+        if (it.latitude && it.longitude && typeof map !== "undefined" && map) {
           setTimeout(() => {
             map.flyTo([it.latitude, it.longitude], 16, { duration: 0.8 });
           }, 350);
         }
-      } else if (it.type === "CATEGORY") {
-        switchTab("places");
-        currentCategory = it.title.replace("Category: ", "").trim();
-        loadPlaces();
       }
     }
   }
@@ -4449,7 +4854,7 @@ window.addEventListener("keydown", (e) => {
 /* ==========================================================================
    MULTI-DAY CALENDAR MATRIX VIEW ENGINE
    ========================================================================== */
-let calFocusDate = "2005-08-15";
+let calFocusDate = null;
 
 function getWeekDateRange(dateStr) {
   const d = new Date(dateStr + "T12:00:00Z");
@@ -4471,6 +4876,8 @@ function getWeekDateRange(dateStr) {
 async function loadCalendarMatrix(customDate = null) {
   if (customDate) {
     calFocusDate = customDate;
+  } else if (!calFocusDate) {
+    calFocusDate = (typeof currentDate !== 'undefined' && currentDate) ? currentDate : getLocalToday();
   }
   
   const datePicker = document.getElementById("cal-date-picker");
@@ -4693,10 +5100,15 @@ function initCalendarMatrixEvents() {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".cal-jump-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
+      if (btn.id === "cal-jump-today-btn") {
+        calFocusDate = getLocalToday();
+        loadCalendarMatrix(calFocusDate);
+        return;
+      }
       const targetDate = btn.getAttribute("data-date");
       if (targetDate) {
         calFocusDate = targetDate;
-        loadCalendarMatrix();
+        loadCalendarMatrix(calFocusDate);
       }
     });
   });
