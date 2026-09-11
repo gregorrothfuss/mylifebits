@@ -1,6 +1,6 @@
 {
   "goal": "Comprehensive reverse-engineering audit of Google Maps Timeline (GMSCore & Maps client) for correctness bugs and performance bottlenecks, formatted into self-contained engineering reports.",
-  "active_step_id": 4,
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
@@ -20,6 +20,11 @@
     {
       "id": 4,
       "description": "Draft Report 4: Zero-Regression Patch Specification, SQL Migrations, Java Patches, and Verification Suite (timeline_audit_report_4_patch_specification.md)",
+      "status": "completed"
+    },
+    {
+      "id": 5,
+      "description": "Incorporate domain feedback: Purposeful monotonicity, legal requirements (tombstones & retention), robust Feature ID architecture, holistic performance audit beyond edits, and Pixel 8 connectivity",
       "status": "completed"
     }
   ],
