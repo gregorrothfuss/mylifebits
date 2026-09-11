@@ -1,70 +1,33 @@
 {
-  "goal": "Optimize Places tab snappiness/caching, list all place visits, single global search, Activities & Insights tab, authentic place IDs, dynamic dates, and AGENTS.md hardening.",
-  "active_step_id": 9,
+  "goal": "Comprehensive reverse-engineering audit of Google Maps Timeline (GMSCore & Maps client) for correctness bugs and performance bottlenecks, formatted into self-contained engineering reports.",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Purge stale fake proposals and upgrade remaining 26 Citi Bike segments to canonical ChIJ IDs",
+      "description": "Deep-dive reverse engineering of GMSCore and GMM bytecode: edit lifecycle, merge algorithm, batch validation, retention trimming, sync, and cleanup jobs",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Synchronize places table visit counts, normalize categories, and merge duplicate Miami Airport",
+      "description": "Draft Report 2: Correctness, Data Loss, Midnight Splits, Batch Rules, and Silent Drops (timeline_audit_report_2_correctness_data_loss.md)",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Add /api/places/visits and visited-only default filtering to api/routes/places.py",
+      "description": "Draft Report 3: Sync, Retention Window Clamping, Flash Wear, and Table Mutation Hazards (timeline_audit_report_3_sync_retention_storage.md)",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Implement /api/insights/activity-summaries in api/routes/trips.py",
-      "status": "completed"
-    },
-    {
-      "id": 5,
-      "description": "Consolidate to single global search, remove duplicate search inputs, and fix hardcoded dates in index.html",
-      "status": "completed"
-    },
-    {
-      "id": 6,
-      "description": "Implement Places tab caching, full visit history modal, Activities & Insights tab, and audit all UI targets in app.js",
-      "status": "completed"
-    },
-    {
-      "id": 7,
-      "description": "Add styles for Activities tab and Place Visits modal in style.css",
-      "status": "completed"
-    },
-    {
-      "id": 8,
-      "description": "Run 4-tier verification gates (contracts audit, e2e tests, clean api tests, py_compile)",
-      "status": "completed"
-    },
-    {
-      "id": 9,
-      "description": "Update AGENTS.md with learned invariants 16-19 and commit changes",
+      "description": "Draft Report 4: Zero-Regression Patch Specification, SQL Migrations, Java Patches, and Verification Suite (timeline_audit_report_4_patch_specification.md)",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "api/routes/places.py",
-      "api/routes/trips.py",
-      "static/index.html",
-      "static/app.js",
-      "static/style.css",
-      "AGENTS.md"
+      ".agent/state.json"
     ],
-    "test_files": [
-      "scripts/audit_api_contracts.py",
-      "tests/test_e2e_server.py",
-      "tests/test_clean_api.py"
-    ],
-    "scratch_logs": [
-      ".agent/scratch/pytest.log"
-    ]
+    "test_files": [],
+    "scratch_logs": []
   }
 }
-
