@@ -1,18 +1,30 @@
 {
-  "goal": "Author authoritative engineering specification for safe bi-directional timeline round-tripping between Web UI and Pixel 10.",
-  "active_step_id": 1,
+  "goal": "Restore 10 authentic place visits swallowed into moving segments back into timeline_viewer.db from 2024 Takeout archive.",
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Author comprehensive round-trip and two-way synchronization specification in docs/ROUNDTRIP_SYNC_SPECIFICATION.md",
+      "description": "Backup timeline_viewer.db and author targeted restoration script scripts/restore_swallowed_takeout_visits.py",
+      "status": "completed"
+    },
+    {
+      "id": 2,
+      "description": "Execute restoration script to split swallowing moving segments and insert authentic place visits",
+      "status": "completed"
+    },
+    {
+      "id": 3,
+      "description": "Verify monotonicity, zero temporal overlaps, and test API contracts",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "docs/ROUNDTRIP_SYNC_SPECIFICATION.md"
+      "scripts/restore_swallowed_takeout_visits.py"
     ],
-    "test_files": [],
+    "test_files": [
+      "tests/test_clean_api.py"
+    ],
     "scratch_logs": []
   }
 }
