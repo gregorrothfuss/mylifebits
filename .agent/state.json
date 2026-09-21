@@ -1,38 +1,41 @@
 {
-  "goal": "Comprehensive reverse-engineering audit of Google Maps Timeline (GMSCore & Maps client) for correctness bugs and performance bottlenecks, formatted into self-contained engineering reports.",
-  "active_step_id": 5,
+  "goal": "Rename project from quick-galileo to gregor-mylifebits across manifests, cache paths, user-agents, docs, and scripts.",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Deep-dive reverse engineering of GMSCore and GMM bytecode: edit lifecycle, merge algorithm, batch validation, retention trimming, sync, and cleanup jobs",
+      "description": "Update package manifest pyproject.toml, regenerate uv.lock, and purge obsolete root db placeholder",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Draft Report 2: Correctness, Data Loss, Midnight Splits, Batch Rules, and Silent Drops (timeline_audit_report_2_correctness_data_loss.md)",
-      "status": "completed"
+      "description": "Update core API routes, engine user-agents, and agent documentation",
+      "status": "in_progress"
     },
     {
       "id": 3,
-      "description": "Draft Report 3: Sync, Retention Window Clamping, Flash Wear, and Table Mutation Hazards (timeline_audit_report_3_sync_retention_storage.md)",
-      "status": "completed"
+      "description": "Update dominance verification reports and workspace scripts with renamed path references",
+      "status": "pending"
     },
     {
       "id": 4,
-      "description": "Draft Report 4: Zero-Regression Patch Specification, SQL Migrations, Java Patches, and Verification Suite (timeline_audit_report_4_patch_specification.md)",
-      "status": "completed"
-    },
-    {
-      "id": 5,
-      "description": "Refine reports to strictly respect legal requirements (tombstones & retention untouched), avoid touching FID wire formats, acknowledge fixed Places tab, and integrate Pixel 8a fresh Maps 26.36 extraction",
-      "status": "completed"
+      "description": "Run API contract auditor and full end-to-end integration test suite",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      ".agent/state.json"
+      "pyproject.toml",
+      "uv.lock",
+      "api/routes/photos.py",
+      "api/url_resolver.py",
+      "road_snapper.py",
+      "agents.md"
     ],
-    "test_files": [],
+    "test_files": [
+      "tests/test_clean_api.py",
+      "tests/test_e2e_server.py"
+    ],
     "scratch_logs": []
   }
 }
