@@ -1,6 +1,6 @@
 import os, subprocess, time
 
-WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/quick-galileo'
+WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/gregor-mylifebits'
 ADB = os.path.join(WORKSPACE_DIR, 'platform-tools', 'adb')
 SERIAL = '192.168.1.36:5555'
 

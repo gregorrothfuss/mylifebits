@@ -1,6 +1,6 @@
 import os, subprocess, time
 
-WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/quick-galileo'
+WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/gregor-mylifebits'
 ARTIFACT_DIR = '/Users/rothfuss/.gemini/antigravity/brain/af2352af-830e-4cd4-9dfd-8f765759d408'
 MEDIA_DIR = os.path.join(ARTIFACT_DIR, 'media_feb2014')
 os.makedirs(MEDIA_DIR, exist_ok=True)

@@ -1,8 +1,8 @@
 # Strict 5-Tier Dominance & Zero Data Loss Verification Report
 
 **Generated:** 2026-09-08T14:52:12.642835+00:00  
-**Master Database:** `/Users/rothfuss/Documents/antigravity/quick-galileo/timeline_viewer.db`  
-**Baseline Export:** `/Users/rothfuss/Documents/antigravity/quick-galileo/pixel10_export/Timeline-latest.json`  
+**Master Database:** `/Users/rothfuss/Documents/antigravity/gregor-mylifebits/timeline_viewer.db`  
+**Baseline Export:** `/Users/rothfuss/Documents/antigravity/gregor-mylifebits/pixel10_export/Timeline-latest.json`  
 **Gate Result:** **PASSED — AUTHORIZED FOR PRODUCTION ROUND-TRIP**
 
 ---

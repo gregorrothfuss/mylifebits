@@ -1,6 +1,6 @@
 {
   "goal": "Rename project from quick-galileo to gregor-mylifebits across manifests, cache paths, user-agents, docs, and scripts.",
-  "active_step_id": 3,
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
@@ -15,31 +15,38 @@
     {
       "id": 3,
       "description": "Update dominance verification reports and workspace scripts with renamed path references",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Run API contract auditor and full end-to-end integration test suite",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "context_cache": {
     "target_files": [
-      "pyproject.toml",
-      "uv.lock",
-      "api/routes/photos.py",
-      "api/url_resolver.py",
-      "road_snapper.py",
-      "agents.md",
       "docs/DOMINANCE_VERIFICATION_REPORT.md",
-      "docs/DOMINANCE_VERIFICATION_REPORT.json"
+      "docs/DOMINANCE_VERIFICATION_REPORT.json",
+      "scripts/analyze_all_365_days.py",
+      "scripts/capture_all_feb2014_definitive.py",
+      "scripts/capture_all_feb2014_systematic.py",
+      "scripts/capture_baseline_2014_all365.py",
+      "scripts/capture_baseline_2014_fixed.py",
+      "scripts/capture_baseline_feb2014_full.py",
+      "scripts/capture_cleaned_2014_all365.py",
+      "scripts/capture_feb2014_verified.py",
+      "scripts/capture_full_2014_baseline_and_cleaned.py",
+      "scripts/capture_real_baseline_feb2014_active.py",
+      "scripts/compile_2014_full_audit.py",
+      "scripts/deploy_authentic_gms_baseline.py",
+      "scripts/generate_authentic_comparison_suite.py",
+      "scripts/generate_january_2014_full_scroll_suite.py",
+      "scripts/verify_february_2014_full.py"
     ],
     "test_files": [
       "tests/test_clean_api.py",
       "tests/test_e2e_server.py"
     ],
-    "scratch_logs": [
-      ".agent/scratch/test_step2.log"
-    ]
+    "scratch_logs": []
   }
 }

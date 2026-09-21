@@ -1,7 +1,7 @@
 import os, sys, sqlite3, datetime, zoneinfo
 from PIL import Image, ImageDraw, ImageFont
 
-WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/quick-galileo'
+WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/gregor-mylifebits'
 MEDIA_DIR = '/Users/rothfuss/.gemini/antigravity/brain/af2352af-830e-4cd4-9dfd-8f765759d408/media_2014_full'
 OUT_DIR = '/Users/rothfuss/.gemini/antigravity/brain/af2352af-830e-4cd4-9dfd-8f765759d408/media_jan2014_real_comparison'
 os.makedirs(OUT_DIR, exist_ok=True)

@@ -1,6 +1,6 @@
 import os, datetime, sqlite3, glob
 
-WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/quick-galileo'
+WORKSPACE_DIR = '/Users/rothfuss/Documents/antigravity/gregor-mylifebits'
 ARTIFACT_DIR = '/Users/rothfuss/.gemini/antigravity/brain/af2352af-830e-4cd4-9dfd-8f765759d408'
 MEDIA_DIR = os.path.join(ARTIFACT_DIR, 'media_2014_full')
 
