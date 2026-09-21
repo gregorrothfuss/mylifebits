@@ -1,45 +1,18 @@
 {
-  "goal": "Rename project from quick-galileo to gregor-mylifebits across manifests, cache paths, user-agents, docs, and scripts.",
-  "active_step_id": 4,
+  "goal": "Author authoritative engineering specification for safe bi-directional timeline round-tripping between Web UI and Pixel 10.",
+  "active_step_id": 1,
   "steps": [
     {
       "id": 1,
-      "description": "Update package manifest pyproject.toml, regenerate uv.lock, and purge obsolete root db placeholder",
-      "status": "completed"
-    },
-    {
-      "id": 2,
-      "description": "Update core API routes, engine user-agents, and agent documentation",
-      "status": "completed"
-    },
-    {
-      "id": 3,
-      "description": "Update dominance verification reports and workspace scripts with renamed path references",
-      "status": "completed"
-    },
-    {
-      "id": 4,
-      "description": "Run API contract auditor and full end-to-end integration test suite",
+      "description": "Author comprehensive round-trip and two-way synchronization specification in docs/ROUNDTRIP_SYNC_SPECIFICATION.md",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "pyproject.toml",
-      "uv.lock",
-      "api/routes/photos.py",
-      "api/url_resolver.py",
-      "road_snapper.py",
-      "agents.md",
-      "docs/DOMINANCE_VERIFICATION_REPORT.md",
-      "docs/DOMINANCE_VERIFICATION_REPORT.json"
+      "docs/ROUNDTRIP_SYNC_SPECIFICATION.md"
     ],
-    "test_files": [
-      "tests/test_clean_api.py",
-      "tests/test_e2e_server.py"
-    ],
-    "scratch_logs": [
-      ".agent/scratch/test_final.log"
-    ]
+    "test_files": [],
+    "scratch_logs": []
   }
 }
