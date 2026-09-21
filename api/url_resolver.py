@@ -88,7 +88,7 @@ def resolve_google_maps_url(input_str: str) -> Dict[str, Any]:
     if res["latitude"] and res["longitude"]:
         try:
             r_url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={res['latitude']}&lon={res['longitude']}"
-            r_req = urllib.request.Request(r_url, headers={"User-Agent": "QuickGalileo/1.0"})
+            r_req = urllib.request.Request(r_url, headers={"User-Agent": "GregorMyLifeBits/1.0"})
             with urllib.request.urlopen(r_req, context=ctx, timeout=4) as r_resp:
                 r_data = json.loads(r_resp.read().decode("utf-8"))
                 res["address"] = r_data.get("display_name")

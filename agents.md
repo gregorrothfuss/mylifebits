@@ -275,7 +275,7 @@ Local web studios and viewer backends (`server.py`, `api/`) are first-class prod
 
 4. **Tier 4: Asset Proxy & Network Egress Smoke Gate**:
    - When running services proxying remote assets (e.g. Google User Content `/api/photo`), the service must be launched with network egress permissions (`BypassSandbox: true`).
-   - The photo proxy must verify HTTP 200 delivery, image header validation (`image/jpeg`), and local disk caching under `~/.quick_galileo/photo_cache/`.
+   - The photo proxy must verify HTTP 200 delivery, image header validation (`image/jpeg`), and local disk caching under `~/.gregor_mylifebits/photo_cache/`.
 
 ### Mandatory Pre-Commit Checklist for Web & API Changes
 No commit modifying `server.py`, `api/`, `static/`, or related scripts is permitted without verifying:

@@ -1,6 +1,6 @@
 {
   "goal": "Rename project from quick-galileo to gregor-mylifebits across manifests, cache paths, user-agents, docs, and scripts.",
-  "active_step_id": 2,
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
@@ -10,12 +10,12 @@
     {
       "id": 2,
       "description": "Update core API routes, engine user-agents, and agent documentation",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Update dominance verification reports and workspace scripts with renamed path references",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 4,
@@ -30,12 +30,16 @@
       "api/routes/photos.py",
       "api/url_resolver.py",
       "road_snapper.py",
-      "agents.md"
+      "agents.md",
+      "docs/DOMINANCE_VERIFICATION_REPORT.md",
+      "docs/DOMINANCE_VERIFICATION_REPORT.json"
     ],
     "test_files": [
       "tests/test_clean_api.py",
       "tests/test_e2e_server.py"
     ],
-    "scratch_logs": []
+    "scratch_logs": [
+      ".agent/scratch/test_step2.log"
+    ]
   }
 }
