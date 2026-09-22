@@ -1,39 +1,44 @@
 {
-  "goal": "Restore all authentic Takeout place visits and resolve all generic 'Place visit' / 'Takeout Location' entities into authentic POIs and semantic aliases.",
-  "active_step_id": 4,
+  "goal": "Extract canonical Citi Bike rides and latest Pixel 8 backup, then integrate Citi Bike trips into master timeline with authentic multi-modal physics and strict stay protection.",
+  "active_step_id": 1,
   "steps": [
     {
       "id": 1,
-      "description": "Backup timeline_viewer.db and author batch restoration engine scripts/restore_all_swallowed_takeout_visits.py",
+      "description": "Scrape canonical Citi Bike rides (Aug 28 - Sep 21, 2026) directly from Citi Bike app UI into scratch/citibike_rides.db",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Execute batch restoration engine, slice swallowing activities, inject visits, and update places table",
+      "description": "Export or extract the restored Timeline backup from Pixel 8 and verify coverage up to yesterday",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Resolve all 144 generic 'Place visit' / 'Takeout Location' visits to authentic POIs, residences, and semantic aliases and clean micro-stubs",
+      "description": "Integrate Citi Bike trips into timeline_viewer.db with authentic multi-modal physics, dock stops, and zero stay truncation",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Verify temporal monotonicity, zero overlaps, and run test suites and API contract gates",
+      "description": "Verify temporal monotonicity, zero overlaps, stay protection on 2026-09-01/02, run test suites and API contract gates",
+      "status": "completed"
+    },
+    {
+      "id": 5,
+      "description": "Resolve all Citi Bike stations to canonical ChIJ Place IDs, snap approach/departure walk geometries, and eliminate river teleports",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/restore_all_swallowed_takeout_visits.py",
-      "scripts/resolve_generic_place_visits.py",
-      "scripts/clean_and_verify_all_restored_segments.py"
+      "scratch/citibike_rides.db",
+      "timeline_viewer.db"
     ],
     "test_files": [
       "tests/test_clean_api.py",
-      "tests/test_place_resolution_integrity.py",
       "tests/test_e2e_server.py"
     ],
-    "scratch_logs": []
+    "scratch_logs": [
+      ".agent/scratch/cb_scrape.log"
+    ]
   }
 }
