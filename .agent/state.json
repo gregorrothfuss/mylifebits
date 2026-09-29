@@ -1,44 +1,35 @@
 {
-  "goal": "Extract canonical Citi Bike rides and latest Pixel 8 backup, then integrate Citi Bike trips into master timeline with authentic multi-modal physics and strict stay protection.",
-  "active_step_id": 1,
+  "goal": "Install latest cloud backup onto Pixel device, arm telemetry capture, and diagnose the bug where visits do not get saved.",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Scrape canonical Citi Bike rides (Aug 28 - Sep 21, 2026) directly from Citi Bike app UI into scratch/citibike_rides.db",
+      "description": "Check device connection, inspect current screen and backup state",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Export or extract the restored Timeline backup from Pixel 8 and verify coverage up to yesterday",
+      "description": "Restore/install the latest cloud backup onto the device",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Integrate Citi Bike trips into timeline_viewer.db with authentic multi-modal physics, dock stops, and zero stay truncation",
+      "description": "Arm background logcat capture with verbose SQLite/LocationHistory tags",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Verify temporal monotonicity, zero overlaps, stay protection on 2026-09-01/02, run test suites and API contract gates",
-      "status": "completed"
-    },
-    {
-      "id": 5,
-      "description": "Resolve all Citi Bike stations to canonical ChIJ Place IDs, snap approach/departure walk geometries, and eliminate river teleports",
-      "status": "completed"
+      "description": "Capture and analyze trace when a visit fails to save",
+      "status": "in_progress"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scratch/citibike_rides.db",
-      "timeline_viewer.db"
+      ".agent/state.json"
     ],
-    "test_files": [
-      "tests/test_clean_api.py",
-      "tests/test_e2e_server.py"
-    ],
+    "test_files": [],
     "scratch_logs": [
-      ".agent/scratch/cb_scrape.log"
+      ".agent/scratch/visit_save_bug.logcat"
     ]
   }
 }
