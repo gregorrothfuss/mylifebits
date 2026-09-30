@@ -1,25 +1,25 @@
 {
-  "goal": "Support exhaustive person visits retrieval (1000+ visits) and dedicated person visits UI",
+  "goal": "Fix person search ranking, word boundary matching, face-prioritized photo selection, and modal routing",
   "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Create /api/people/visits endpoint returning exhaustive visits with photos for a tagged individual",
+      "description": "Refactor person matching and ranking in api/routes/search.py with word boundaries, photo count DESC ranking, and face_count > 0 photo selection",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Fix get_places_with_photos_for_concept in api/photo_search.py to query all places without artificial limit cap for person queries",
+      "description": "Improve photo selection in api/photo_search.py and get_person_visits to prioritize real photos with faces and avoid night/screenshots",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Add dedicated Person Visits Modal in static/app.js and wire person search clicks/enter to display exhaustive visits",
+      "description": "Fix executeSearchNow in static/app.js to always prioritize person search over tab overrides, and fix place card photo labels/hiding",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Run contract audit, execute test suite, restart server, verify end-to-end",
+      "description": "Run contract audit, execute test suite, restart service, verify end-to-end",
       "status": "completed"
     }
   ],

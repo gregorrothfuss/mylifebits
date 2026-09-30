@@ -57,66 +57,87 @@ def search(req: Request) -> Response:
     is_person_query = False
 
     if not m_iso and not m_us:
+        # Match candidate people by word boundaries in photos (starts with q, preceded by space, or preceded by comma)
+        photo_people_rows = query_all("""
+            SELECT people, count(*) as cnt
+            FROM photos
+            WHERE people LIKE ? OR people LIKE ? OR people LIKE ?
+            GROUP BY people
+            ORDER BY cnt DESC;
+        """, (f"{q}%", f"% {q}%", f"%, {q}%"))
+
+        candidate_counts: Dict[str, int] = {}
+        for pr in photo_people_rows:
+            raw_people = pr.get("people") or ""
+            for nm in raw_people.split(","):
+                nm = nm.strip()
+                words = nm.split()
+                if any(w.lower().startswith(q.lower()) for w in words):
+                    candidate_counts[nm] = candidate_counts.get(nm, 0) + pr["cnt"]
+
+        # Check contacts for exact name matches
         contact_rows = query_all("""
             SELECT name, email, phone, organization, full_address
             FROM contacts
-            WHERE name LIKE ?
-            LIMIT 3;
-        """, (f"%{q}%",))
+            WHERE name LIKE ? OR name LIKE ?;
+        """, (f"{q}%", f"% {q}%"))
 
-        photo_people_rows = query_all("""
-            SELECT people, count(*) as photo_cnt, max(timestamp_utc) as last_ts, max(sha256) as sample_sha
-            FROM photos
-            WHERE people LIKE ?
-            GROUP BY people
-            ORDER BY photo_cnt DESC
-            LIMIT 5;
-        """, (f"%{q}%",))
+        contact_map = {c["name"]: c for c in contact_rows}
+        for cname in contact_map:
+            if cname not in candidate_counts:
+                candidate_counts[cname] = 0
 
-        matched_names: set[str] = set()
-        for cr in contact_rows:
-            matched_names.add(cr["name"])
-        for pr in photo_people_rows:
-            for nm in pr["people"].split(","):
-                nm = nm.strip()
-                if q.lower() in nm.lower():
-                    matched_names.add(nm)
+        # Sort candidate people by photo count DESC, then name
+        sorted_candidates = sorted(candidate_counts.items(), key=lambda x: (x[1], x[0]), reverse=True)
 
-        if matched_names:
+        if sorted_candidates:
             is_person_query = True
-            for name in list(matched_names)[:2]:
-                cnt_row = query_one("""
-                    SELECT count(*) as total_photos, max(sha256) as top_sha
+            for name, p_count in sorted_candidates[:3]:
+                # Pick the best profile photo with detected faces, excluding screenshots
+                best_photo_row = query_one("""
+                    SELECT sha256, filename, face_count
                     FROM photos
-                    WHERE people LIKE ?;
-                """, (f"%{name}%",))
-                total_p = cnt_row["total_photos"] if cnt_row else 0
-                top_sha = cnt_row["top_sha"] if cnt_row else None
+                    WHERE (people LIKE ? OR people LIKE ? OR people LIKE ?) AND timestamp_utc IS NOT NULL
+                    ORDER BY (CASE WHEN face_count > 0 THEN 0 ELSE 1 END),
+                             (CASE WHEN filename LIKE 'Screen%' OR filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                             timestamp_utc DESC
+                    LIMIT 1;
+                """, (f"{name}%", f"% {name}%", f"%, {name}%"))
+                top_sha = best_photo_row["sha256"] if best_photo_row else None
 
-                # Retrieve all visit segments containing photos with this person via fast subquery
+                # Query visits with photos of this person, selecting best photo with face per visit
                 all_p_visits = query_all("""
                     SELECT s.id, s.date, s.start_time, s.end_time, s.duration_minutes,
                            s.place_name, s.place_address, s.place_id, s.category, s.city, s.latitude, s.longitude,
-                           count(p.sha256) as person_photo_cnt, max(p.sha256) as photo_sha
+                           count(p.sha256) as person_photo_cnt,
+                           (
+                               SELECT p2.sha256
+                               FROM photos p2
+                               WHERE p2.timestamp_utc >= s.start_ts AND p2.timestamp_utc <= s.end_ts
+                                 AND (p2.people LIKE ? OR p2.people LIKE ? OR p2.people LIKE ?)
+                               ORDER BY (CASE WHEN p2.face_count > 0 THEN 0 ELSE 1 END),
+                                        (CASE WHEN p2.filename LIKE 'Screen%' OR p2.filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                                        p2.timestamp_utc DESC
+                               LIMIT 1
+                           ) as photo_sha
                     FROM (
-                        SELECT sha256, filename, timestamp_utc, latitude, longitude, place_id
+                        SELECT sha256, timestamp_utc
                         FROM photos
-                        WHERE people LIKE ? AND timestamp_utc IS NOT NULL
+                        WHERE (people LIKE ? OR people LIKE ? OR people LIKE ?) AND timestamp_utc IS NOT NULL
                     ) p
                     JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
                     WHERE s.segment_type = 'visit'
                     GROUP BY s.id
                     ORDER BY s.date DESC;
-                """, (f"%{name}%",))
+                """, (f"{name}%", f"% {name}%", f"%, {name}%", f"{name}%", f"% {name}%", f"%, {name}%"))
 
                 total_v = len(all_p_visits)
-
-                contact_info = next((c for c in contact_rows if c["name"].lower() == name.lower()), None)
+                contact_info = contact_map.get(name)
                 sub_parts = []
                 if total_v > 0:
                     sub_parts.append(f"{total_v:,} visits")
-                if total_p > 0:
-                    sub_parts.append(f"{total_p:,} photos")
+                if p_count > 0:
+                    sub_parts.append(f"{p_count:,} photos")
                 if contact_info:
                     if contact_info.get("email"):
                         sub_parts.append(contact_info["email"])
@@ -128,14 +149,14 @@ def search(req: Request) -> Response:
                     "title": name,
                     "subtitle": " · ".join(sub_parts) if sub_parts else "Tagged person",
                     "name": name,
-                    "photo_count": total_p,
+                    "photo_count": p_count,
                     "visit_count": total_v,
                     "preview_url": f"/api/photo?sha256={top_sha}" if top_sha else None,
                     "sha256": top_sha,
                     "icon": "fa-user",
                 })
 
-                for pv in all_p_visits[:12]:
+                for pv in all_p_visits[:8]:
                     p_sha = pv["photo_sha"]
                     cnt = pv["person_photo_cnt"]
                     pname = pv["place_name"] or "Visit"
@@ -358,18 +379,27 @@ def get_person_visits(req: Request) -> Response:
 
     limit = min(2000, max(1, req.get_int("limit", 1500)))
     offset = max(0, req.get_int("offset", 0))
-    wildcard = f"%{name}%"
+    name_wildcards = (f"{name}%", f"% {name}%", f"%, {name}%")
 
-    # Query distinct visit segments overlapping photos of this person via fast subquery
+    # Query distinct visit segments overlapping photos of this person, selecting best photo with face
     sql = """
         SELECT s.id, s.date, s.start_time, s.end_time, s.duration_minutes,
                s.place_name, s.place_address, s.place_id, s.category, s.city, s.latitude, s.longitude,
                count(p.sha256) as photo_count,
-               group_concat(p.sha256) as photo_shas
+               (
+                   SELECT p2.sha256
+                   FROM photos p2
+                   WHERE p2.timestamp_utc >= s.start_ts AND p2.timestamp_utc <= s.end_ts
+                     AND (p2.people LIKE ? OR p2.people LIKE ? OR p2.people LIKE ?)
+                   ORDER BY (CASE WHEN p2.face_count > 0 THEN 0 ELSE 1 END),
+                            (CASE WHEN p2.filename LIKE 'Screen%' OR p2.filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                            p2.timestamp_utc DESC
+                   LIMIT 1
+               ) as top_sha
         FROM (
-            SELECT sha256, filename, timestamp_utc, latitude, longitude, place_id
+            SELECT sha256, timestamp_utc
             FROM photos
-            WHERE people LIKE ? AND timestamp_utc IS NOT NULL
+            WHERE (people LIKE ? OR people LIKE ? OR people LIKE ?) AND timestamp_utc IS NOT NULL
         ) p
         JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
         WHERE s.segment_type = 'visit'
@@ -377,21 +407,19 @@ def get_person_visits(req: Request) -> Response:
         ORDER BY s.date DESC, s.start_ts DESC
         LIMIT ? OFFSET ?;
     """
-    rows = query_all(sql, (wildcard, limit, offset))
+    rows = query_all(sql, name_wildcards + name_wildcards + (limit, offset))
 
     # Fetch contact info if available
     contact = query_one("""
         SELECT name, email, phone, organization, full_address
         FROM contacts
-        WHERE name LIKE ?
+        WHERE name LIKE ? OR name LIKE ?
         LIMIT 1;
-    """, (wildcard,))
+    """, (f"{name}%", f"% {name}%"))
 
     visits = []
     for r in rows:
-        raw_shas = r["photo_shas"] or ""
-        shas = [s.strip() for s in raw_shas.split(",") if s.strip()]
-        top_sha = shas[0] if shas else None
+        top_sha = r.get("top_sha")
 
         visits.append({
             "id": r["id"],
@@ -409,18 +437,18 @@ def get_person_visits(req: Request) -> Response:
             "photo_count": r["photo_count"],
             "preview_url": f"/api/photo?sha256={top_sha}" if top_sha else None,
             "sha256": top_sha,
-            "photo_shas": shas[:6],
         })
 
     # Compute total visit count across all time
     cnt_row = query_one("""
         SELECT count(DISTINCT s.id) as total_cnt
         FROM (
-            SELECT timestamp_utc FROM photos WHERE people LIKE ? AND timestamp_utc IS NOT NULL
+            SELECT timestamp_utc FROM photos
+            WHERE (people LIKE ? OR people LIKE ? OR people LIKE ?) AND timestamp_utc IS NOT NULL
         ) p
         JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
         WHERE s.segment_type = 'visit';
-    """, (wildcard,))
+    """, name_wildcards)
     total_visits = cnt_row["total_cnt"] if cnt_row else len(visits)
 
     return json_response({

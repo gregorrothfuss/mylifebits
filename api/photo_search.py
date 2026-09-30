@@ -218,43 +218,53 @@ def get_places_with_photos_for_concept(
     if not clean_q:
         return {}
 
-    # Check if query matches tagged people in photos
+    # Check if query matches tagged people in photos using word boundaries
+    wcards = (f"{clean_q}%", f"% {clean_q}%", f"%, {clean_q}%")
     person_check = query_one(
-        "SELECT count(*) as cnt FROM photos WHERE people LIKE ? LIMIT 1;",
-        (f"%{clean_q}%",)
+        "SELECT count(*) as cnt FROM photos WHERE people LIKE ? OR people LIKE ? OR people LIKE ? LIMIT 1;",
+        wcards
     )
     if person_check and person_check.get("cnt", 0) > 0:
         sql = """
-            SELECT s.id, s.place_id, s.place_name, count(p.sha256) as photo_count,
-                   max(p.sha256) as top_sha, max(p.filename) as top_filename
-            FROM (
-                SELECT sha256, filename, timestamp_utc, place_id
-                FROM photos
-                WHERE people LIKE ? AND timestamp_utc IS NOT NULL
-            ) p
-            JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
-            WHERE s.segment_type = 'visit' AND s.place_id IS NOT NULL
-            GROUP BY s.id;
+            WITH ranked_photos AS (
+                SELECT s.place_id, s.id as segment_id, p.sha256, p.filename,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY s.place_id
+                           ORDER BY (CASE WHEN p.face_count > 0 THEN 0 ELSE 1 END),
+                                    (CASE WHEN p.filename LIKE 'Screen%' OR p.filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                                    p.timestamp_utc DESC
+                       ) as rn
+                FROM (
+                    SELECT sha256, filename, timestamp_utc, face_count
+                    FROM photos
+                    WHERE (people LIKE ? OR people LIKE ? OR people LIKE ?) AND timestamp_utc IS NOT NULL
+                ) p
+                JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
+                WHERE s.segment_type = 'visit' AND s.place_id IS NOT NULL
+            )
+            SELECT place_id, count(DISTINCT segment_id) as visit_count, count(*) as photo_count,
+                   max(CASE WHEN rn = 1 THEN sha256 END) as top_sha,
+                   max(CASE WHEN rn = 1 THEN filename END) as top_filename
+            FROM ranked_photos
+            GROUP BY place_id;
         """
-        p_rows = query_all(sql, (f"%{clean_q}%",))
+        p_rows = query_all(sql, wcards)
         places_map: Dict[str, Dict[str, Any]] = {}
         for r in p_rows:
             pid = r["place_id"]
-            if pid not in places_map:
-                places_map[pid] = {
-                    "place_id": pid,
-                    "photo_count": 0,
-                    "visit_count": 0,
-                    "max_score": 1.0,
-                    "top_photo": {
-                        "sha256": r["top_sha"],
-                        "filename": r.get("top_filename"),
-                        "preview_url": f"/api/photo?sha256={r['top_sha']}",
-                        "score": 1.0,
-                    }
+            top_sha = r["top_sha"]
+            places_map[pid] = {
+                "place_id": pid,
+                "photo_count": r["photo_count"],
+                "visit_count": r["visit_count"],
+                "max_score": 1.0,
+                "top_photo": {
+                    "sha256": top_sha,
+                    "filename": r.get("top_filename"),
+                    "preview_url": f"/api/photo?sha256={top_sha}" if top_sha else None,
+                    "score": 1.0,
                 }
-            places_map[pid]["visit_count"] += 1
-            places_map[pid]["photo_count"] += r["photo_count"]
+            }
         return places_map
 
     photos = query_photo_semantic_index(clean_q, limit=limit)

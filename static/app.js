@@ -1769,13 +1769,15 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="place-matched-photo-strip" style="margin-top:6px;display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-main);border-radius:6px;border:1px solid rgba(168,85,247,0.25);">
               <img src="${p.photo_preview.preview_url}" style="width:40px;height:40px;border-radius:4px;object-fit:cover;" alt="Matched photo" onerror="this.style.display='none'">
               <div style="font-size:11px;color:var(--text-muted);min-width:0;flex:1;">
-                <div style="font-weight:600;color:var(--accent-purple);"><i class="fa-solid fa-sparkles"></i> ${(p.photo_match_score * 100).toFixed(0)}% visual match</div>
+                <div style="font-weight:600;color:var(--accent-purple);">
+                  ${p.photo_matches ? `<i class="fa-solid fa-camera"></i> ${p.photo_matches} photo${p.photo_matches > 1 ? 's' : ''}` : `<i class="fa-solid fa-sparkles"></i> ${(p.photo_match_score * 100).toFixed(0)}% visual match`}
+                </div>
                 <div style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.photo_preview.filename || '')}</div>
               </div>
             </div>
           ` : ''}
           ${p.review_text ? `<div class="review-snippet-box">"${escapeHtml(p.review_text.slice(0, 100))}..."</div>` : ''}
-          ${p.review_photos && p.review_photos.length ? `
+          ${(!p.photo_matches && p.review_photos && p.review_photos.length) ? `
             <div class="review-photos-strip" style="margin-top:6px;">
               ${p.review_photos.map((url, idx) => `
                 <div class="review-photo-thumb-wrapper places-photo-thumb" data-idx="${idx}" title="View photo (${idx+1}/${p.review_photos.length})">
@@ -4990,19 +4992,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const activeTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "";
-
-      if (activeTab === "places") {
-        currentCategory = "ALL";
-        currentCity = "ALL";
-        loadPlaces(q);
-        return;
-      }
-      if (activeTab === "trips") {
-        loadTrips(q, "ALL");
-        return;
-      }
-
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=25`);
         const data = await res.json();
@@ -5015,7 +5004,7 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        // 2. Person match: open exhaustive person visits modal
+        // 2. Person match: ALWAYS open exhaustive person visits modal
         const personMatch = results.find(r => r.type === "PERSON");
         if (personMatch) {
           openPersonVisitsModal(personMatch.name || personMatch.title);
@@ -5029,14 +5018,27 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        // 4. Specific visit with a visual photo match
+        // 4. Tab-specific search when not a person
+        const activeTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "";
+        if (activeTab === "places") {
+          currentCategory = "ALL";
+          currentCity = "ALL";
+          loadPlaces(q);
+          return;
+        }
+        if (activeTab === "trips") {
+          loadTrips(q, "ALL");
+          return;
+        }
+
+        // 5. Specific visit with a visual photo match
         const photoVisit = results.find(r => r.type === "PHOTO_VISIT");
         if (photoVisit) {
           selectSearchResult(photoVisit);
           return;
         }
 
-        // 5. Default to displaying results in Places catalog
+        // 6. Default to displaying results in Places catalog
         showSearchInPlacesList(q);
       } catch (err) {
         console.error("Execute search error:", err);
