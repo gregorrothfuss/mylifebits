@@ -72,6 +72,14 @@ def proxy_photo(req: Request) -> Response:
     local_ident = req_sha or raw_url
     if local_ident and not local_ident.startswith("http"):
         local_path = find_preview_file(local_ident)
+        if not local_path and req_sha:
+            # Fallback to database preview_path or filename mapping
+            p_row = query_one("SELECT preview_path, filename FROM photos WHERE sha256 = ? LIMIT 1;", (req_sha,))
+            if p_row:
+                if p_row.get("preview_path"):
+                    local_path = find_preview_file(p_row["preview_path"])
+                if not local_path and p_row.get("filename"):
+                    local_path = find_preview_file(p_row["filename"])
         if local_path:
             try:
                 data = local_path.read_bytes()

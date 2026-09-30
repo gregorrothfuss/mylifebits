@@ -410,6 +410,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Centralized Navigation to Timeline Day (Single clean pushState)
   let pendingHighlightSegmentId = null;
 
+  window.jumpToTimelineDay = jumpToTimelineDay;
   function jumpToTimelineDay(targetDate, updateHistory = true, fromTab = null, highlightSegmentId = null) {
     if (highlightSegmentId) {
       pendingHighlightSegmentId = highlightSegmentId;

@@ -1,20 +1,20 @@
 {
-  "goal": "Import the most recent backup (Timeline-20260921.json) and convert IN_PASSENGER_VEHICLE to DRIVING across database and UI",
-  "active_step_id": 4,
+  "goal": "Fix missing search thumbnails via DB preview_path lookup, add place/date thumbnails, and expose jumpToTimelineDay globally",
+  "active_step_id": 1,
   "steps": [
     {
       "id": 1,
-      "description": "Update merge and import scripts to map IN_PASSENGER_VEHICLE to DRIVING and update Timeline-latest.json",
+      "description": "Add DB preview_path/filename resolution in api/routes/photos.py to fix 17,038 photos with differing preview hashes",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Execute import of most recent backup (Timeline-20260921.json) and update all database records from IN_PASSENGER_VEHICLE to DRIVING",
+      "description": "Add photo thumbnails to PLACE and DATE search results in api/routes/search.py",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Update frontend and backend mappings (static/app.js, enrichment, diagnostics) to fully support DRIVING and display as 'Driving'",
+      "description": "Expose window.jumpToTimelineDay on window in static/app.js so Jump buttons work in all modals and views",
       "status": "completed"
     },
     {
@@ -25,15 +25,10 @@
   ],
   "context_cache": {
     "target_files": [
-      "scripts/merge_pixel10_export.py",
-      "importer.py",
-      "scripts/ingest_pixel10_pristine_export.py",
+      "api/routes/photos.py",
+      "api/routes/search.py",
       "static/app.js",
-      "enrichment/nuggets_engine.py",
-      "diagnostics.py",
-      "ingest_odlh_segments.py",
-      "reinference.py",
-      "scripts/surgical_roundtrip_deploy.py"
+      "static/index.html"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
@@ -42,8 +37,7 @@
     ],
     "scratch_logs": [
       ".agent/scratch/audit.log",
-      ".agent/scratch/test.log",
-      ".agent/scratch/merge.log"
+      ".agent/scratch/test.log"
     ]
   }
 }

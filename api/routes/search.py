@@ -42,12 +42,23 @@ def search(req: Request) -> Response:
         if r and r.get("cnt", 0) > 0:
             p_rows = query_all("SELECT DISTINCT place_name FROM segments WHERE date = ? AND place_name IS NOT NULL LIMIT 4;", (dt,))
             pnames = [row["place_name"] for row in p_rows if row.get("place_name")]
+            day_photo = query_one("""
+                SELECT sha256 FROM photos
+                WHERE local_date = ? AND timestamp_utc IS NOT NULL
+                ORDER BY (CASE WHEN face_count > 0 THEN 0 ELSE 1 END),
+                         (CASE WHEN filename LIKE 'Screen%' OR filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                         timestamp_utc DESC
+                LIMIT 1;
+            """, (dt,))
+            d_sha = day_photo["sha256"] if day_photo else None
             results.append({
                 "type": "DATE",
                 "title": f"Day Timeline: {dt}",
                 "subtitle": f"{r['cnt']} segments · {round((r.get('dist') or 0)/1000.0, 1)} km · {pnames[0] if pnames else 'Trip activity'}",
                 "date": dt,
                 "places": pnames,
+                "preview_url": f"/api/photo?sha256={d_sha}" if d_sha else None,
+                "sha256": d_sha,
                 "icon": "fa-calendar-day"
             })
 
@@ -255,9 +266,22 @@ def search(req: Request) -> Response:
         else:
             sub = r["place_address"] or (f"{r['latitude']:.4f}, {r['longitude']:.4f}" if r.get("latitude") else "Unknown location")
 
+        pid = r.get("place_id")
+        place_photo = None
+        if pid:
+            place_photo = query_one("""
+                SELECT sha256 FROM photos
+                WHERE place_id = ? AND timestamp_utc IS NOT NULL
+                ORDER BY (CASE WHEN face_count > 0 THEN 0 ELSE 1 END),
+                         (CASE WHEN filename LIKE 'Screen%' OR filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                         timestamp_utc DESC
+                LIMIT 1;
+            """, (pid,))
+        p_sha = place_photo["sha256"] if place_photo else None
+
         place_results.append({
             "type": "PLACE",
-            "place_id": r.get("place_id"),
+            "place_id": pid,
             "title": r["place_name"] or "Home/Place",
             "subtitle": sub,
             "category": r["category"] or "Other / POI",
@@ -266,6 +290,8 @@ def search(req: Request) -> Response:
             "date": r["last_date"],
             "visit_count": r["visit_count"],
             "first_date": r["first_date"],
+            "preview_url": f"/api/photo?sha256={p_sha}" if p_sha else None,
+            "sha256": p_sha,
             "icon": "fa-location-dot",
             "is_review_match": is_review_only,
         })
