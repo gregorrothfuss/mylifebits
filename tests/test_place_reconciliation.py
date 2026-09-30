@@ -76,7 +76,7 @@ class TestPlaceReconciliation(unittest.TestCase):
         visits = [s for s in segments if s.get("segment_type") == "visit"]
         self.assertGreater(len(visits), 0)
 
-        canary_found = False
+        venue_found = False
         for v in visits:
             name = v.get("place_name", "")
             self.assertFalse(
@@ -87,20 +87,19 @@ class TestPlaceReconciliation(unittest.TestCase):
                 name.startswith("Location ("),
                 f"Found raw coordinate title: '{name}'",
             )
-            if "Canary Cafe" in name:
-                canary_found = True
+            if "LeTish Cafe" in name or "Canary Cafe" in name:
+                venue_found = True
 
-        self.assertTrue(canary_found, "Expected Canary Cafe visit on 2026-09-18 between 08:08 and 08:24")
+        self.assertTrue(venue_found, "Expected LeTish Cafe visit on 2026-09-18 between 08:08 and 08:24")
 
     def test_place_aliases_resolution(self):
         """Verifies that new/mutated Place IDs resolve to canonical places via place_aliases."""
         conn = sqlite3.connect(DEFAULT_DB_PATH)
-        # Canary Cafe alternate Place ID from recent export
-        alt_pid = "ChIJd3OTBwBbwokRW7-99uZXpts"
+        alt_pid = "ChIJOwg_06VPwokRYv534QaPC8g"
         aliased = get_aliased_place(conn, alt_pid)
         self.assertIsNotNone(aliased)
-        self.assertEqual(aliased["name"], "Canary Cafe")
-        self.assertEqual(aliased["place_id"], "ChIJl8jLJM9bwokRpcorN5sMbis")
+        self.assertEqual(aliased["name"], "New York City Hall")
+        self.assertEqual(aliased["place_id"], "ChIJs--MqP1YwokRBwAhjXWIHn8")
         conn.close()
 
 

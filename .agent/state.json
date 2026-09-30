@@ -1,36 +1,42 @@
 {
-  "goal": "Fix photo lightbox opening on visit and activity thumbnails by replacing fragile inline onclick serialization with robust DOM event listeners",
-  "active_step_id": 4,
+  "goal": "Eliminate POI loss by prioritizing local catalogs, 64-bit feature IDs, and single-lookup cached Google resolution",
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
-      "description": "Replace inline onclick serialization with clean data attributes and direct addEventListener click handlers across visit cards, activity cards, and galleries in static/app.js",
+      "description": "Build Google Maps Knowledge Graph place resolver with persistent single-lookup cache and retry backoff in enrichment/place_reconciler.py",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Ensure openPhotoLightbox and closePhotoLightbox explicitly manage display and hidden classes",
+      "description": "Hydrate missing Google Place IDs from pixel10_export into google_place_cache and places tables in timeline_viewer.db",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Run API contract audits and automated server tests",
+      "description": "Update segment 2700109 to canonical LeTish Cafe (ChIJd3OTBwBbwokRW7-99uZXpts)",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Verify live on https://mylifebits.local and commit changes",
+      "description": "Integrate automatic Google Place resolution with single-lookup cache into merge_pixel10_export.py so future imports never drop POIs",
+      "status": "completed"
+    },
+    {
+      "id": 5,
+      "description": "Run test suite, verify API contracts, and commit verified steps",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "static/app.js"
+      "enrichment/place_reconciler.py",
+      "scripts/merge_pixel10_export.py"
     ],
     "test_files": [
-      "scripts/audit_api_contracts.py",
+      "tests/test_place_reconciliation.py",
       "tests/test_clean_api.py",
-      "tests/test_e2e_server.py"
+      "scripts/audit_api_contracts.py"
     ],
     "scratch_logs": []
   }

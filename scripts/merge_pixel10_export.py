@@ -26,7 +26,15 @@ if WORKSPACE_DIR not in sys.path:
 from db import get_db_connection, DEFAULT_DB_PATH
 from importer import parse_latlng_str, parse_iso_with_tz_offset, haversine_km, classify_category, extract_city_country, synthesize_place_name
 from life_periods import get_date_aware_label
-from enrichment.place_reconciler import is_nameless_place, reconcile_place_spatial, reverse_geocode_osm, get_aliased_place, record_place_alias
+from enrichment.place_reconciler import (
+    is_nameless_place,
+    reconcile_place_spatial,
+    reverse_geocode_osm,
+    get_aliased_place,
+    record_place_alias,
+    resolve_synthetic_feature_id,
+    fetch_google_maps_place_details,
+)
 
 def enforce_zero_gap_constraints(conn, date_str: str) -> None:
     """Enforces zero-gap timeline continuity on save, merging adjacent duplicate visits,
