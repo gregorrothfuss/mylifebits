@@ -1,6 +1,6 @@
 {
   "goal": "Inject photo daily summaries as timeline day notes, deploy to Pixel 8, check APK code for note rendering, and produce 10-screenshot report",
-  "active_step_id": 3,
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
@@ -15,12 +15,12 @@
     {
       "id": 3,
       "description": "Deploy reconstructed timeline with notes to Pixel 8",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Capture 10 on-device screenshots of days with notes and compile detailed report",
-      "status": "pending"
+      "status": "completed"
     }
   ],
   "context_cache": {
@@ -29,7 +29,17 @@
       "timeline_viewer.db",
       "scratch/odlh_v55_with_notes.db",
       "static/app.js",
-      "enrichment/import_photo_summaries_as_notes.py"
+      "enrichment/import_photo_summaries_as_notes.py",
+      "scratch/device_proofs/p8_day_2026_09_15.png",
+      "scratch/device_proofs/p8_day_2026_09_14.png",
+      "scratch/device_proofs/p8_day_2026_09_13.png",
+      "scratch/device_proofs/p8_day_2026_09_12.png",
+      "scratch/device_proofs/p8_day_2026_09_11.png",
+      "scratch/device_proofs/p8_day_2026_09_10.png",
+      "scratch/device_proofs/p8_day_2026_09_09.png",
+      "scratch/device_proofs/p8_day_2026_09_08.png",
+      "scratch/device_proofs/p8_day_2026_09_07.png",
+      "scratch/device_proofs/p8_day_2026_09_06.png"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
