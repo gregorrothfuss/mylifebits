@@ -267,6 +267,9 @@ def search(req: Request) -> Response:
             sub = r["place_address"] or (f"{r['latitude']:.4f}, {r['longitude']:.4f}" if r.get("latitude") else "Unknown location")
 
         pid = r.get("place_id")
+        pname = r.get("place_name")
+        plat = r.get("latitude")
+        plng = r.get("longitude")
         place_photo = None
         if pid:
             place_photo = query_one("""
@@ -277,6 +280,25 @@ def search(req: Request) -> Response:
                          timestamp_utc DESC
                 LIMIT 1;
             """, (pid,))
+        if not place_photo and pname:
+            place_photo = query_one("""
+                SELECT p.sha256 FROM photos p
+                JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
+                WHERE s.place_name = ? AND p.timestamp_utc IS NOT NULL
+                ORDER BY (CASE WHEN p.face_count > 0 THEN 0 ELSE 1 END),
+                         (CASE WHEN p.filename LIKE 'Screen%' OR p.filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                         p.timestamp_utc DESC
+                LIMIT 1;
+            """, (pname,))
+        if not place_photo and plat is not None and plng is not None:
+            place_photo = query_one("""
+                SELECT sha256 FROM photos
+                WHERE abs(latitude - ?) < 0.0008 AND abs(longitude - ?) < 0.0008 AND timestamp_utc IS NOT NULL
+                ORDER BY (CASE WHEN face_count > 0 THEN 0 ELSE 1 END),
+                         (CASE WHEN filename LIKE 'Screen%' OR filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                         timestamp_utc DESC
+                LIMIT 1;
+            """, (plat, plng))
         p_sha = place_photo["sha256"] if place_photo else None
 
         place_results.append({
@@ -362,6 +384,17 @@ def search_visits(req: Request) -> Response:
         for tm in text_matches:
             if tm["id"] in seen_ids:
                 continue
+            tm_photo = query_one("""
+                SELECT sha256, filename FROM photos
+                WHERE timestamp_utc >= ? AND timestamp_utc <= ? AND timestamp_utc IS NOT NULL
+                ORDER BY (CASE WHEN face_count > 0 THEN 0 ELSE 1 END),
+                         (CASE WHEN filename LIKE 'Screen%' OR filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                         timestamp_utc DESC
+                LIMIT 1;
+            """, (tm["start_ts"], tm["end_ts"]))
+            tm_sha = tm_photo["sha256"] if tm_photo else None
+            top_p_obj = {"sha256": tm_sha, "preview_url": f"/api/photo?sha256={tm_sha}"} if tm_sha else None
+
             visits.append({
                 "id": tm["id"],
                 "date": tm["date"],
@@ -376,9 +409,11 @@ def search_visits(req: Request) -> Response:
                 "latitude": tm["latitude"],
                 "longitude": tm["longitude"],
                 "max_score": 1.0,
-                "photo_count": 0,
-                "photos": [],
-                "top_photo": None,
+                "photo_count": 1 if tm_sha else 0,
+                "photos": [top_p_obj] if top_p_obj else [],
+                "top_photo": top_p_obj,
+                "preview_url": f"/api/photo?sha256={tm_sha}" if tm_sha else None,
+                "sha256": tm_sha,
             })
             seen_ids.add(tm["id"])
             if len(visits) >= limit:

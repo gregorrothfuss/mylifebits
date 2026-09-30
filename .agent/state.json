@@ -1,35 +1,34 @@
 {
-  "goal": "Import most recent Google Cloud backup from Pixel 10 via Pixel 8a and standardize IN_PASSENGER_VEHICLE to DRIVING",
-  "active_step_id": 4,
+  "goal": "Eliminate contradictory 'Walking Dwell' labels, fix missing search/modal thumbnails with multi-tier place resolution, and make Jump navigation 100% reliable",
+  "active_step_id": 1,
   "steps": [
     {
       "id": 1,
-      "description": "Trigger and complete Google Cloud backup import from Pixel 10 on Pixel 8a",
+      "description": "Remove contradictory 'Stationary Dwell / Pause' labeling from walking activities in static/app.js",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Export and pull fresh Timeline backup (Timeline-20260930.json) through today",
+      "description": "Enhance photo proxy and search with multi-tier thumbnail resolution across places, visits, and query-param SHAs",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Merge fresh backup export into timeline_viewer.db with DRIVING activity mapping",
+      "description": "Make Jump navigation 100% reliable: close all modals/dropdowns, zoom map to visit, retry card highlight, and pass visit IDs in place modals",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Verify database integrity, convert any remaining IN_PASSENGER_VEHICLE records, test server endpoints, and restart service",
+      "description": "Verify API contracts and test suite, restart service, and verify live endpoints",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "pixel10_export/Timeline-20260930.json",
-      "pixel10_export/Timeline-latest.json",
-      "scripts/merge_pixel10_export.py",
-      "importer.py",
-      "timeline_viewer.db"
+      "static/app.js",
+      "static/index.html",
+      "api/routes/photos.py",
+      "api/routes/search.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
@@ -37,7 +36,6 @@
       "tests/test_e2e_server.py"
     ],
     "scratch_logs": [
-      ".agent/scratch/merge_20260930.log",
       ".agent/scratch/audit.log",
       ".agent/scratch/test.log"
     ]

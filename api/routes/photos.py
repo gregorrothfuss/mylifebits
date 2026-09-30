@@ -68,6 +68,15 @@ def proxy_photo(req: Request) -> Response:
     raw_url = req.get_str("url")
     size = req.get_str("size", "400")
 
+    if not req_sha and raw_url and "sha256=" in raw_url:
+        try:
+            parsed = urllib.parse.urlparse(raw_url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "sha256" in qs and qs["sha256"]:
+                req_sha = qs["sha256"][0]
+        except Exception:
+            pass
+
     # 1. Check local gregor_cos previews via direct sha256 or preview URL
     local_ident = req_sha or raw_url
     if local_ident and not local_ident.startswith("http"):
@@ -80,6 +89,11 @@ def proxy_photo(req: Request) -> Response:
                     local_path = find_preview_file(p_row["preview_path"])
                 if not local_path and p_row.get("filename"):
                     local_path = find_preview_file(p_row["filename"])
+        if not local_path and not req_sha and local_ident:
+            p_row = query_one("SELECT preview_path FROM photos WHERE filename = ? OR preview_path = ? LIMIT 1;", (local_ident, local_ident))
+            if p_row and p_row.get("preview_path"):
+                local_path = find_preview_file(p_row["preview_path"])
+
         if local_path:
             try:
                 data = local_path.read_bytes()
@@ -95,28 +109,6 @@ def proxy_photo(req: Request) -> Response:
                 )
             except Exception:
                 pass
-
-    # Check if raw_url contains embedded sha256 parameter
-    if raw_url and "?sha256=" in raw_url:
-        try:
-            parsed = urllib.parse.urlparse(raw_url)
-            qs = urllib.parse.parse_qs(parsed.query)
-            if "sha256" in qs and qs["sha256"]:
-                local_path = find_preview_file(qs["sha256"][0])
-                if local_path:
-                    data = local_path.read_bytes()
-                    mime = "image/webp" if local_path.suffix.lower() == ".webp" else "image/jpeg"
-                    return binary_response(
-                        data,
-                        content_type=mime,
-                        status_code=200,
-                        headers={
-                            "Cache-Control": "public, max-age=31536000, immutable",
-                            "Access-Control-Allow-Origin": "*",
-                        },
-                    )
-        except Exception:
-            pass
 
     # 2. Remote photo proxying (Google User Content)
     if not raw_url or not raw_url.startswith("http"):

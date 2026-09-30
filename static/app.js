@@ -415,6 +415,21 @@ document.addEventListener("DOMContentLoaded", () => {
     if (highlightSegmentId) {
       pendingHighlightSegmentId = highlightSegmentId;
     }
+
+    // 1. Force dismiss all open modals, overlays, and dropdowns to guarantee timeline visibility
+    try {
+      if (typeof window.closePersonVisitsModal === "function") window.closePersonVisitsModal();
+      if (typeof window.closePlaceVisitsModal === "function") window.closePlaceVisitsModal();
+    } catch (e) {}
+
+    document.querySelectorAll(".modal-overlay").forEach(m => {
+      m.style.display = "none";
+      m.classList.add("hidden");
+    });
+    const searchDropdown = document.getElementById("search-results-dropdown");
+    if (searchDropdown) searchDropdown.style.display = "none";
+    document.body.style.overflow = "";
+
     const currentActiveTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "fixes";
     navOriginTab = fromTab || (currentActiveTab !== "timeline" ? currentActiveTab : "fixes");
 
@@ -914,17 +929,19 @@ document.addEventListener("DOMContentLoaded", () => {
           const distKm = (distM / 1000.0).toFixed(1);
           const hasSnapped = s.has_snapped_path === 1 || Boolean(s.path_points_json && s.path_points_json.length > 5);
           const isSameDockLoop = (actType.includes("CYCLE") || actType.includes("BIKE")) && distM < 30.0 && s.duration_minutes >= 2.0;
-          const isStationaryActivity = !isSameDockLoop && actType !== "CYCLING" && !(s.source || "").includes("citibike") && distM < 30.0 && s.duration_minutes >= 3.0;
+          const isIndoorPacing = actType.includes("WALK") && distM < 30.0 && s.duration_minutes >= 2.0;
           
           let displayDistKm = distKm;
           if (isSameDockLoop && distM < 30.0) {
             // Estimate loop distance based on cycling speed (~14 km/h = 233 m/min)
             const estM = Math.round(s.duration_minutes * 230.0);
             displayDistKm = (estM / 1000.0).toFixed(1);
+          } else if (distM < 50.0) {
+            displayDistKm = "< 0.1";
           }
 
           const baseName = (actType === "IN_PASSENGER_VEHICLE" || actType === "DRIVING") ? "Driving" : actType.replace(/_/g, ' ');
-          const actTitle = `${baseName}${isSameDockLoop ? ' (Round-Trip Loop)' : (isStationaryActivity ? ' · Stationary Dwell / Pause' : '')}`;
+          const actTitle = `${baseName}${isSameDockLoop ? ' (Round-Trip Loop)' : (isIndoorPacing ? ' (Indoor / In-Place)' : '')}`;
 
           card.innerHTML = `
             <div class="item-icon ${modeClass}">
@@ -935,15 +952,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="item-title" title="${escapeHtml(actTitle)}">${escapeHtml(actTitle)}</span>
                 <span class="item-time">${timeStr}</span>
               </div>
-              <div class="item-address">${isStationaryActivity ? `Stationary dwell (${durStr})` : `${displayDistKm} km · ${durStr}${isSameDockLoop ? ' · Out & Back' : ''}`}</div>
+              <div class="item-address">${displayDistKm} km · ${durStr}${isSameDockLoop ? ' · Out & Back' : ''}</div>
               <div class="item-tags">
-                ${isStationaryActivity 
-                  ? `<span class="tag-badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fef08a;font-size:10px;font-weight:600;"><i class="fa-solid fa-pause"></i> Stationary Pause (${durStr})</span>`
-                  : `<span class="tag-badge"><i class="fa-solid fa-arrows-left-right"></i> ${displayDistKm} km</span>`
-                }
+                <span class="tag-badge"><i class="fa-solid fa-arrows-left-right"></i> ${displayDistKm} km</span>
                 ${hasSnapped ? '<span class="tag-badge snapped"><i class="fa-solid fa-route"></i> Snapped Route</span>' : ''}
                 ${s.review_photos && s.review_photos.length ? `<span class="tag-badge activity-photo-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;cursor:pointer;" title="View photos in lightbox"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
-                ${!isStationaryActivity ? `<button class="btn-3d-ride" title="Ride along this route in 3D Earth view"><i class="fa-solid fa-earth-americas"></i> 3D Ride</button>` : ''}
+                ${!isIndoorPacing && !isSameDockLoop && distM >= 50.0 ? `<button class="btn-3d-ride" title="Ride along this route in 3D Earth view"><i class="fa-solid fa-earth-americas"></i> 3D Ride</button>` : ''}
                 <button class="icon-btn edit-activity-btn" style="width:20px;height:20px;font-size:10px;margin-left:auto;" title="Edit Activity Details"><i class="fa-solid fa-pen"></i></button>
               </div>
               ${s.review_photos && s.review_photos.length ? `
@@ -1168,14 +1182,35 @@ document.addEventListener("DOMContentLoaded", () => {
     if (pendingHighlightSegmentId) {
       const hId = pendingHighlightSegmentId;
       pendingHighlightSegmentId = null;
-      setTimeout(() => {
+
+      const performHighlight = (attempts = 0) => {
         const targetCard = document.querySelector(`.item-card[data-id="${hId}"]`);
         if (targetCard) {
           targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
           targetCard.classList.add("highlight-pulse");
-          setTimeout(() => targetCard.classList.remove("highlight-pulse"), 3600);
+          targetCard.classList.add("is-selected");
+          setTimeout(() => targetCard.classList.remove("highlight-pulse"), 4000);
+
+          // Find coordinates to pan the map
+          const seg = (dayData.segments || []).find(s => String(s.id) === String(hId));
+          if (seg && seg.latitude && seg.longitude && typeof map !== "undefined" && map) {
+            try {
+              map.invalidateSize(true);
+              map.setView([seg.latitude, seg.longitude], 16.5);
+              const layer = segmentLayerMap.get(seg.id);
+              if (layer && typeof layer.openPopup === "function") {
+                layer.openPopup();
+              }
+            } catch (e) {
+              console.warn("Map highlight error:", e);
+            }
+          }
+        } else if (attempts < 6) {
+          setTimeout(() => performHighlight(attempts + 1), 100);
         }
-      }, 250);
+      };
+
+      setTimeout(() => performHighlight(0), 150);
     }
   }
 
@@ -1948,7 +1983,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <td style="padding:8px 10px;color:var(--text-muted);">${startStr} – ${endStr}</td>
             <td style="padding:8px 10px;"><span class="tag-badge" style="font-size:11px;background:rgba(59,130,246,0.12);color:var(--accent-blue);font-weight:600;">${durStr}</span></td>
             <td style="padding:8px 10px;text-align:right;">
-              <button class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:11px;cursor:pointer;" onclick="closePlaceVisitsModal(); window.jumpToTimelineDay('${v.date}', true, 'places')">
+              <button class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:11px;cursor:pointer;" onclick="window.closePlaceVisitsModal(); window.jumpToTimelineDay('${v.date}', true, 'places', ${v.id})">
                 <i class="fa-solid fa-route"></i> Jump
               </button>
             </td>
@@ -2115,7 +2150,7 @@ document.addEventListener("DOMContentLoaded", () => {
               </div>
             </td>
             <td style="padding:8px 10px;text-align:right;white-space:nowrap;">
-              <button class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:11px;cursor:pointer;" onclick="closePersonVisitsModal(); window.jumpToTimelineDay('${v.date}', true, 'person', ${v.id})">
+              <button class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:11px;cursor:pointer;" onclick="window.closePersonVisitsModal(); window.jumpToTimelineDay('${v.date}', true, 'person', ${v.id})">
                 <i class="fa-solid fa-route"></i> Jump
               </button>
             </td>
