@@ -387,7 +387,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Centralized Navigation to Timeline Day (Single clean pushState)
-  function jumpToTimelineDay(targetDate, updateHistory = true, fromTab = null) {
+  let pendingHighlightSegmentId = null;
+
+  function jumpToTimelineDay(targetDate, updateHistory = true, fromTab = null, highlightSegmentId = null) {
+    if (highlightSegmentId) {
+      pendingHighlightSegmentId = highlightSegmentId;
+    }
     const currentActiveTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "fixes";
     navOriginTab = fromTab || (currentActiveTab !== "timeline" ? currentActiveTab : "fixes");
 
@@ -1134,6 +1139,19 @@ document.addEventListener("DOMContentLoaded", () => {
         container.appendChild(gapCard);
       }
     });
+
+    if (pendingHighlightSegmentId) {
+      const hId = pendingHighlightSegmentId;
+      pendingHighlightSegmentId = null;
+      setTimeout(() => {
+        const targetCard = document.querySelector(`.item-card[data-id="${hId}"]`);
+        if (targetCard) {
+          targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
+          targetCard.classList.add("highlight-pulse");
+          setTimeout(() => targetCard.classList.remove("highlight-pulse"), 3600);
+        }
+      }, 250);
+    }
   }
 
   // Render Day Map Layers
@@ -4837,6 +4855,7 @@ document.addEventListener("DOMContentLoaded", () => {
       dropdown.innerHTML = "";
       const dates = results.filter(r => r.type === "DATE");
       const months = results.filter(r => r.type === "MONTH");
+      const photoVisits = results.filter(r => r.type === "PHOTO_VISIT");
       const places = results.filter(r => r.type === "PLACE");
       const locations = results.filter(r => r.type === "LOCATION");
       const categories = results.filter(r => r.type === "CATEGORY");
@@ -4852,16 +4871,28 @@ document.addEventListener("DOMContentLoaded", () => {
           const itemEl = document.createElement("div");
           itemEl.className = "search-result-item";
           const catIcon = getPlaceIcon(it.title, it.category) || it.icon || "fa-location-dot";
+          const hasThumb = it.preview_url || it.sha256;
+          const thumbHtml = hasThumb
+            ? `<div class="search-item-thumb-wrapper"><img src="${it.preview_url || ('/api/photo?sha256=' + it.sha256)}" class="search-item-thumb" alt="Photo" onerror="this.parentElement.innerHTML='<div class=\\'search-item-icon\\'><i class=\\'fa-solid ${catIcon}\\'></i></div>'"></div>`
+            : `<div class="search-item-icon"><i class="fa-solid ${catIcon}"></i></div>`;
+
+          const scorePill = it.score
+            ? `<span class="search-score-pill" title="Semantic Match: ${(it.score * 100).toFixed(0)}%"><i class="fa-solid fa-sparkles"></i> ${(it.score * 100).toFixed(0)}%</span>`
+            : '';
 
           itemEl.innerHTML = `
-            <div class="search-item-icon"><i class="fa-solid ${catIcon}"></i></div>
+            ${thumbHtml}
             <div class="search-item-content">
-              <div class="search-item-title">${escapeHtml(it.title)}</div>
+              <div class="search-item-title" style="display:flex;align-items:center;gap:6px;">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(it.title)}</span>
+                ${scorePill}
+              </div>
               <div class="search-item-subtitle">${escapeHtml(it.subtitle)}</div>
             </div>
             <div class="search-item-meta">
               ${it.date ? `<span class="search-date-badge">${it.date}</span>` : ''}
               ${it.visit_count ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px;">${it.visit_count} visits</div>` : ''}
+              ${it.photo_count ? `<div style="font-size:10px;color:var(--accent-blue);margin-top:2px;font-weight:600;"><i class="fa-solid fa-camera"></i> ${it.photo_count}</div>` : ''}
             </div>
           `;
 
@@ -4873,6 +4904,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
 
+      appendGroup("Photo Moments & Visits", photoVisits, "fa-camera-retro");
       appendGroup("Days & Dates", dates, "fa-calendar-day");
       appendGroup("Months & Years", months, "fa-calendar-days");
       appendGroup("Places & POIs", places, "fa-location-dot");
@@ -4885,6 +4917,20 @@ document.addEventListener("DOMContentLoaded", () => {
     function selectSearchResult(it) {
       dropdown.style.display = "none";
       if (!it) return;
+
+      if (it.type === "PHOTO_VISIT" || it.segment_id) {
+        if (it.date) {
+          jumpToTimelineDay(it.date, true, "search", it.segment_id);
+          if (it.latitude && it.longitude && typeof map !== "undefined" && map) {
+            setTimeout(() => {
+              if (map && map.flyTo) {
+                map.flyTo([it.latitude, it.longitude], 16.5, { duration: 0.8 });
+              }
+            }, 350);
+          }
+        }
+        return;
+      }
 
       if (it.type === "PLACE" || it.place_id) {
         switchTab("places");

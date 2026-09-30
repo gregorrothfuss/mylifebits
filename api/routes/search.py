@@ -52,6 +52,7 @@ def search(req: Request) -> Response:
             })
 
     # 2. Places / POI Search
+    place_limit = min(8, limit)
     place_rows = query_all("""
         SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
                max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
@@ -62,7 +63,7 @@ def search(req: Request) -> Response:
         GROUP BY s.place_name, s.place_address
         ORDER BY visit_count DESC
         LIMIT ?;
-    """, (f"%{q}%", f"%{q}%", f"%{q}%", limit))
+    """, (f"%{q}%", f"%{q}%", f"%{q}%", place_limit))
 
     for r in place_rows:
         results.append({
@@ -79,7 +80,37 @@ def search(req: Request) -> Response:
             "icon": "fa-location-dot"
         })
 
-    # 3. Categories Search
+    # 3. Photo Semantic Search (Visits matching visual concepts)
+    if not m_iso and not m_us:
+        try:
+            from api.photo_search import search_visits_by_photo_semantics
+            photo_visits = search_visits_by_photo_semantics(q, limit=12, min_score=0.52)
+            for v in photo_visits:
+                top_p = v.get("top_photo") or {}
+                cnt = v.get("photo_count", 1)
+                results.append({
+                    "type": "PHOTO_VISIT",
+                    "segment_id": v["id"],
+                    "place_id": v.get("place_id"),
+                    "title": v["place_name"] or "Visit",
+                    "subtitle": f"{cnt} photo match{'es' if cnt > 1 else ''} (score {v['max_score']:.2f}) · {v.get('city') or v.get('place_address') or v['date']}",
+                    "date": v["date"],
+                    "time": f"{v['start_time']} - {v['end_time']}",
+                    "category": v.get("category") or "Other / POI",
+                    "latitude": v.get("latitude"),
+                    "longitude": v.get("longitude"),
+                    "preview_url": top_p.get("preview_url") or (f"/api/photo?sha256={top_p['sha256']}" if top_p.get("sha256") else None),
+                    "sha256": top_p.get("sha256"),
+                    "score": v["max_score"],
+                    "photo_count": cnt,
+                    "photos": v.get("photos", [])[:4],
+                    "icon": "fa-camera-retro",
+                })
+        except Exception as e:
+            # Non-blocking if photos service is unreachable
+            pass
+
+    # 4. Categories Search
     cat_rows = query_all("""
         SELECT category, count(DISTINCT date) as days_count, count(id) as visit_count, max(date) as last_date
         FROM segments
@@ -98,3 +129,76 @@ def search(req: Request) -> Response:
         })
 
     return json_response({"status": "SUCCESS", "count": len(results), "results": results[:limit]})
+
+
+@router.get("/api/visits/search")
+def search_visits(req: Request) -> Response:
+    """
+    Dedicated visit search by semantic visual concepts and text.
+    Query params:
+      q: search string (e.g. 'coffee', 'skiing', 'Central Park')
+      semantic: 1 to enable CLIP photo semantic search (default: 1)
+      limit: max results (default: 30)
+      min_score: minimum semantic similarity score (default: 0.50)
+    """
+    q = req.get_str("q").strip()
+    limit = min(100, max(1, req.get_int("limit", 30)))
+    min_score = req.get_float("min_score", 0.50)
+    use_semantic = req.get_int("semantic", 1) == 1
+
+    if not q:
+        return json_response({"status": "SUCCESS", "count": 0, "visits": []})
+
+    visits: List[Dict[str, Any]] = []
+    if use_semantic:
+        try:
+            from api.photo_search import search_visits_by_photo_semantics
+            visits = search_visits_by_photo_semantics(q, limit=limit, min_score=min_score)
+        except Exception:
+            visits = []
+
+    # If semantic search returned fewer than requested, backfill with direct text matches
+    if len(visits) < limit:
+        needed = limit - len(visits)
+        seen_ids = {v["id"] for v in visits}
+        text_matches = query_all("""
+            SELECT id, date, start_ts, end_ts, start_time, end_time, duration_minutes,
+                   place_name, place_address, place_id, category, latitude, longitude, city
+            FROM segments
+            WHERE segment_type = 'visit' AND (place_name LIKE ? OR place_address LIKE ?)
+            ORDER BY start_ts DESC
+            LIMIT ?;
+        """, (f"%{q}%", f"%{q}%", needed * 2))
+
+        for tm in text_matches:
+            if tm["id"] in seen_ids:
+                continue
+            visits.append({
+                "id": tm["id"],
+                "date": tm["date"],
+                "start_time": tm["start_time"],
+                "end_time": tm["end_time"],
+                "duration_minutes": tm["duration_minutes"],
+                "place_name": tm["place_name"] or "Visit",
+                "place_address": tm["place_address"],
+                "place_id": tm["place_id"],
+                "category": tm["category"] or "Other / POI",
+                "city": tm["city"],
+                "latitude": tm["latitude"],
+                "longitude": tm["longitude"],
+                "max_score": 1.0,
+                "photo_count": 0,
+                "photos": [],
+                "top_photo": None,
+            })
+            seen_ids.add(tm["id"])
+            if len(visits) >= limit:
+                break
+
+    return json_response({
+        "status": "SUCCESS",
+        "count": len(visits),
+        "query": q,
+        "visits": visits,
+    })
+

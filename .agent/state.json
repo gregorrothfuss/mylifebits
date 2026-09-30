@@ -1,29 +1,35 @@
 {
-  "goal": "Remove photo day summaries from device ODLH export while preserving them in the web UI",
-  "active_step_id": 3,
+  "goal": "Add photo semantic search index to search visits by visual concepts",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Update enrichment/import_photo_summaries_as_notes.py to remove ODLH export and keep photo summaries strictly in timeline_viewer.db for the UI",
+      "description": "Implement api/photo_search.py connecting semantic photo search with timeline visit matching and in-memory LRU caching",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Deploy clean ODLH (odlh_v54_convergence.db without synthetic notes) to Pixel 8",
+      "description": "Integrate photo semantic search into api/routes/search.py and add api/visits/search endpoint",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Verify UI notes display, audit API contracts, and run API unit tests",
+      "description": "Update static/app.js and static/style.css to render photo-matched visits with thumbnails and jump-to-visit highlighting",
+      "status": "completed"
+    },
+    {
+      "id": 4,
+      "description": "Verify contract tests, schema integrity, and end-to-end integration",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "enrichment/import_photo_summaries_as_notes.py",
-      "scratch/odlh_v54_convergence.db",
-      "timeline_viewer.db",
-      "static/app.js"
+      "api/photo_search.py",
+      "api/routes/search.py",
+      "api/router.py",
+      "static/app.js",
+      "static/style.css"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",

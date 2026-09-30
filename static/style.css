@@ -306,6 +306,51 @@ body {
   text-overflow: ellipsis;
 }
 
+.search-item-thumb-wrapper {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--bg-hover, #f1f5f9);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-item-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.search-score-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+@keyframes highlightCardPulse {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); border-color: #3b82f6; }
+  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.25); border-color: #2563eb; }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); border-color: var(--border-color); }
+}
+
+.item-card.highlight-pulse {
+  animation: highlightCardPulse 1.8s ease-in-out 2;
+  border-color: #3b82f6 !important;
+}
+
 .nav-stats {
   display: flex;
   align-items: center;
