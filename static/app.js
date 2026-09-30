@@ -273,7 +273,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  let currentMapStyle = localStorage.getItem("mylifebits_map_style") || "voyager";
+  // Safe Storage helper (prevents SecurityError in sandboxed iframes or restricted privacy contexts)
+  const safeStorage = {
+    getItem(key) {
+      try {
+        return window.localStorage ? window.localStorage.getItem(key) : null;
+      } catch (e) {
+        return null;
+      }
+    },
+    setItem(key, value) {
+      try {
+        if (window.localStorage) {
+          window.localStorage.setItem(key, value);
+        }
+      } catch (e) {}
+    }
+  };
+
+  let currentMapStyle = safeStorage.getItem("mylifebits_map_style") || "voyager";
   if (!MAP_STYLES[currentMapStyle]) currentMapStyle = "voyager";
 
   // Active base tile layers indexed by map container ID
@@ -330,9 +348,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function setGlobalMapStyle(styleKey) {
     if (!MAP_STYLES[styleKey]) return;
     currentMapStyle = styleKey;
-    try {
-      localStorage.setItem("mylifebits_map_style", styleKey);
-    } catch (e) {}
+    safeStorage.setItem("mylifebits_map_style", styleKey);
 
     // Synchronize UI dropdowns
     document.querySelectorAll(".map-style-select").forEach((el) => {
@@ -4179,9 +4195,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("btn-sync-device")?.addEventListener("click", async () => {
       const btn = document.getElementById("btn-sync-device");
-      const oldHtml = btn.innerHTML;
-      btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Syncing...';
-      btn.disabled = true;
+      const oldHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Syncing...';
+        btn.disabled = true;
+      }
       try {
         const res = await fetch("/api/sync-device", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
         const data = await res.json();
@@ -4195,8 +4213,10 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (e) {
         alert("Error connecting to ADB extraction daemon: " + e.message);
       } finally {
-        btn.innerHTML = oldHtml;
-        btn.disabled = false;
+        if (btn) {
+          btn.innerHTML = oldHtml;
+          btn.disabled = false;
+        }
       }
     });
 

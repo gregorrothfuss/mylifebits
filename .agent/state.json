@@ -1,28 +1,21 @@
 {
-  "goal": "Upgrade map tiles from legacy MapQuest-like OSM to modern CartoDB Voyager with persistent multi-style switcher",
-  "active_step_id": 3,
+  "goal": "Fix SecurityError by wrapping localStorage access in safeStorage helper",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Implement modern map styles (CartoDB Voyager as default, Positron, Dark Matter, Satellite, OSM) and style switcher in static/app.js",
+      "description": "Implement safeStorage helper and replace bare localStorage access in static/app.js",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Add styled map style selector control to map floating controls in static/index.html and static/style.css",
-      "status": "completed"
-    },
-    {
-      "id": 3,
       "description": "Verify API contracts and test suite to ensure zero regressions",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "static/app.js",
-      "static/index.html",
-      "static/style.css"
+      "static/app.js"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
