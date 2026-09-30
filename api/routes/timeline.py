@@ -72,7 +72,6 @@ def get_day(req: Request) -> Response:
                p.city as catalog_city, p.country as catalog_country,
                p.user_confirmed as catalog_confirmed,
                p.review_rating as catalog_review_rating, p.review_text as catalog_review_text,
-               p.review_photos as catalog_review_photos, p.review_photo_count as catalog_review_photo_count,
                p.has_review as catalog_has_review
         FROM segments s
         LEFT JOIN places p ON s.place_id = p.place_id
@@ -131,17 +130,10 @@ def get_day(req: Request) -> Response:
             s["review_rating"] = s.get("catalog_review_rating") or s.get("review_rating")
             s["review_text"] = s.get("catalog_review_text") or s.get("review_text")
 
-            # Parse review photos
-            raw_photos = s.get("catalog_review_photos") or s.get("review_photos")
-            if isinstance(raw_photos, str) and raw_photos.strip():
-                try:
-                    s["review_photos"] = json.loads(raw_photos)
-                except Exception:
-                    s["review_photos"] = []
-            elif isinstance(raw_photos, list):
-                s["review_photos"] = raw_photos
-            else:
-                s["review_photos"] = []
+            # Initialize photos strictly for this visit segment (populated only by photos matching visit interval)
+            s["review_photos"] = []
+            s["photos"] = []
+            s["photo_count"] = 0
 
             # Parse with_people
             raw_people = s.get("with_people")
@@ -295,6 +287,19 @@ def get_day(req: Request) -> Response:
         ORDER BY timestamp_utc ASC;
     """, (date_str,))
 
+    for p in day_photos:
+        p["preview_url"] = f"/api/photo?sha256={p['sha256']}"
+        raw_p = p.get("people")
+        if isinstance(raw_p, str) and raw_p.strip():
+            try:
+                p["people"] = json.loads(raw_p)
+            except Exception:
+                p["people"] = [raw_p]
+        elif not isinstance(raw_p, list):
+            p["people"] = []
+
+    # Also collect candidate photos for overnight segments spanning across midnight
+    candidate_photos = list(day_photos)
     if segments:
         valid_starts = [s["start_ts"] for s in segments if s.get("start_ts")]
         valid_ends = [s["end_ts"] for s in segments if s.get("end_ts")]
@@ -308,68 +313,61 @@ def get_day(req: Request) -> Response:
                 WHERE timestamp_utc >= ? AND timestamp_utc <= ? AND (local_date != ? OR local_date IS NULL)
                 ORDER BY timestamp_utc ASC;
             """, (min_ts, max_ts, date_str))
-            seen_shas = {p["sha256"] for p in day_photos}
+            seen_shas = {p["sha256"] for p in candidate_photos}
             for ep in extra_photos:
                 if ep["sha256"] not in seen_shas:
-                    day_photos.append(ep)
+                    ep["preview_url"] = f"/api/photo?sha256={ep['sha256']}"
+                    candidate_photos.append(ep)
                     seen_shas.add(ep["sha256"])
 
-    for p in day_photos:
-        p["preview_url"] = f"/api/photo?sha256={p['sha256']}"
-        raw_p = p.get("people")
-        if isinstance(raw_p, str) and raw_p.strip():
-            try:
-                p["people"] = json.loads(raw_p)
-            except Exception:
-                p["people"] = [raw_p]
-        elif not isinstance(raw_p, list):
-            p["people"] = []
-
-    # Attach matching photos to visit & activity segments
+    # Attach matching photos to visit & activity segments strictly by timestamp interval
     for s in segments:
         s_photos = []
+        s_start = s.get("start_ts")
+        s_end = s.get("end_ts")
+
         if s["segment_type"] == "visit":
-            for p in day_photos:
-                p_ts = p.get("timestamp_utc")
-                p_pid = p.get("place_id")
-                match = False
-                if s.get("place_id") and p_pid and s["place_id"] == p_pid:
-                    if s.get("start_ts") and s.get("end_ts") and p_ts:
-                        if s["start_ts"] - 3600 <= p_ts <= s["end_ts"] + 3600:
-                            match = True
-                    else:
+            if s_start and s_end:
+                for p in candidate_photos:
+                    p_ts = p.get("timestamp_utc")
+                    if not p_ts:
+                        continue
+
+                    # Strict time bounding: must fall within visit window (with +/- 60s tolerance for clock drift)
+                    if not (s_start - 60 <= p_ts <= s_end + 60):
+                        continue
+
+                    p_pid = p.get("place_id")
+                    match = False
+
+                    if s.get("place_id") and p_pid and s["place_id"] == p_pid:
                         match = True
-                elif s.get("start_ts") and s.get("end_ts") and p_ts:
-                    if s["start_ts"] - 120 <= p_ts <= s["end_ts"] + 120:
-                        if s.get("latitude") is not None and p.get("latitude") is not None:
-                            dist_m = haversine_distance(s["latitude"], s["longitude"], p["latitude"], p["longitude"])
-                            if dist_m <= 250:
-                                match = True
-                        else:
+                    elif s.get("latitude") is not None and p.get("latitude") is not None:
+                        dist_m = haversine_distance(s["latitude"], s["longitude"], p["latitude"], p["longitude"])
+                        if dist_m <= 250:
                             match = True
-                if match:
-                    s_photos.append(p)
+                    elif p.get("latitude") is None and not p_pid:
+                        # Indoor/GPS-less camera photo strictly within visit interval
+                        if s_start <= p_ts <= s_end:
+                            match = True
+
+                    if match:
+                        s_photos.append(p)
 
             s["photos"] = s_photos
             s["photo_count"] = len(s_photos)
-            if s_photos:
-                existing_urls = list(s.get("review_photos") or [])
-                for sp in s_photos:
-                    url = f"/api/photo?sha256={sp['sha256']}"
-                    if url not in existing_urls:
-                        existing_urls.append(url)
-                s["review_photos"] = existing_urls
+            s["review_photos"] = [f"/api/photo?sha256={sp['sha256']}" for sp in s_photos]
 
         elif s["segment_type"] == "activity":
-            if s.get("start_ts") and s.get("end_ts"):
-                for p in day_photos:
+            if s_start and s_end:
+                for p in candidate_photos:
                     p_ts = p.get("timestamp_utc")
-                    if p_ts and s["start_ts"] <= p_ts <= s["end_ts"]:
+                    if p_ts and (s_start - 30 <= p_ts <= s_end + 30):
                         s_photos.append(p)
+
             s["photos"] = s_photos
             s["photo_count"] = len(s_photos)
-            if s_photos:
-                s["review_photos"] = [f"/api/photo?sha256={sp['sha256']}" for sp in s_photos]
+            s["review_photos"] = [f"/api/photo?sha256={sp['sha256']}" for sp in s_photos]
 
     return json_response({
         "status": "SUCCESS",
