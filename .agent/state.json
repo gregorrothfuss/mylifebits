@@ -1,33 +1,35 @@
 {
-  "goal": "Eliminate synthetic rectangle/L-step paths, snap activities to authentic road curves, and enforce honest chord rendering",
+  "goal": "Import most recent Google Cloud backup from Pixel 10 via Pixel 8a and standardize IN_PASSENGER_VEHICLE to DRIVING",
   "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Harden road_snapper.py and api/routes/timeline.py to detect and reject synthetic rectangle/L-step corner paths",
+      "description": "Trigger and complete Google Cloud backup import from Pixel 10 on Pixel 8a",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Cleanse timeline_viewer.db by replacing fake L-steps with genuine OSRM street curves for 2026/recent days and resetting unsnapped to chords",
+      "description": "Export and pull fresh Timeline backup (Timeline-20260930.json) through today",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Verify date 2026-07-20 and full dataset, run API contract audit and E2E test suite",
+      "description": "Merge fresh backup export into timeline_viewer.db with DRIVING activity mapping",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Restart service, verify on live https://mylifebits.local, and commit changes",
+      "description": "Verify database integrity, convert any remaining IN_PASSENGER_VEHICLE records, test server endpoints, and restart service",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "road_snapper.py",
-      "api/routes/timeline.py",
-      "static/app.js"
+      "pixel10_export/Timeline-20260930.json",
+      "pixel10_export/Timeline-latest.json",
+      "scripts/merge_pixel10_export.py",
+      "importer.py",
+      "timeline_viewer.db"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
@@ -35,6 +37,7 @@
       "tests/test_e2e_server.py"
     ],
     "scratch_logs": [
+      ".agent/scratch/merge_20260930.log",
       ".agent/scratch/audit.log",
       ".agent/scratch/test.log"
     ]
