@@ -929,7 +929,6 @@ document.addEventListener("DOMContentLoaded", () => {
           const distKm = (distM / 1000.0).toFixed(1);
           const hasSnapped = Boolean(s.has_snapped_path === 1 && s.path_points && s.path_points.length >= 3);
           const isSameDockLoop = (actType.includes("CYCLE") || actType.includes("BIKE")) && distM < 30.0 && s.duration_minutes >= 2.0;
-          const isIndoorPacing = actType.includes("WALK") && distM < 30.0 && s.duration_minutes >= 2.0;
           
           let displayDistKm = distKm;
           if (isSameDockLoop && distM < 30.0) {
@@ -941,7 +940,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           const baseName = (actType === "IN_PASSENGER_VEHICLE" || actType === "DRIVING") ? "Driving" : actType.replace(/_/g, ' ');
-          const actTitle = `${baseName}${isSameDockLoop ? ' (Round-Trip Loop)' : (isIndoorPacing ? ' (Indoor / In-Place)' : '')}`;
+          const actTitle = `${baseName}${isSameDockLoop ? ' (Round-Trip Loop)' : ''}`;
 
           card.innerHTML = `
             <div class="item-icon ${modeClass}">
@@ -957,7 +956,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="tag-badge"><i class="fa-solid fa-arrows-left-right"></i> ${displayDistKm} km</span>
                 ${hasSnapped ? '<span class="tag-badge snapped"><i class="fa-solid fa-route"></i> Snapped Route</span>' : ''}
                 ${s.review_photos && s.review_photos.length ? `<span class="tag-badge activity-photo-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;cursor:pointer;" title="View photos in lightbox"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
-                ${!isIndoorPacing && !isSameDockLoop && distM >= 50.0 ? `<button class="btn-3d-ride" title="Ride along this route in 3D Earth view"><i class="fa-solid fa-earth-americas"></i> 3D Ride</button>` : ''}
+                ${!isSameDockLoop && distM >= 50.0 ? `<button class="btn-3d-ride" title="Ride along this route in 3D Earth view"><i class="fa-solid fa-earth-americas"></i> 3D Ride</button>` : ''}
                 <button class="icon-btn edit-activity-btn" style="width:20px;height:20px;font-size:10px;margin-left:auto;" title="Edit Activity Details"><i class="fa-solid fa-pen"></i></button>
               </div>
               ${s.review_photos && s.review_photos.length ? `
