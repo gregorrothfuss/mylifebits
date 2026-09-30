@@ -5,6 +5,7 @@ Daily Timeline, Calendar, and Gap Stitching Routes.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any, Dict, List, Optional
 
@@ -166,10 +167,31 @@ def get_day(req: Request) -> Response:
                 coords = [[s["latitude"], s["longitude"]], [s["end_lat"], s["end_lng"]]]
 
             if coords and len(coords) >= 2:
+                # Deduplicate sequential near-identical points
+                dedup = [coords[0]]
+                for p in coords[1:]:
+                    if abs(p[0] - dedup[-1][0]) > 1e-5 or abs(p[1] - dedup[-1][1]) > 1e-5:
+                        dedup.append(p)
+                coords = dedup
+
+            # Check if polyline forms a genuine non-collinear road curve
+            is_snapped = 0
+            if coords and len(coords) >= 3:
+                p1, p2 = coords[0], coords[-1]
+                dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+                denom = math.hypot(dx, dy)
+                if denom > 1e-7:
+                    max_dev = max(abs(dy * p[0] - dx * p[1] + p2[0]*p1[1] - p2[1]*p1[0]) / denom for p in coords[1:-1])
+                    # Require > ~5 meters perpendicular deviation from straight line to be considered a curved road
+                    if max_dev > 0.00005:
+                        is_snapped = 1
+
+            if coords and len(coords) >= 2:
                 s["path_points"] = coords
-                s["has_snapped_path"] = 1 if len(coords) >= 3 else 0
+                s["has_snapped_path"] = is_snapped
             else:
                 s["path_points"] = None
+                s["has_snapped_path"] = 0
 
         # Compute accurate local time
         t1, t2, tz_str = format_local_time_strings(

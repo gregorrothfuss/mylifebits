@@ -927,7 +927,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const distM = s.distance_meters || 0.0;
           const distKm = (distM / 1000.0).toFixed(1);
-          const hasSnapped = s.has_snapped_path === 1 || Boolean(s.path_points_json && s.path_points_json.length > 5);
+          const hasSnapped = Boolean(s.has_snapped_path === 1 && s.path_points && s.path_points.length >= 3);
           const isSameDockLoop = (actType.includes("CYCLE") || actType.includes("BIKE")) && distM < 30.0 && s.duration_minutes >= 2.0;
           const isIndoorPacing = actType.includes("WALK") && distM < 30.0 && s.duration_minutes >= 2.0;
           
@@ -1299,12 +1299,13 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
 
-          const defaultWeight = s.has_snapped_path ? 5 : 3;
+          const isSnappedCurve = Boolean(s.has_snapped_path === 1 && coords.length >= 3);
+          const defaultWeight = isSnappedCurve ? 5 : 3;
           const polyline = L.polyline(coords, {
             color: color,
             weight: defaultWeight,
             opacity: 0.85,
-            dashArray: s.has_snapped_path ? null : "6, 8"
+            dashArray: isSnappedCurve ? null : "6, 8"
           });
 
           segmentLayerMap.set(s.id, { layer: polyline, type: "activity", defaultWeight: defaultWeight, defaultColor: color });
@@ -1325,8 +1326,8 @@ document.addEventListener("DOMContentLoaded", () => {
               <strong style="color:${color};font-size:13px;"><i class="fa-solid ${ACTIVITY_ICONS[actType] || 'fa-route'}"></i> ${actType.replace(/_/g, ' ')}</strong>
               <p style="margin:4px 0 0 0;">${(s.distance_meters/1000).toFixed(1)} km in ${s.duration_minutes.toFixed(0)} mins</p>
               <p style="margin:2px 0 0 0;color:#94a3b8;font-size:11px;">${s.start_time.slice(11,16)} - ${s.end_time.slice(11,16)}</p>
-              <p style="margin:2px 0 0 0;font-size:10px;color:${s.has_snapped_path ? '#34d399' : '#94a3b8'};">
-                ${s.has_snapped_path ? '✓ Road-Snapped' : '⚠ Straight-Line Chord'}
+              <p style="margin:2px 0 0 0;font-size:10px;color:${isSnappedCurve ? '#34d399' : '#94a3b8'};">
+                ${isSnappedCurve ? '✓ Road-Snapped' : '⚠ Straight-Line Chord'}
               </p>
             </div>
           `);

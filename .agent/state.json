@@ -1,34 +1,38 @@
 {
-  "goal": "Eliminate contradictory 'Walking Dwell' labels, fix missing search/modal thumbnails with multi-tier place resolution, and make Jump navigation 100% reliable",
-  "active_step_id": 1,
+  "goal": "Enforce strict truth in route snapping: a straight line is never snapped, and snap all 2026 travel legs to real streets",
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
-      "description": "Remove contradictory 'Stationary Dwell / Pause' labeling from walking activities in static/app.js",
+      "description": "Fix static/app.js: only show Snapped Route and thick/solid line if has_snapped_path === 1 and path_points.length >= 3",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Enhance photo proxy and search with multi-tier thumbnail resolution across places, visits, and query-param SHAs",
+      "description": "Harden api/routes/timeline.py: enforce non-collinear curve check (has_snapped_path strictly 0 for straight lines)",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Make Jump navigation 100% reliable: close all modals/dropdowns, zoom map to visit, retry card highlight, and pass visit IDs in place modals",
+      "description": "Snap 291 unsnapped 2026 travel legs (including 2026-09-28) to real OpenStreetMap road curves using OSRM",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Verify API contracts and test suite, restart service, and verify live endpoints",
+      "description": "Cleanse timeline_viewer.db: reset has_snapped_path = 0 on all straight/collinear paths",
+      "status": "completed"
+    },
+    {
+      "id": 5,
+      "description": "Verify API contracts, test suite, and live server on https://mylifebits.local/?date=2026-09-28",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
       "static/app.js",
-      "static/index.html",
-      "api/routes/photos.py",
-      "api/routes/search.py"
+      "api/routes/timeline.py",
+      "scripts/snap_2026_straight_activities.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
@@ -36,6 +40,7 @@
       "tests/test_e2e_server.py"
     ],
     "scratch_logs": [
+      ".agent/scratch/snap_2026.log",
       ".agent/scratch/audit.log",
       ".agent/scratch/test.log"
     ]
