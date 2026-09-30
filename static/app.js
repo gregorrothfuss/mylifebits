@@ -364,6 +364,9 @@ document.addEventListener("DOMContentLoaded", () => {
       loadTrips();
       loadArchiveNuggets();
     } else if (targetTab === "places") {
+      setTimeout(() => {
+        if (placesMap) placesMap.invalidateSize(true);
+      }, 100);
       loadPlaces();
     } else if (targetTab === "heatmap") {
       setTimeout(() => {
@@ -4922,12 +4925,20 @@ document.addEventListener("DOMContentLoaded", () => {
       if (it.type === "PHOTO_VISIT" || it.segment_id) {
         if (it.date) {
           jumpToTimelineDay(it.date, true, "search", it.segment_id);
-          if (it.latitude && it.longitude && typeof map !== "undefined" && map) {
+          const lat = parseFloat(it.latitude);
+          const lng = parseFloat(it.longitude);
+          if (!isNaN(lat) && !isNaN(lng) && typeof map !== "undefined" && map) {
             setTimeout(() => {
-              if (map && map.flyTo) {
-                map.flyTo([it.latitude, it.longitude], 16.5, { duration: 0.8 });
+              try {
+                map.invalidateSize(true);
+                const size = map.getSize();
+                if (size && size.x > 0 && size.y > 0) {
+                  map.setView([lat, lng], 16.5);
+                }
+              } catch (e) {
+                console.warn("Map navigation error:", e);
               }
-            }, 350);
+            }, 250);
           }
         }
         return;
@@ -4940,10 +4951,20 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
           loadPlaces(it.title);
         }
-        if (it.latitude && it.longitude && typeof placesMap !== "undefined" && placesMap) {
+        const lat = parseFloat(it.latitude);
+        const lng = parseFloat(it.longitude);
+        if (!isNaN(lat) && !isNaN(lng) && typeof placesMap !== "undefined" && placesMap) {
           setTimeout(() => {
-            placesMap.flyTo([it.latitude, it.longitude], 16, { duration: 0.8 });
-          }, 350);
+            try {
+              placesMap.invalidateSize(true);
+              const size = placesMap.getSize();
+              if (size && size.x > 0 && size.y > 0) {
+                placesMap.setView([lat, lng], 16);
+              }
+            } catch (e) {
+              console.warn("PlacesMap navigation error:", e);
+            }
+          }, 250);
         }
         return;
       }
@@ -4964,10 +4985,20 @@ document.addEventListener("DOMContentLoaded", () => {
       const targetDate = it.date;
       if (targetDate) {
         jumpToTimelineDay(targetDate, true, "search");
-        if (it.latitude && it.longitude && typeof map !== "undefined" && map) {
+        const lat = parseFloat(it.latitude);
+        const lng = parseFloat(it.longitude);
+        if (!isNaN(lat) && !isNaN(lng) && typeof map !== "undefined" && map) {
           setTimeout(() => {
-            map.flyTo([it.latitude, it.longitude], 16, { duration: 0.8 });
-          }, 350);
+            try {
+              map.invalidateSize(true);
+              const size = map.getSize();
+              if (size && size.x > 0 && size.y > 0) {
+                map.setView([lat, lng], 16);
+              }
+            } catch (e) {
+              console.warn("Map navigation error:", e);
+            }
+          }, 250);
         }
       }
     }

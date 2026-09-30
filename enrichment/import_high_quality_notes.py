@@ -12,6 +12,7 @@ Preserves authentic user Takeout notes.
 """
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,16 +22,28 @@ PHOTOS_DB = Path("/Users/rothfuss/projects/gregor_cos/photos_vault.db")
 VIEWER_DB = WORKSPACE_DIR / "timeline_viewer.db"
 
 
-def normalize_loc(loc: str) -> str:
+def clean_location_candidate(loc: str) -> str | None:
     if not loc:
-        return ""
+        return None
+    loc = loc.strip()
+    # Reject postal codes, zip codes, and state+zip combos (e.g. 'Michigan 48124', 'FL 33149')
+    if re.search(r"\b\d{4,5}\b", loc):
+        return None
     loc = loc.replace("ZÜrich", "Zürich").replace("Zuerich", "Zürich")
     if "/" in loc:
         parts = [p.strip() for p in loc.split("/")]
         loc = parts[-1] if len(parts) > 1 else parts[0]
     if loc == "New york":
         loc = "New York"
-    return loc.strip()
+    return loc.strip() or None
+
+
+def pick_best_location(locations: list[str]) -> str:
+    for candidate in locations:
+        cleaned = clean_location_candidate(candidate)
+        if cleaned:
+            return cleaned
+    return ""
 
 
 def simplify_themes(themes: list[str]) -> list[str]:
@@ -107,7 +120,7 @@ def synthesize_clean_note(date_str, people, themes, locations):
         return None
 
     simplified = simplify_themes(valid_themes)
-    loc = normalize_loc(locations[0]) if locations else ""
+    loc = pick_best_location(locations)
 
     if len(clean_p) == 1:
         p_str = f"with {clean_p[0]}"
