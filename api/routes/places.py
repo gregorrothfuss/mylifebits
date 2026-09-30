@@ -29,7 +29,7 @@ def get_places(req: Request) -> Response:
     if q:
         try:
             from api.photo_search import get_places_with_photos_for_concept
-            photo_places_map = get_places_with_photos_for_concept(q, limit=80, min_score=0.48)
+            photo_places_map = get_places_with_photos_for_concept(q, limit=80, min_score=0.60)
         except Exception:
             photo_places_map = {}
 
@@ -45,11 +45,11 @@ def get_places(req: Request) -> Response:
         if photo_places_map:
             pids = list(photo_places_map.keys())
             placeholders = ",".join("?" for _ in pids)
-            where.append(f"(name LIKE ? OR address LIKE ? OR semantic_type LIKE ? OR city LIKE ? OR review_text LIKE ? OR place_id IN ({placeholders}))")
-            params.extend([wildcard, wildcard, wildcard, wildcard, wildcard] + pids)
+            where.append(f"(name LIKE ? OR address LIKE ? OR review_text LIKE ? OR place_id IN ({placeholders}))")
+            params.extend([wildcard, wildcard, wildcard] + pids)
         else:
-            where.append("(name LIKE ? OR address LIKE ? OR semantic_type LIKE ? OR city LIKE ? OR review_text LIKE ?)")
-            params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
+            where.append("(name LIKE ? OR address LIKE ? OR review_text LIKE ?)")
+            params.extend([wildcard, wildcard, wildcard])
 
     if category and category.upper() != "ALL":
         where.append("category = ?")

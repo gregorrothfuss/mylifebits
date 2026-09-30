@@ -83,7 +83,7 @@ def query_photo_semantic_index(query: str, limit: int = 60) -> List[Dict[str, An
 def search_visits_by_photo_semantics(
     query: str,
     limit: int = 25,
-    min_score: float = 0.50,
+    min_score: float = 0.60,
 ) -> List[Dict[str, Any]]:
     """
     Performs semantic concept search across photos and maps matching photos
@@ -207,99 +207,117 @@ def search_visits_by_photo_semantics(
 def get_places_with_photos_for_concept(
     query: str,
     limit: int = 80,
-    min_score: float = 0.50,
+    min_score: float = 0.60,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Returns place_ids where photos matching query were taken,
-    mapping place_id -> {"photo_count": N, "max_score": float, "top_photo": dict}
+    mapping place_id -> {"photo_count": N, "max_score": float, "top_photo": dict}.
+    Enforces strict single-place attribution per photo to prevent duplicate cards.
     """
     clean_q = query.strip()
     if not clean_q:
         return {}
 
-    photos = query_photo_semantic_index(clean_q, limit=limit)
-    if not photos:
-        return {}
+    # Check if query matches tagged people in photos
+    person_photos = query_all("""
+        SELECT sha256, filename, timestamp_utc, latitude, longitude, place_id
+        FROM photos
+        WHERE people LIKE ? AND timestamp_utc IS NOT NULL
+        LIMIT ?;
+    """, (f"%{clean_q}%", limit))
 
-    sha_scores = {
-        p["sha256"]: float(p.get("score", 0.0))
-        for p in photos
-        if p.get("sha256") and float(p.get("score", 0.0)) >= min_score
-    }
-    if not sha_scores:
-        return {}
+    if person_photos:
+        sha_scores = {p["sha256"]: 1.0 for p in person_photos}
+        photo_rows = person_photos
+    else:
+        photos = query_photo_semantic_index(clean_q, limit=limit)
+        if not photos:
+            return {}
 
-    shas = list(sha_scores.keys())
-    placeholders = ",".join("?" for _ in shas)
+        sha_scores = {
+            p["sha256"]: float(p.get("score", 0.0))
+            for p in photos
+            if p.get("sha256") and float(p.get("score", 0.0)) >= min_score
+        }
+        if not sha_scores:
+            return {}
+
+        shas = list(sha_scores.keys())
+        placeholders = ",".join("?" for _ in shas)
+
+        # Fetch photo metadata
+        photo_rows = query_all(f"""
+            SELECT sha256, filename, timestamp_utc, latitude, longitude, place_id
+            FROM photos
+            WHERE sha256 IN ({placeholders}) AND timestamp_utc IS NOT NULL;
+        """, shas)
 
     places_map: Dict[str, Dict[str, Any]] = {}
 
-    # 1. Direct place_ids in photos table
-    direct_rows = query_all(f"""
-        SELECT sha256, place_id, filename, preview_path
-        FROM photos
-        WHERE sha256 IN ({placeholders}) AND place_id IS NOT NULL;
-    """, shas)
+    for pr in photo_rows:
+        sha = pr["sha256"]
+        ts = pr["timestamp_utc"]
+        p_lat = pr.get("latitude")
+        p_lng = pr.get("longitude")
+        p_pid = pr.get("place_id")
 
-    for r in direct_rows:
-        pid = r["place_id"]
-        sha = r["sha256"]
-        score = sha_scores.get(sha, 0.0)
-        if pid not in places_map:
-            places_map[pid] = {
-                "place_id": pid,
+        # Find overlapping visit segment
+        segs = query_all("""
+            SELECT id, place_id, latitude, longitude, start_ts, end_ts, duration_minutes
+            FROM segments
+            WHERE segment_type = 'visit' AND ? >= start_ts AND ? <= end_ts AND place_id IS NOT NULL;
+        """, (ts, ts))
+
+        assigned_pid = None
+        if segs:
+            best_seg = None
+            best_dist = 999999.0
+            for s in segs:
+                s_pid = s["place_id"]
+                s_lat = s.get("latitude")
+                s_lng = s.get("longitude")
+                if p_pid and s_pid == p_pid:
+                    best_seg = s
+                    break
+                if p_lat is not None and p_lng is not None and s_lat is not None and s_lng is not None:
+                    d = _haversine_distance_m(s_lat, s_lng, p_lat, p_lng)
+                    if d < best_dist and d <= 500.0:
+                        best_dist = d
+                        best_seg = s
+                elif best_seg is None:
+                    best_seg = s
+            if best_seg:
+                assigned_pid = best_seg["place_id"]
+
+        if not assigned_pid and p_pid:
+            assigned_pid = p_pid
+
+        if not assigned_pid:
+            continue
+
+        score = sha_scores[sha]
+        if assigned_pid not in places_map:
+            places_map[assigned_pid] = {
+                "place_id": assigned_pid,
                 "photo_count": 0,
                 "max_score": score,
                 "top_photo": {
                     "sha256": sha,
-                    "filename": r.get("filename"),
+                    "filename": pr.get("filename"),
                     "preview_url": f"/api/photo?sha256={sha}",
                     "score": round(score, 3),
                 }
             }
-        places_map[pid]["photo_count"] += 1
-        if score > places_map[pid]["max_score"]:
-            places_map[pid]["max_score"] = score
-            places_map[pid]["top_photo"] = {
+        places_map[assigned_pid]["photo_count"] += 1
+        if score > places_map[assigned_pid]["max_score"]:
+            places_map[assigned_pid]["max_score"] = score
+            places_map[assigned_pid]["top_photo"] = {
                 "sha256": sha,
-                "filename": r.get("filename"),
-                "preview_url": f"/api/photo?sha256={sha}",
-                "score": round(score, 3),
-            }
-
-    # 2. Photos mapped to visit segments via timestamp (+/- 60s)
-    seg_rows = query_all(f"""
-        SELECT p.sha256, p.filename, p.preview_path, s.place_id
-        FROM photos p
-        JOIN segments s ON p.timestamp_utc >= (s.start_ts - 60) AND p.timestamp_utc <= (s.end_ts + 60)
-        WHERE p.sha256 IN ({placeholders}) AND s.segment_type = 'visit' AND s.place_id IS NOT NULL;
-    """, shas)
-
-    for r in seg_rows:
-        pid = r["place_id"]
-        sha = r["sha256"]
-        score = sha_scores.get(sha, 0.0)
-        if pid not in places_map:
-            places_map[pid] = {
-                "place_id": pid,
-                "photo_count": 0,
-                "max_score": score,
-                "top_photo": {
-                    "sha256": sha,
-                    "filename": r.get("filename"),
-                    "preview_url": f"/api/photo?sha256={sha}",
-                    "score": round(score, 3),
-                }
-            }
-        places_map[pid]["photo_count"] += 1
-        if score > places_map[pid]["max_score"]:
-            places_map[pid]["max_score"] = score
-            places_map[pid]["top_photo"] = {
-                "sha256": sha,
-                "filename": r.get("filename"),
+                "filename": pr.get("filename"),
                 "preview_url": f"/api/photo?sha256={sha}",
                 "score": round(score, 3),
             }
 
     return places_map
+
 

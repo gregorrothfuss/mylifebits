@@ -1,26 +1,38 @@
 {
-  "goal": "Remove chronology block from search results view and prevent browser caching of stale HTML",
-  "active_step_id": 3,
+  "goal": "Fix person search, eliminate duplicate photo place attribution, remove semantic_type query leak, and propagate query to URL",
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
-      "description": "Send Cache-Control: no-cache, no-store, must-revalidate in server.py for HTML/JS/CSS assets",
+      "description": "Fix photo place attribution in api/photo_search.py to strictly associate each photo with a single place and validate spatio-temporal bounds",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Hide #life-periods-section during active search in static/app.js and clean layout in static/index.html",
+      "description": "Add first-class person search in api/routes/search.py matching photos.people and contacts, returning person visits instead of CLIP noise",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Run contract audit, execute test suite, restart server, verify headers",
+      "description": "Remove semantic_type leakage in api/routes/places.py and prevent mystery matches",
+      "status": "completed"
+    },
+    {
+      "id": 4,
+      "description": "Propagate search query ?q= to window.location.search and support initial query param boot in static/app.js",
+      "status": "completed"
+    },
+    {
+      "id": 5,
+      "description": "Run contract audit, execute test suite, restart server, verify end-to-end",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "server.py",
+      "api/photo_search.py",
+      "api/routes/search.py",
+      "api/routes/places.py",
       "static/app.js",
       "static/index.html"
     ],

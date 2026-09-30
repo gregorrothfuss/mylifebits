@@ -4715,6 +4715,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const params = new URLSearchParams(window.location.search);
     const tabFromUrl = params.get("tab") || (e.state && e.state.tab) || "timeline";
     const dateFromUrl = params.get("date") || (e.state && e.state.date) || getLocalToday();
+    const qFromUrl = params.get("q") || (e.state && e.state.q) || "";
+
+    const searchInput = document.getElementById("global-search-input");
+    const clearBtn = document.getElementById("global-search-clear");
+    if (searchInput) {
+      searchInput.value = qFromUrl;
+      if (clearBtn) clearBtn.style.display = qFromUrl ? "block" : "none";
+    }
 
     if (tabFromUrl !== "timeline") {
       navOriginTab = null;
@@ -4726,6 +4734,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (tabFromUrl === "timeline") {
       loadDay(dateFromUrl, false);
       updateOriginBanner();
+    } else if (tabFromUrl === "places" && qFromUrl) {
+      loadPlaces(qFromUrl);
     }
   });
 
@@ -4741,6 +4751,20 @@ document.addEventListener("DOMContentLoaded", () => {
     let debounceTimer = null;
     let selectedIdx = -1;
     let currentResults = [];
+
+    function updateUrlQuery(q) {
+      try {
+        const url = new URL(window.location.href);
+        if (q && q.trim()) {
+          url.searchParams.set("q", q.trim());
+        } else {
+          url.searchParams.delete("q");
+        }
+        window.history.replaceState({ ...window.history.state, q: q ? q.trim() : "" }, "", url.toString());
+      } catch (e) {
+        console.warn("Could not update URL query:", e);
+      }
+    }
 
     // Global Shortcuts: Cmd+K / Ctrl+K / '/' to focus search input
     window.addEventListener("keydown", (e) => {
@@ -4758,6 +4782,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let tabLiveSearchTimer = null;
     input.addEventListener("input", () => {
       const q = input.value.trim();
+      updateUrlQuery(q);
       if (clearBtn) clearBtn.style.display = q ? "block" : "none";
 
       const activeTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "";
@@ -4796,6 +4821,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function showSearchInPlacesList(q) {
       if (!q) return;
       dropdown.style.display = "none";
+      updateUrlQuery(q);
       currentPlacesQuery = q;
       currentCategory = "ALL";
       currentCity = "ALL";
@@ -4815,6 +4841,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!q) return;
       clearTimeout(debounceTimer);
       dropdown.style.display = "none";
+      updateUrlQuery(q);
 
       const dMatch = q.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
       if (dMatch) {
@@ -4840,19 +4867,44 @@ document.addEventListener("DOMContentLoaded", () => {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=25`);
         const data = await res.json();
         const results = data.results || [];
+        
+        // 1. Direct date match
         const dateMatch = results.find(r => r.type === "DATE");
         if (dateMatch) {
           selectSearchResult(dateMatch);
           return;
         }
 
-        // Default to displaying results in the Places catalog
+        // 2. Specific visit with a person
+        const personVisit = results.find(r => r.type === "PERSON_VISIT");
+        if (personVisit) {
+          selectSearchResult(personVisit);
+          return;
+        }
+
+        // 3. Specific visit with a visual photo match
+        const photoVisit = results.find(r => r.type === "PHOTO_VISIT");
+        if (photoVisit) {
+          selectSearchResult(photoVisit);
+          return;
+        }
+
+        // 4. Person contact / entity
+        const personMatch = results.find(r => r.type === "PERSON");
+        if (personMatch) {
+          selectSearchResult(personMatch);
+          return;
+        }
+
+        // 5. Default to displaying results in Places catalog
         showSearchInPlacesList(q);
       } catch (err) {
         console.error("Execute search error:", err);
         showSearchInPlacesList(q);
       }
     }
+
+    window.executeGlobalSearchNow = executeSearchNow;
 
     input.addEventListener("keydown", async (e) => {
       const items = dropdown.querySelectorAll(".search-result-item");
@@ -4889,6 +4941,7 @@ document.addEventListener("DOMContentLoaded", () => {
       clearBtn.style.display = "none";
       dropdown.style.display = "none";
       dropdown.innerHTML = "";
+      updateUrlQuery("");
       input.focus();
       const activeTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "";
       if (activeTab === "places") loadPlaces("");
@@ -4923,12 +4976,14 @@ document.addEventListener("DOMContentLoaded", () => {
       selectedIdx = -1;
 
       if (!results || results.length === 0) {
-        dropdown.innerHTML = `<div class="search-empty-state"><i class="fa-solid fa-magnifying-glass" style="margin-bottom:6px;font-size:16px;"></i><p>No matching places, days, or categories found for "<strong>${escapeHtml(query)}</strong>"</p></div>`;
+        dropdown.innerHTML = `<div class="search-empty-state"><i class="fa-solid fa-magnifying-glass" style="margin-bottom:6px;font-size:16px;"></i><p>No matching places, people, or days found for "<strong>${escapeHtml(query)}</strong>"</p></div>`;
         dropdown.style.display = "block";
         return;
       }
 
       dropdown.innerHTML = "";
+      const people = results.filter(r => r.type === "PERSON");
+      const personVisits = results.filter(r => r.type === "PERSON_VISIT");
       const dates = results.filter(r => r.type === "DATE");
       const months = results.filter(r => r.type === "MONTH");
       const photoVisits = results.filter(r => r.type === "PHOTO_VISIT");
@@ -4994,6 +5049,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
 
+      appendGroup("People & Contacts", people, "fa-user");
+      appendGroup("Visits with Person", personVisits, "fa-user-group");
       appendGroup("Photo Moments & Visits", photoVisits, "fa-camera-retro");
       appendGroup("Days & Dates", dates, "fa-calendar-day");
       appendGroup("Months & Years", months, "fa-calendar-days");
@@ -5008,7 +5065,16 @@ document.addEventListener("DOMContentLoaded", () => {
       dropdown.style.display = "none";
       if (!it) return;
 
-      if (it.type === "PHOTO_VISIT" || it.segment_id) {
+      if (it.type === "PERSON") {
+        const searchQ = it.name || it.title;
+        currentPlacesQuery = searchQ;
+        updateUrlQuery(searchQ);
+        switchTab("places");
+        loadPlaces(searchQ);
+        return;
+      }
+
+      if (it.type === "PERSON_VISIT" || it.type === "PHOTO_VISIT" || it.segment_id) {
         if (it.date) {
           jumpToTimelineDay(it.date, true, "search", it.segment_id);
           const lat = parseFloat(it.latitude);
@@ -5458,14 +5524,29 @@ function initCalendarMatrixEvents() {
   const initialParams = new URLSearchParams(window.location.search);
   const initialTab = initialParams.get("tab") || "timeline";
   const initialDate = initialParams.get("date") || currentDate;
+  const initialQ = initialParams.get("q") || "";
   currentDate = initialDate;
 
   // Replace initial history state so browser Back/Forward operates smoothly
-  const initialSearch = window.location.search || `?tab=${initialTab}&date=${initialDate}`;
-  window.history.replaceState({ tab: initialTab, date: initialDate }, "", initialSearch);
+  const initialSearch = window.location.search || `?tab=${initialTab}&date=${initialDate}${initialQ ? `&q=${encodeURIComponent(initialQ)}` : ''}`;
+  window.history.replaceState({ tab: initialTab, date: initialDate, q: initialQ }, "", initialSearch);
 
   switchTab(initialTab, false);
   loadDay(initialDate, false);
+
+  if (initialQ) {
+    const searchInput = document.getElementById("global-search-input");
+    const clearBtn = document.getElementById("global-search-clear");
+    if (searchInput) {
+      searchInput.value = initialQ;
+      if (clearBtn) clearBtn.style.display = "block";
+      setTimeout(() => {
+        if (window.executeGlobalSearchNow) {
+          window.executeGlobalSearchNow(initialQ);
+        }
+      }, 200);
+    }
+  }
 
   // Defer non-critical background statistics to idle
   setTimeout(() => {

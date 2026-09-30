@@ -51,12 +51,110 @@ def search(req: Request) -> Response:
                 "icon": "fa-calendar-day"
             })
 
-    # 2. Photo Semantic Search (Visits matching visual concepts)
-    photo_visits_results: List[Dict[str, Any]] = []
+    # 2. Person & Contact Search (Authentic People Tagging)
+    person_results: List[Dict[str, Any]] = []
+    person_visit_results: List[Dict[str, Any]] = []
+    is_person_query = False
+
     if not m_iso and not m_us:
+        contact_rows = query_all("""
+            SELECT name, email, phone, organization, full_address
+            FROM contacts
+            WHERE name LIKE ?
+            LIMIT 3;
+        """, (f"%{q}%",))
+
+        photo_people_rows = query_all("""
+            SELECT people, count(*) as photo_cnt, max(timestamp_utc) as last_ts, max(sha256) as sample_sha
+            FROM photos
+            WHERE people LIKE ?
+            GROUP BY people
+            ORDER BY photo_cnt DESC
+            LIMIT 5;
+        """, (f"%{q}%",))
+
+        matched_names: set[str] = set()
+        for cr in contact_rows:
+            matched_names.add(cr["name"])
+        for pr in photo_people_rows:
+            for nm in pr["people"].split(","):
+                nm = nm.strip()
+                if q.lower() in nm.lower():
+                    matched_names.add(nm)
+
+        if matched_names:
+            is_person_query = True
+            for name in list(matched_names)[:2]:
+                cnt_row = query_one("""
+                    SELECT count(*) as total_photos, max(sha256) as top_sha
+                    FROM photos
+                    WHERE people LIKE ?;
+                """, (f"%{name}%",))
+                total_p = cnt_row["total_photos"] if cnt_row else 0
+                top_sha = cnt_row["top_sha"] if cnt_row else None
+
+                contact_info = next((c for c in contact_rows if c["name"].lower() == name.lower()), None)
+                sub_parts = []
+                if total_p > 0:
+                    sub_parts.append(f"{total_p:,} tagged photos")
+                if contact_info:
+                    if contact_info.get("email"):
+                        sub_parts.append(contact_info["email"])
+                    elif contact_info.get("organization"):
+                        sub_parts.append(contact_info["organization"])
+
+                person_results.append({
+                    "type": "PERSON",
+                    "title": name,
+                    "subtitle": " · ".join(sub_parts) if sub_parts else "Tagged person",
+                    "name": name,
+                    "photo_count": total_p,
+                    "preview_url": f"/api/photo?sha256={top_sha}" if top_sha else None,
+                    "sha256": top_sha,
+                    "icon": "fa-user",
+                })
+
+                # Retrieve specific visit segments containing photos with this person
+                p_visits = query_all("""
+                    SELECT s.id, s.date, s.start_time, s.end_time, s.duration_minutes,
+                           s.place_name, s.place_address, s.place_id, s.category, s.city, s.latitude, s.longitude,
+                           p.sha256 as photo_sha, count(p.sha256) as person_photo_cnt
+                    FROM photos p
+                    JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
+                    WHERE p.people LIKE ? AND s.segment_type = 'visit'
+                    GROUP BY s.id
+                    ORDER BY s.date DESC
+                    LIMIT 8;
+                """, (f"%{name}%",))
+
+                for pv in p_visits:
+                    p_sha = pv["photo_sha"]
+                    cnt = pv["person_photo_cnt"]
+                    pname = pv["place_name"] or "Visit"
+                    loc = pv["city"] or pv["place_address"] or pv["date"]
+                    person_visit_results.append({
+                        "type": "PERSON_VISIT",
+                        "segment_id": pv["id"],
+                        "place_id": pv["place_id"],
+                        "title": f"{pname} · {pv['date']}",
+                        "subtitle": f"{cnt} photo{'s' if cnt > 1 else ''} with {name} · {loc}",
+                        "date": pv["date"],
+                        "time": f"{pv['start_time']} - {pv['end_time']}",
+                        "category": pv.get("category") or "Other / POI",
+                        "latitude": pv.get("latitude"),
+                        "longitude": pv.get("longitude"),
+                        "preview_url": f"/api/photo?sha256={p_sha}" if p_sha else None,
+                        "sha256": p_sha,
+                        "photo_count": cnt,
+                        "icon": "fa-user-group",
+                    })
+
+    # 3. Photo Semantic Search (Visits matching visual concepts; skipped for people queries)
+    photo_visits_results: List[Dict[str, Any]] = []
+    if not m_iso and not m_us and not is_person_query:
         try:
             from api.photo_search import search_visits_by_photo_semantics
-            photo_visits = search_visits_by_photo_semantics(q, limit=12, min_score=0.48)
+            photo_visits = search_visits_by_photo_semantics(q, limit=12, min_score=0.50)
             for v in photo_visits:
                 top_p = v.get("top_photo") or {}
                 cnt = v.get("photo_count", 1)
@@ -78,25 +176,38 @@ def search(req: Request) -> Response:
                     "photos": v.get("photos", [])[:4],
                     "icon": "fa-camera-retro",
                 })
-        except Exception as e:
-            # Non-blocking if photos service is unreachable
+        except Exception:
             pass
 
-    # 3. Places / POI Search with Match Priority (Name > Address > Review)
+    # 4. Places / POI Search with Match Priority (Name > Address > Review)
     wildcard = f"%{q}%"
     place_limit = min(12, limit)
-    place_rows = query_all("""
-        SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
-               max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
-               p.review_text, p.review_rating,
-               (CASE WHEN s.place_name LIKE ? THEN 1 WHEN s.place_address LIKE ? THEN 2 ELSE 3 END) as match_priority
-        FROM segments s
-        LEFT JOIN places p ON s.place_id = p.place_id
-        WHERE s.segment_type = 'visit' AND (s.place_name LIKE ? OR s.place_address LIKE ? OR p.review_text LIKE ?)
-        GROUP BY s.place_name, s.place_address
-        ORDER BY match_priority ASC, visit_count DESC
-        LIMIT ?;
-    """, (wildcard, wildcard, wildcard, wildcard, wildcard, place_limit))
+    if is_person_query:
+        # For person queries, only match if the place name itself contains the query
+        place_rows = query_all("""
+            SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
+                   max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
+                   p.review_text, p.review_rating, 1 as match_priority
+            FROM segments s
+            LEFT JOIN places p ON s.place_id = p.place_id
+            WHERE s.segment_type = 'visit' AND s.place_name LIKE ?
+            GROUP BY s.place_name, s.place_address
+            ORDER BY visit_count DESC
+            LIMIT ?;
+        """, (wildcard, place_limit))
+    else:
+        place_rows = query_all("""
+            SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
+                   max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
+                   p.review_text, p.review_rating,
+                   (CASE WHEN s.place_name LIKE ? THEN 1 WHEN s.place_address LIKE ? THEN 2 ELSE 3 END) as match_priority
+            FROM segments s
+            LEFT JOIN places p ON s.place_id = p.place_id
+            WHERE s.segment_type = 'visit' AND (s.place_name LIKE ? OR s.place_address LIKE ? OR p.review_text LIKE ?)
+            GROUP BY s.place_name, s.place_address
+            ORDER BY match_priority ASC, visit_count DESC
+            LIMIT ?;
+        """, (wildcard, wildcard, wildcard, wildcard, wildcard, place_limit))
 
     place_results: List[Dict[str, Any]] = []
     review_match_count = 0
@@ -130,26 +241,27 @@ def search(req: Request) -> Response:
             "is_review_match": is_review_only,
         })
 
-    # 4. Categories Search
+    # 5. Categories Search (skipped for person queries)
     category_results: List[Dict[str, Any]] = []
-    cat_rows = query_all("""
-        SELECT category, count(DISTINCT date) as days_count, count(id) as visit_count, max(date) as last_date
-        FROM segments
-        WHERE category LIKE ? AND segment_type = 'visit'
-        GROUP BY category
-        LIMIT 3;
-    """, (f"%{q}%",))
+    if not is_person_query:
+        cat_rows = query_all("""
+            SELECT category, count(DISTINCT date) as days_count, count(id) as visit_count, max(date) as last_date
+            FROM segments
+            WHERE category LIKE ? AND segment_type = 'visit'
+            GROUP BY category
+            LIMIT 3;
+        """, (f"%{q}%",))
 
-    for r in cat_rows:
-        category_results.append({
-            "type": "CATEGORY",
-            "title": f"Category: {r['category']}",
-            "subtitle": f"{r['visit_count']} visits across {r['days_count']} days · Last: {r['last_date']}",
-            "date": r["last_date"],
-            "icon": "fa-tag"
-        })
+        for r in cat_rows:
+            category_results.append({
+                "type": "CATEGORY",
+                "title": f"Category: {r['category']}",
+                "subtitle": f"{r['visit_count']} visits across {r['days_count']} days · Last: {r['last_date']}",
+                "date": r["last_date"],
+                "icon": "fa-tag"
+            })
 
-    all_results = results + photo_visits_results + place_results + category_results
+    all_results = results + person_results + person_visit_results + photo_visits_results + place_results + category_results
     return json_response({"status": "SUCCESS", "count": len(all_results), "results": all_results[:limit]})
 
 
