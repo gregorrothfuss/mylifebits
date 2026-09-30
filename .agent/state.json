@@ -1,27 +1,21 @@
 {
-  "goal": "Replace watermark-ridden CARTO basemaps with authentic Google Maps raster tiles and watermark-free GIS styles",
-  "active_step_id": 3,
+  "goal": "Make travel heatmap vibrant and prominently visible when zoomed out all the way",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Replace CARTO tile endpoints in static/app.js with authentic Google Maps (Roadmap default, Terrain, Hybrid, Satellite) and Esri Street Map",
+      "description": "Configure zoom-adaptive heatmap parameters (radius, blur, minOpacity, maxZoom, gradient) in static/app.js to ensure bold visibility at full zoom-out",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Update map style dropdowns in static/index.html to reflect Google Maps Roadmap, Terrain, Hybrid, Satellite, and Esri",
-      "status": "completed"
-    },
-    {
-      "id": 3,
       "description": "Verify API contracts and test suite to ensure zero regressions",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "static/app.js",
-      "static/index.html"
+      "static/app.js"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",

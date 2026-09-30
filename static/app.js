@@ -2505,6 +2505,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let heatmapPoiLayerGroup = L.layerGroup();
 
+  // High-contrast, thermal infrared spectrum for vivid global heatmap visibility
+  const HEATMAP_GRADIENT = {
+    0.15: '#2563eb', // Electric royal blue
+    0.35: '#06b6d4', // Vivid cyan
+    0.55: '#10b981', // Emerald green
+    0.75: '#f59e0b', // Warm amber
+    0.90: '#ef4444', // Hot coral red
+    1.00: '#dc2626'  // Deep crimson core
+  };
+
+  function getHeatmapOptionsForZoom(zoom) {
+    if (zoom <= 2) {
+      // Full world view: high radius, prominent opacity, zero attenuation
+      return { radius: 28, blur: 16, minOpacity: 0.55, max: 10, maxZoom: 0 };
+    } else if (zoom <= 4) {
+      // Sub-continent view
+      return { radius: 24, blur: 15, minOpacity: 0.48, max: 12, maxZoom: 2 };
+    } else if (zoom <= 7) {
+      // Country / large state view
+      return { radius: 20, blur: 14, minOpacity: 0.42, max: 14, maxZoom: 4 };
+    } else if (zoom <= 10) {
+      // Metro / regional view
+      return { radius: 16, blur: 12, minOpacity: 0.35, max: 16, maxZoom: 6 };
+    } else if (zoom <= 12) {
+      // City view
+      return { radius: 13, blur: 10, minOpacity: 0.30, max: 18, maxZoom: 8 };
+    } else {
+      // Street / neighborhood view
+      return { radius: 11, blur: 8, minOpacity: 0.25, max: 20, maxZoom: 10 };
+    }
+  }
+
   // Load World Heatmap & Fog-of-War Discovery
   async function loadWorldHeatmap() {
     try {
@@ -2518,13 +2550,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.status === "SUCCESS" && data.points && data.points.length > 0) {
         if (heatLayer && heatMap) heatMap.removeLayer(heatLayer);
         if (heatMap) {
-          heatLayer = L.heatLayer(data.points, {
-            radius: 12,
-            blur: 16,
-            maxZoom: 13,
-            max: 15,
-            gradient: { 0.2: '#3b82f6', 0.5: '#10b981', 0.8: '#f59e0b', 1.0: '#ef4444' }
-          }).addTo(heatMap);
+          const currentZoom = heatMap.getZoom();
+          const initialOpts = {
+            ...getHeatmapOptionsForZoom(currentZoom),
+            gradient: HEATMAP_GRADIENT
+          };
+          heatLayer = L.heatLayer(data.points, initialOpts).addTo(heatMap);
         }
       }
 
@@ -2545,6 +2576,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!mapEl || mapEl.clientWidth === 0 || mapEl.clientHeight === 0) return;
 
     const currentZoom = heatMap.getZoom();
+    if (heatLayer) {
+      const zoomOpts = {
+        ...getHeatmapOptionsForZoom(currentZoom),
+        gradient: HEATMAP_GRADIENT
+      };
+      heatLayer.setOptions(zoomOpts);
+    }
+
     heatmapPoiLayerGroup.clearLayers();
 
     if (currentZoom >= 13) {
