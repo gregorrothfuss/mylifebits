@@ -1478,6 +1478,19 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.status === "SUCCESS") {
         track.innerHTML = "";
         const periods = data.periods || [];
+
+        const heading = document.getElementById("life-periods-heading");
+        if (heading) {
+          const years = periods
+            .map(p => parseInt((p.start_date || "").slice(0, 4), 10))
+            .filter(y => !isNaN(y) && y > 1900);
+          if (years.length > 0) {
+            const minYear = Math.min(...years);
+            heading.textContent = `Life Chronology (${minYear} – Present)`;
+          } else {
+            heading.textContent = "Life Chronology";
+          }
+        }
         
         periods.forEach(p => {
           const card = document.createElement("div");

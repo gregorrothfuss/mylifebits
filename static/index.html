@@ -275,10 +275,7 @@
                 <div style="width:36px;height:36px;border-radius:8px;background:rgba(245,158,11,0.15);color:#d97706;display:flex;align-items:center;justify-content:center;font-size:16px;">
                   <i class="fa-solid fa-gem"></i>
                 </div>
-                <div>
-                  <h3 style="margin:0;font-size:15px;font-weight:700;color:var(--text-main);">Archive Nuggets & Superlatives</h3>
-                  <span class="sub-text">Cosmic milestones, polar frontiers, and unique endurance records</span>
-                </div>
+                <h3 style="margin:0;font-size:15px;font-weight:700;color:var(--text-main);">Milestones & Highlights</h3>
               </div>
               <button class="btn btn-sm btn-secondary" id="btn-refresh-activity-nuggets">
                 <i class="fa-solid fa-rotate"></i> Refresh Nuggets
@@ -324,10 +321,7 @@
             <div class="passport-hero-row">
               <div class="passport-title-box">
                 <div class="passport-icon"><i class="fa-solid fa-passport"></i></div>
-                <div>
-                  <h2>Global Travel Passport & Cool Facts</h2>
-                  <span class="sub-text" id="passport-subtitle">Exploring 16 years of international journeys and expeditions</span>
-                </div>
+                <h2 style="margin:0;">Travel Passport</h2>
               </div>
               <div class="passport-pills-row">
                 <div class="stat-pill" title="Total equivalent orbits around Earth">
@@ -362,10 +356,7 @@
                 <div style="width:36px;height:36px;border-radius:10px;background:rgba(245,158,11,0.15);color:#d97706;display:flex;align-items:center;justify-content:center;font-size:18px;">
                   <i class="fa-solid fa-gem"></i>
                 </div>
-                <div>
-                  <h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);">Archive Nuggets & Curiosities</h3>
-                  <span class="sub-text">Unusual finds, cosmic milestones, and curious superlatives mined from your timeline archive</span>
-                </div>
+                <h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);">Milestones & Highlights</h3>
               </div>
               <button class="btn btn-sm btn-secondary" id="btn-refresh-nuggets" title="Re-scan database for new curiosities">
                 <i class="fa-solid fa-rotate"></i> Refresh Nuggets
@@ -468,15 +459,12 @@
             </div>
           </div>
 
-          <!-- LinkedIn-Style Residency & Employment Chronology -->
+          <!-- Life Chronology -->
           <div class="life-periods-container card" id="life-periods-section">
             <div class="life-periods-header">
               <div class="life-periods-title">
                 <i class="fa-solid fa-timeline" style="color:var(--accent-purple);font-size:18px;"></i>
-                <div>
-                  <h3 style="font-size:14px;font-weight:600;">Residency, Education & Career Chronology (1976 – Present)</h3>
-                  <span class="sub-text" style="font-size:11px;color:var(--text-muted);">Configured "From → To" periods used for dynamic date-aware timeline labeling across 50 years</span>
-                </div>
+                <h3 id="life-periods-heading" style="font-size:14px;font-weight:600;margin:0;">Life Chronology</h3>
               </div>
             </div>
             <div class="life-periods-track" id="life-periods-track-container">
@@ -498,8 +486,7 @@
           <div class="outliers-header card">
             <div class="outliers-title-row">
               <div>
-                <h2><i class="fa-solid fa-satellite-dish"></i> 2026 Raw Breadcrumb Anomaly Inspector</h2>
-                <p>Algorithmic outlier detection across 141,064 raw GPS sensor fixes from on-device SQLite database (`odlh-storage.db`).</p>
+                <h2 style="margin:0;"><i class="fa-solid fa-satellite-dish"></i> GPS Outliers & Anomalies</h2>
               </div>
               <div class="outliers-header-actions">
                 <button id="btn-re-evaluate-outliers" class="action-btn" title="Refresh outlier evaluation"><i class="fa-solid fa-rotate"></i> Refresh Anomalies</button>
@@ -616,8 +603,8 @@
 
           <!-- Diagnostics Subtabs -->
           <div class="diag-subtabs">
-            <button class="subtab-btn active" data-subtab="gaps-table">Timeline Gaps (896)</button>
-            <button class="subtab-btn" data-subtab="speed-table">Speed Outliers (407)</button>
+            <button class="subtab-btn active" data-subtab="gaps-table">Timeline Gaps</button>
+            <button class="subtab-btn" data-subtab="speed-table">Speed Outliers</button>
             <button class="subtab-btn" data-subtab="unconf-table">Unconfirmed Visits</button>
           </div>
 
@@ -704,8 +691,7 @@
         <div class="heatmap-container">
           <div id="heatmap-map"></div>
           <div class="heatmap-floating-info">
-            <h3><i class="fa-solid fa-fire"></i> Global Travel Density</h3>
-            <p>Aggregated cluster heatmap of 54,781 historical visits and travel routes around the world (1979–2026).</p>
+            <h3 style="margin:0;"><i class="fa-solid fa-fire"></i> Travel Heatmap</h3>
           </div>
         </div>
       </section>
@@ -714,14 +700,12 @@
       <section id="tab-fixes" class="tab-panel">
         <div class="fixes-container">
           <div class="fixes-header card">
-            <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Explainable Timeline Fix Proposals</h2>
-            <p>Automated patch recommendations synthesized from 2024 Takeout fusion, Contributor Reviews, Photos EXIF timestamps, Gmail booking confirmations, and GMM UI inspection.</p>
+            <h2 style="margin:0;"><i class="fa-solid fa-wand-magic-sparkles"></i> Fix Proposals</h2>
           </div>
           <div class="fixes-list" id="fixes-list-container">
             <div class="empty-state">
               <i class="fa-solid fa-circle-check"></i>
-              <h3>All Discovered Patches Applied</h3>
-              <p>23,555 road polylines, 14,206 place names, and 4,432 review ratings have been fused into the baseline database.</p>
+              <h3>All Patches Applied</h3>
             </div>
           </div>
         </div>
@@ -1061,6 +1045,6 @@
   <!-- Leaflet JS & Heat Plugin -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="app.js?v=4.0"></script>
+  <script src="app.js?v=4.1"></script>
 </body>
 </html>

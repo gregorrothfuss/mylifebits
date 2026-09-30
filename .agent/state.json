@@ -1,35 +1,35 @@
 {
-  "goal": "Revamp search dropdown styling and synchronize search query directly to Places list",
+  "goal": "Eliminate hardcoded chronology labels and purge developer throat clearing across UI",
   "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Style search dropdown (.global-search-dropdown, .search-group-header, .search-item-content, etc.) with modern wide layout and contrast in static/style.css",
+      "description": "Remove hardcoded chronology dates and developer throat clearing in static/index.html and dynamically compute span in static/app.js",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Synchronize global search input with Places catalog list in static/app.js on typing, enter, and tab switch",
+      "description": "Purge extraneous developer meta-commentary, hardcoded record counts, and throat-clearing subtitles across tabs in static/index.html",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Verify API contract audit and test suite pass with 0 errors",
+      "description": "Verify API contracts and test suite with 0 errors, bump cache buster",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "static/style.css",
-      "static/app.js",
       "static/index.html",
-      "timeline_viewer.db"
+      "static/app.js"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
       "tests/test_clean_api.py",
       "tests/test_e2e_server.py"
     ],
-    "scratch_logs": []
+    "scratch_logs": [
+      ".agent/scratch/pytest.log"
+    ]
   }
 }
