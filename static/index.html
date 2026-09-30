@@ -400,14 +400,11 @@
         <div class="places-container">
           
           <!-- Interactive All-Places Map -->
-          <div class="places-map-card card" style="margin-bottom:14px;padding:12px;">
+          <div class="places-map-card card" id="places-map-section" style="margin-bottom:14px;padding:12px;">
             <div class="places-map-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
               <div class="places-map-title" style="display:flex;align-items:center;gap:8px;">
-                <i class="fa-solid fa-map-location-dot" style="color:var(--accent-blue);font-size:18px;"></i>
-                <div>
-                  <h3 style="font-size:14px;font-weight:700;margin:0;color:var(--text-main);">All Visited Places Global Map</h3>
-                  <span class="sub-text" style="font-size:11px;color:var(--text-muted);">Explore all 9,957+ visited places & 1,261 Citi Bike stations worldwide</span>
-                </div>
+                <i class="fa-solid fa-map-location-dot" style="color:var(--accent-blue);font-size:16px;"></i>
+                <h3 style="font-size:13px;font-weight:600;margin:0;color:var(--text-main);">Places Map</h3>
               </div>
               <div class="places-map-actions" style="display:flex;gap:6px;">
                 <button id="btn-places-map-reset" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Reset to global view"><i class="fa-solid fa-earth-americas"></i> World</button>
@@ -455,6 +452,10 @@
                   <input type="checkbox" id="places-reviewed-only">
                   <span>Reviewed Only</span>
                 </label>
+              </div>
+
+              <div class="filter-group" style="margin-left:auto;">
+                <button id="btn-toggle-places-map" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 10px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;" title="Toggle Places Map"><i class="fa-solid fa-map"></i> Map</button>
               </div>
             </div>
           </div>
@@ -1073,6 +1074,6 @@
   <!-- Leaflet JS & Heat Plugin -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="app.js?v=4.6"></script>
+  <script src="app.js?v=4.7"></script>
 </body>
 </html>

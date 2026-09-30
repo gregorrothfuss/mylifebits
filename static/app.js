@@ -281,6 +281,17 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("btn-places-map-ca")?.addEventListener("click", () => {
         placesMap.setView([37.8000, -122.2500], 11);
       });
+      document.getElementById("btn-toggle-places-map")?.addEventListener("click", () => {
+        const mapSec = document.getElementById("places-map-section");
+        if (!mapSec) return;
+        const isHidden = mapSec.style.display === "none";
+        mapSec.style.display = isHidden ? "block" : "none";
+        if (isHidden && placesMap) {
+          setTimeout(() => {
+            try { placesMap.invalidateSize(); } catch (e) {}
+          }, 150);
+        }
+      });
     }
   }
 
@@ -1666,11 +1677,21 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load Places Catalog with Category & City Filtering and in-memory caching
   async function loadPlaces(query = "") {
     currentPlacesQuery = query;
+    const isSearching = Boolean(query && query.trim());
     const lifeSec = document.getElementById("life-periods-section");
     if (lifeSec) {
-      lifeSec.style.display = (query && query.trim()) ? "none" : "block";
+      lifeSec.style.display = isSearching ? "none" : "block";
     }
-    if (!query || !query.trim()) {
+    const mapSec = document.getElementById("places-map-section");
+    if (mapSec) {
+      mapSec.style.display = isSearching ? "none" : "block";
+      if (!isSearching && typeof placesMap !== "undefined" && placesMap) {
+        setTimeout(() => {
+          try { placesMap.invalidateSize(); } catch (e) {}
+        }, 150);
+      }
+    }
+    if (!isSearching) {
       loadLifePeriods();
     }
     loadAllPlacesMap(query);
@@ -4428,7 +4449,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.status === "SUCCESS") {
         cachedTrips = data.trips;
         document.getElementById("badge-trips").textContent = data.count || cachedTrips.length;
-        document.getElementById("trips-count-sub").textContent = `Showing ${cachedTrips.length} trips ${country !== "ALL" ? `in ${country}` : 'worldwide'} with 3D Flythrough and Night Walk mode`;
+        document.getElementById("trips-count-sub").textContent = `Showing ${cachedTrips.length} trips${country !== "ALL" ? ` in ${country}` : ''}`;
       }
     } catch (e) {
       console.error("Error loading trips:", e);

@@ -97,12 +97,12 @@ async def run_sync(
     async with async_playwright() as p:
         browser_context = await p.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
+            channel="chrome",
             headless=headless and not login_mode,
             accept_downloads=True,
             viewport={"width": 1280, "height": 850},
             args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox"
+                "--disable-blink-features=AutomationControlled"
             ]
         )
 
