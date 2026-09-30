@@ -209,6 +209,27 @@ document.addEventListener("DOMContentLoaded", () => {
     return `<span class="star-rating" title="${rating} Stars">${stars}</span>`;
   }
 
+  // Resilient Base Tile Layer (100% Free, Zero API Key Required)
+  function createBaseTileLayer(options = {}) {
+    const layer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
+      ...options
+    });
+
+    // Automatic fallback if any tile fails to load
+    layer.on("tileerror", function (error) {
+      const tile = error.tile;
+      if (tile && !tile.dataset.fallbackTried) {
+        tile.dataset.fallbackTried = "true";
+        const coords = error.coords;
+        tile.src = `https://a.basemaps.cartocdn.com/rastertiles/voyager/${coords.z}/${coords.x}/${coords.y}.png`;
+      }
+    });
+
+    return layer;
+  }
+
   // Initialize Maps
   function initMaps() {
     map = L.map("map", {
@@ -216,10 +237,7 @@ document.addEventListener("DOMContentLoaded", () => {
       attributionControl: false
     }).setView([40.7270, -73.9774], 13);
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19,
-      subdomains: "abcd"
-    }).addTo(map);
+    createBaseTileLayer().addTo(map);
 
     visitLayerGroup.addTo(map);
     routeLayerGroup.addTo(map);
@@ -231,10 +249,7 @@ document.addEventListener("DOMContentLoaded", () => {
       attributionControl: false
     }).setView([30.0, 10.0], 2);
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      maxZoom: 19,
-      subdomains: "abcd"
-    }).addTo(heatMap);
+    createBaseTileLayer().addTo(heatMap);
 
     const placesMapEl = document.getElementById("places-map");
     if (placesMapEl) {
@@ -244,10 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
         preferCanvas: true
       }).setView([40.7300, -73.9850], 12);
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-        maxZoom: 19,
-        subdomains: "abcd"
-      }).addTo(placesMap);
+      createBaseTileLayer().addTo(placesMap);
 
       placesCanvasRenderer = L.canvas({ padding: 0.5 });
       placesLayerGroup.addTo(placesMap);
@@ -360,10 +372,7 @@ document.addEventListener("DOMContentLoaded", () => {
             attributionControl: false
           }).setView([30.0, 10.0], 2);
 
-          L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-            maxZoom: 19,
-            subdomains: "abcd"
-          }).addTo(heatMap);
+          createBaseTileLayer().addTo(heatMap);
         } else {
           heatMap.invalidateSize(true);
         }
@@ -2466,9 +2475,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const cLng = canonicalPlace.longitude || -73.99;
 
       dupeCompareMap = L.map(mapDiv).setView([cLat, cLng], 16);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; CartoDB & OSM'
-      }).addTo(dupeCompareMap);
+      createBaseTileLayer().addTo(dupeCompareMap);
 
       const latlngs = [];
 

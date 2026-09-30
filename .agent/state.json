@@ -1,35 +1,29 @@
 {
-  "goal": "Install latest cloud backup onto Pixel device, arm telemetry capture, and diagnose the bug where visits do not get saved.",
-  "active_step_id": 4,
+  "goal": "Switch map tile layers in timeline studio to OpenStreetMap with reliable fallbacks and zero API key requirement",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Check device connection, inspect current screen and backup state",
+      "description": "Inspect all tileLayer declarations in static/app.js and implement resilient OpenStreetMap tile provider with fallback",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Restore/install the latest cloud backup onto the device",
+      "description": "Verify web tests and linting to ensure zero regressions",
       "status": "completed"
-    },
-    {
-      "id": 3,
-      "description": "Arm background logcat capture with verbose SQLite/LocationHistory tags",
-      "status": "completed"
-    },
-    {
-      "id": 4,
-      "description": "Capture and analyze trace when a visit fails to save",
-      "status": "in_progress"
     }
   ],
   "context_cache": {
     "target_files": [
-      ".agent/state.json"
+      "static/app.js"
     ],
-    "test_files": [],
+    "test_files": [
+      "tests/test_e2e_server.py",
+      "tests/test_clean_api.py"
+    ],
     "scratch_logs": [
-      ".agent/scratch/visit_save_bug.logcat"
+      ".agent/scratch/audit.log",
+      ".agent/scratch/unittest_all.log"
     ]
   }
 }
