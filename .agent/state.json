@@ -1,38 +1,28 @@
 {
-  "goal": "Enforce strict truth in route snapping: a straight line is never snapped, and snap all 2026 travel legs to real streets",
-  "active_step_id": 5,
+  "goal": "Upgrade map tiles from legacy MapQuest-like OSM to modern CartoDB Voyager with persistent multi-style switcher",
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Fix static/app.js: only show Snapped Route and thick/solid line if has_snapped_path === 1 and path_points.length >= 3",
+      "description": "Implement modern map styles (CartoDB Voyager as default, Positron, Dark Matter, Satellite, OSM) and style switcher in static/app.js",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Harden api/routes/timeline.py: enforce non-collinear curve check (has_snapped_path strictly 0 for straight lines)",
+      "description": "Add styled map style selector control to map floating controls in static/index.html and static/style.css",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Snap 291 unsnapped 2026 travel legs (including 2026-09-28) to real OpenStreetMap road curves using OSRM",
-      "status": "completed"
-    },
-    {
-      "id": 4,
-      "description": "Cleanse timeline_viewer.db: reset has_snapped_path = 0 on all straight/collinear paths",
-      "status": "completed"
-    },
-    {
-      "id": 5,
-      "description": "Verify API contracts, test suite, and live server on https://mylifebits.local/?date=2026-09-28",
+      "description": "Verify API contracts and test suite to ensure zero regressions",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
       "static/app.js",
-      "api/routes/timeline.py",
-      "scripts/snap_2026_straight_activities.py"
+      "static/index.html",
+      "static/style.css"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
@@ -40,8 +30,6 @@
       "tests/test_e2e_server.py"
     ],
     "scratch_logs": [
-      ".agent/scratch/snap_2026.log",
-      ".agent/scratch/audit.log",
       ".agent/scratch/test.log"
     ]
   }

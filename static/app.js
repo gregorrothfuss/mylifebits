@@ -216,25 +216,133 @@ document.addEventListener("DOMContentLoaded", () => {
     return `<span class="star-rating" title="${rating} Stars">${stars}</span>`;
   }
 
-  // Resilient Base Tile Layer (100% Free, Zero API Key Required)
-  function createBaseTileLayer(options = {}) {
-    const layer = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
-      ...options
-    });
+  // Modern, high-fidelity Map Styles (Clean, Apple/Google Maps aesthetic)
+  const MAP_STYLES = {
+    voyager: {
+      id: "voyager",
+      name: "Voyager (Modern)",
+      url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+      options: {
+        maxZoom: 20,
+        subdomains: "abcd",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+      },
+      fallback: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    },
+    positron: {
+      id: "positron",
+      name: "Clean Light",
+      url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      options: {
+        maxZoom: 20,
+        subdomains: "abcd",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+      },
+      fallback: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    },
+    dark: {
+      id: "dark",
+      name: "Dark Matter",
+      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      options: {
+        maxZoom: 20,
+        subdomains: "abcd",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+      },
+      fallback: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    },
+    satellite: {
+      id: "satellite",
+      name: "Satellite",
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      options: {
+        maxZoom: 19,
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community'
+      },
+      fallback: "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+    },
+    osm: {
+      id: "osm",
+      name: "Classic OSM",
+      url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      options: {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
+      },
+      fallback: "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+    }
+  };
+
+  let currentMapStyle = localStorage.getItem("mylifebits_map_style") || "voyager";
+  if (!MAP_STYLES[currentMapStyle]) currentMapStyle = "voyager";
+
+  // Active base tile layers indexed by map container ID
+  const activeTileLayers = new Map();
+
+  // Resilient Base Tile Layer
+  function createBaseTileLayer(styleKeyOrOptions = {}, extraOptions = {}) {
+    let key = currentMapStyle;
+    let customOpts = {};
+    if (typeof styleKeyOrOptions === "string" && MAP_STYLES[styleKeyOrOptions]) {
+      key = styleKeyOrOptions;
+      customOpts = extraOptions;
+    } else if (typeof styleKeyOrOptions === "object") {
+      customOpts = styleKeyOrOptions;
+    }
+
+    const style = MAP_STYLES[key] || MAP_STYLES.voyager;
+    const mergedOptions = { ...style.options, ...customOpts };
+    const layer = L.tileLayer(style.url, mergedOptions);
 
     // Automatic fallback if any tile fails to load
     layer.on("tileerror", function (error) {
       const tile = error.tile;
-      if (tile && !tile.dataset.fallbackTried) {
+      if (tile && !tile.dataset.fallbackTried && style.fallback) {
         tile.dataset.fallbackTried = "true";
         const coords = error.coords;
-        tile.src = `https://a.basemaps.cartocdn.com/rastertiles/voyager/${coords.z}/${coords.x}/${coords.y}.png`;
+        let fbUrl = style.fallback
+          .replace("{z}", coords.z)
+          .replace("{x}", coords.x)
+          .replace("{y}", coords.y);
+        tile.src = fbUrl;
       }
     });
 
     return layer;
+  }
+
+  function applyBaseTileLayerToMap(mapInstance, mapId, styleKey) {
+    if (!mapInstance) return null;
+    const key = styleKey || currentMapStyle;
+    const oldLayer = activeTileLayers.get(mapId);
+    if (oldLayer && mapInstance.hasLayer(oldLayer)) {
+      mapInstance.removeLayer(oldLayer);
+    }
+    const newLayer = createBaseTileLayer(key);
+    newLayer.addTo(mapInstance);
+    if (newLayer.bringToBack) {
+      try { newLayer.bringToBack(); } catch (e) {}
+    }
+    activeTileLayers.set(mapId, newLayer);
+    return newLayer;
+  }
+
+  function setGlobalMapStyle(styleKey) {
+    if (!MAP_STYLES[styleKey]) return;
+    currentMapStyle = styleKey;
+    try {
+      localStorage.setItem("mylifebits_map_style", styleKey);
+    } catch (e) {}
+
+    // Synchronize UI dropdowns
+    document.querySelectorAll(".map-style-select").forEach((el) => {
+      if (el.value !== styleKey) el.value = styleKey;
+    });
+
+    if (map) applyBaseTileLayerToMap(map, "main-map", styleKey);
+    if (placesMap) applyBaseTileLayerToMap(placesMap, "places-map", styleKey);
+    if (heatMap) applyBaseTileLayerToMap(heatMap, "heatmap-map", styleKey);
+    if (dupeCompareMap) applyBaseTileLayerToMap(dupeCompareMap, "dupe-compare-map", styleKey);
   }
 
   // Initialize Maps
@@ -244,7 +352,7 @@ document.addEventListener("DOMContentLoaded", () => {
       attributionControl: false
     }).setView([40.7270, -73.9774], 13);
 
-    createBaseTileLayer().addTo(map);
+    applyBaseTileLayerToMap(map, "main-map", currentMapStyle);
 
     visitLayerGroup.addTo(map);
     routeLayerGroup.addTo(map);
@@ -256,7 +364,7 @@ document.addEventListener("DOMContentLoaded", () => {
       attributionControl: false
     }).setView([30.0, 10.0], 2);
 
-    createBaseTileLayer().addTo(heatMap);
+    applyBaseTileLayerToMap(heatMap, "heatmap-map", currentMapStyle);
 
     const placesMapEl = document.getElementById("places-map");
     if (placesMapEl) {
@@ -266,7 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
         preferCanvas: true
       }).setView([40.7300, -73.9850], 12);
 
-      createBaseTileLayer().addTo(placesMap);
+      applyBaseTileLayerToMap(placesMap, "places-map", currentMapStyle);
 
       placesCanvasRenderer = L.canvas({ padding: 0.5 });
       placesLayerGroup.addTo(placesMap);
@@ -394,7 +502,7 @@ document.addEventListener("DOMContentLoaded", () => {
             attributionControl: false
           }).setView([30.0, 10.0], 2);
 
-          createBaseTileLayer().addTo(heatMap);
+          applyBaseTileLayerToMap(heatMap, "heatmap-map", currentMapStyle);
         } else {
           heatMap.invalidateSize(true);
         }
@@ -2888,7 +2996,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const cLng = canonicalPlace.longitude || -73.99;
 
       dupeCompareMap = L.map(mapDiv).setView([cLat, cLng], 16);
-      createBaseTileLayer().addTo(dupeCompareMap);
+      applyBaseTileLayerToMap(dupeCompareMap, "dupe-compare-map", currentMapStyle);
 
       const latlngs = [];
 
@@ -4046,6 +4154,14 @@ document.addEventListener("DOMContentLoaded", () => {
         loadDay(currentDate);
       });
     }
+
+    // Map Style Selectors
+    document.querySelectorAll(".map-style-select").forEach((el) => {
+      el.value = currentMapStyle;
+      el.addEventListener("change", (e) => {
+        setGlobalMapStyle(e.target.value);
+      });
+    });
 
     document.getElementById("btn-jump-today")?.addEventListener("click", () => {
       loadDay(getLocalToday());

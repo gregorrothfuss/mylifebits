@@ -109,6 +109,16 @@
                 <button id="btn-inspect-gmm" class="action-btn gmm-btn" title="Inspect this day on live Android GMM emulator (via Harness.md)">
                   <i class="fa-brands fa-android"></i> Inspect in GMM
                 </button>
+                <div class="map-style-selector-wrap" title="Change Base Map Style">
+                  <i class="fa-solid fa-layer-group map-style-icon"></i>
+                  <select class="map-style-select" id="select-map-style" aria-label="Select Map Style">
+                    <option value="voyager">🗺️ Voyager (Modern)</option>
+                    <option value="positron">⚪ Clean Light</option>
+                    <option value="dark">🌑 Dark Matter</option>
+                    <option value="satellite">🛰️ Satellite</option>
+                    <option value="osm">📜 Classic OSM</option>
+                  </select>
+                </div>
               </div>
               <div class="map-legend">
                 <span class="legend-item"><span class="color-dot visit"></span> Visit</span>
@@ -406,7 +416,17 @@
                 <i class="fa-solid fa-map-location-dot" style="color:var(--accent-blue);font-size:16px;"></i>
                 <h3 style="font-size:13px;font-weight:600;margin:0;color:var(--text-main);">Places Map</h3>
               </div>
-              <div class="places-map-actions" style="display:flex;gap:6px;">
+              <div class="places-map-actions" style="display:flex;gap:6px;align-items:center;">
+                <div class="map-style-selector-wrap" title="Change Base Map Style">
+                  <i class="fa-solid fa-layer-group map-style-icon"></i>
+                  <select class="map-style-select" id="select-places-map-style" aria-label="Select Map Style">
+                    <option value="voyager">🗺️ Voyager (Modern)</option>
+                    <option value="positron">⚪ Clean Light</option>
+                    <option value="dark">🌑 Dark Matter</option>
+                    <option value="satellite">🛰️ Satellite</option>
+                    <option value="osm">📜 Classic OSM</option>
+                  </select>
+                </div>
                 <button id="btn-places-map-reset" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Reset to global view"><i class="fa-solid fa-earth-americas"></i> World</button>
                 <button id="btn-places-map-nyc" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Focus on New York City"><i class="fa-solid fa-city"></i> NYC</button>
                 <button id="btn-places-map-ch" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Focus on Switzerland"><i class="fa-solid fa-mountain"></i> Switzerland</button>
@@ -691,8 +711,18 @@
       <section id="tab-heatmap" class="tab-panel">
         <div class="heatmap-container">
           <div id="heatmap-map"></div>
-          <div class="heatmap-floating-info">
+          <div class="heatmap-floating-info" style="display:flex;align-items:center;gap:12px;">
             <h3 style="margin:0;"><i class="fa-solid fa-fire"></i> Travel Heatmap</h3>
+            <div class="map-style-selector-wrap" title="Change Base Map Style">
+              <i class="fa-solid fa-layer-group map-style-icon"></i>
+              <select class="map-style-select" id="select-heatmap-map-style" aria-label="Select Map Style">
+                <option value="voyager">🗺️ Voyager (Modern)</option>
+                <option value="positron">⚪ Clean Light</option>
+                <option value="dark">🌑 Dark Matter</option>
+                <option value="satellite">🛰️ Satellite</option>
+                <option value="osm">📜 Classic OSM</option>
+              </select>
+            </div>
           </div>
         </div>
       </section>
