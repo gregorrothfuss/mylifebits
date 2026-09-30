@@ -1,34 +1,39 @@
 {
-  "goal": "Fix person search ranking, word boundary matching, face-prioritized photo selection, and modal routing",
+  "goal": "Import the most recent backup (Timeline-20260921.json) and convert IN_PASSENGER_VEHICLE to DRIVING across database and UI",
   "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Refactor person matching and ranking in api/routes/search.py with word boundaries, photo count DESC ranking, and face_count > 0 photo selection",
+      "description": "Update merge and import scripts to map IN_PASSENGER_VEHICLE to DRIVING and update Timeline-latest.json",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Improve photo selection in api/photo_search.py and get_person_visits to prioritize real photos with faces and avoid night/screenshots",
+      "description": "Execute import of most recent backup (Timeline-20260921.json) and update all database records from IN_PASSENGER_VEHICLE to DRIVING",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Fix executeSearchNow in static/app.js to always prioritize person search over tab overrides, and fix place card photo labels/hiding",
+      "description": "Update frontend and backend mappings (static/app.js, enrichment, diagnostics) to fully support DRIVING and display as 'Driving'",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Run contract audit, execute test suite, restart service, verify end-to-end",
+      "description": "Run contract audit, execute test suite, restart service, and verify end-to-end",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "api/routes/search.py",
-      "api/photo_search.py",
+      "scripts/merge_pixel10_export.py",
+      "importer.py",
+      "scripts/ingest_pixel10_pristine_export.py",
       "static/app.js",
-      "static/index.html"
+      "enrichment/nuggets_engine.py",
+      "diagnostics.py",
+      "ingest_odlh_segments.py",
+      "reinference.py",
+      "scripts/surgical_roundtrip_deploy.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
@@ -37,7 +42,8 @@
     ],
     "scratch_logs": [
       ".agent/scratch/audit.log",
-      ".agent/scratch/test.log"
+      ".agent/scratch/test.log",
+      ".agent/scratch/merge.log"
     ]
   }
 }

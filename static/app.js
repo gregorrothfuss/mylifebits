@@ -97,6 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Color mapping by transport mode
   const ACTIVITY_COLORS = {
+    "DRIVING": "#8b5cf6",
     "IN_PASSENGER_VEHICLE": "#8b5cf6",
     "IN_BUS": "#a855f7",
     "IN_TAXI": "#c084fc",
@@ -124,6 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const ACTIVITY_ICONS = {
+    "DRIVING": "fa-car",
     "IN_PASSENGER_VEHICLE": "fa-car",
     "IN_BUS": "fa-bus",
     "IN_TAXI": "fa-taxi",
@@ -570,12 +572,13 @@ document.addEventListener("DOMContentLoaded", () => {
         block.title = `Visit: ${s.place_name || 'Home/Place'} (${s.start_time.slice(11,16)} - ${s.end_time.slice(11,16)})`;
       } else {
         const act = (s.activity_type || "").toUpperCase();
-        if (act.includes("VEHICLE") || act.includes("BUS") || act.includes("TAXI")) block.classList.add("drive");
+        if (act.includes("VEHICLE") || act.includes("DRIV") || act.includes("BUS") || act.includes("TAXI")) block.classList.add("drive");
         else if (act.includes("WALK") || act.includes("FOOT") || act.includes("RUN")) block.classList.add("walk");
         else if (act.includes("CYCLE") || act.includes("BIKE")) block.classList.add("cycle");
         else if (act.includes("FLY")) block.classList.add("flight");
         else block.classList.add("drive");
-        block.title = `${s.activity_type || 'Travel'}: ${(s.distance_meters/1000).toFixed(1)}km (${s.start_time.slice(11,16)} - ${s.end_time.slice(11,16)})`;
+        const actDisplay = (act === "IN_PASSENGER_VEHICLE" || act === "DRIVING") ? "Driving" : (s.activity_type || 'Travel');
+        block.title = `${actDisplay}: ${(s.distance_meters/1000).toFixed(1)}km (${s.start_time.slice(11,16)} - ${s.end_time.slice(11,16)})`;
       }
 
       bar.appendChild(block);
@@ -919,7 +922,8 @@ document.addEventListener("DOMContentLoaded", () => {
             displayDistKm = (estM / 1000.0).toFixed(1);
           }
 
-          const actTitle = `${actType.replace(/_/g, ' ')}${isSameDockLoop ? ' (Round-Trip Loop)' : (isStationaryActivity ? ' · Stationary Dwell / Pause' : '')}`;
+          const baseName = (actType === "IN_PASSENGER_VEHICLE" || actType === "DRIVING") ? "Driving" : actType.replace(/_/g, ' ');
+          const actTitle = `${baseName}${isSameDockLoop ? ' (Round-Trip Loop)' : (isStationaryActivity ? ' · Stationary Dwell / Pause' : '')}`;
 
           card.innerHTML = `
             <div class="item-icon ${modeClass}">
@@ -3198,7 +3202,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ];
 
   const ALL_ACTIVITIES = [
-    "WALKING", "CYCLING", "IN_SUBWAY", "IN_TRAIN", "IN_BUS", "IN_TRAM",
+    "WALKING", "CYCLING", "DRIVING", "IN_SUBWAY", "IN_TRAIN", "IN_BUS", "IN_TRAM",
     "IN_PASSENGER_VEHICLE", "IN_TAXI", "FLYING", "IN_FERRY", "IN_FUNICULAR",
     "IN_GONDOLA_LIFT", "HIKING", "RUNNING", "BOATING", "SAILING", "KAYAKING",
     "SWIMMING", "SKIING", "SNOWSHOEING", "SLEDDING", "KITESURFING", "PARAGLIDING",
@@ -3210,10 +3214,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const content = document.getElementById("modal-content");
     const title = document.getElementById("modal-title");
     const isVisit = segment.segment_type === "visit";
+    const rawAct = (segment.activity_type || 'Activity').toUpperCase();
+    const actDisplay = (rawAct === 'DRIVING' || rawAct === 'IN_PASSENGER_VEHICLE') ? 'Driving' : rawAct.replace(/_/g, ' ');
 
     title.innerHTML = isVisit 
       ? `<i class="fa-solid fa-location-dot" style="color:var(--accent-blue);"></i> Edit Place Visit: ${escapeHtml(segment.place_name || 'Place')}`
-      : `<i class="fa-solid fa-route" style="color:var(--accent-blue);"></i> Edit Movement Leg: ${escapeHtml((segment.activity_type || 'Activity').replace(/_/g, ' '))}`;
+      : `<i class="fa-solid fa-route" style="color:var(--accent-blue);"></i> Edit Movement Leg: ${escapeHtml(actDisplay)}`;
 
     let formHtml = "";
     if (isVisit) {
@@ -3243,7 +3249,9 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
       `;
     } else {
-      const actOptions = ALL_ACTIVITIES.map(a => `<option value="${a}" ${a === (segment.activity_type || 'WALKING').toUpperCase() ? 'selected' : ''}>${a.replace(/_/g, ' ')}</option>`).join("");
+      const currentAct = (segment.activity_type || 'WALKING').toUpperCase();
+      const normCurrentAct = (currentAct === 'IN_PASSENGER_VEHICLE') ? 'DRIVING' : currentAct;
+      const actOptions = ALL_ACTIVITIES.filter(a => a !== 'IN_PASSENGER_VEHICLE').map(a => `<option value="${a}" ${a === normCurrentAct ? 'selected' : ''}>${a === 'DRIVING' ? 'Driving' : a.replace(/_/g, ' ')}</option>`).join("");
       const distKm = ((segment.distance_meters || 0) / 1000.0).toFixed(2);
       formHtml = `
         <div class="form-group">
@@ -3363,7 +3371,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ].map(o => `<option value="${o.val}" ${o.val === defaultAction ? 'selected' : ''}>${o.label}</option>`).join("");
 
     const catOptions = ALL_CATEGORIES.map(c => `<option value="${c}" ${c === defaultCat ? 'selected' : ''}>${c}</option>`).join("");
-    const modeOptions = ALL_ACTIVITIES.map(a => `<option value="${a}" ${a === defaultMode ? 'selected' : ''}>${a.replace(/_/g, ' ')}</option>`).join("");
+    const normDefaultMode = (defaultMode === 'IN_PASSENGER_VEHICLE') ? 'DRIVING' : defaultMode;
+    const modeOptions = ALL_ACTIVITIES.filter(a => a !== 'IN_PASSENGER_VEHICLE').map(a => `<option value="${a}" ${a === normDefaultMode ? 'selected' : ''}>${a === 'DRIVING' ? 'Driving' : a.replace(/_/g, ' ')}</option>`).join("");
 
     content.innerHTML = `
       <div class="form-group">
@@ -3491,7 +3500,7 @@ document.addEventListener("DOMContentLoaded", () => {
     title.innerHTML = `<i class="fa-solid fa-plus-circle" style="color:var(--accent-blue);"></i> Insert Timeline Segment (${gap.date})`;
 
     const catOptions = ALL_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join("");
-    const actOptions = ALL_ACTIVITIES.map(a => `<option value="${a}">${a.replace(/_/g, ' ')}</option>`).join("");
+    const actOptions = ALL_ACTIVITIES.filter(a => a !== 'IN_PASSENGER_VEHICLE').map(a => `<option value="${a}">${a === 'DRIVING' ? 'Driving' : a.replace(/_/g, ' ')}</option>`).join("");
 
     content.innerHTML = `
       <div class="form-group">
@@ -5631,6 +5640,8 @@ function getMinutesFromTimeStr(isoStr) {
 
 function formatActivityName(actType) {
   if (!actType) return "Travel";
+  const upper = actType.toUpperCase();
+  if (upper === "IN_PASSENGER_VEHICLE" || upper === "DRIVING") return "Driving";
   return actType.replace("IN_", "").replace("_", " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 }
 

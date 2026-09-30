@@ -187,6 +187,8 @@ def main():
             act = seg["activity"]
             cand = act.get("topCandidate", {})
             act_type = cand.get("type", "TRAVEL")
+            if act_type == "IN_PASSENGER_VEHICLE":
+                act_type = "DRIVING"
             prob = cand.get("probability", 1.0)
             dist = act.get("distanceMeters", 0.0)
             s_lat, s_lng = parse_latlng_str(act.get("start", {}).get("latLng"))

@@ -65,7 +65,7 @@ def extract_archive_nuggets(db_path: str = DEFAULT_DB_PATH) -> Dict[str, Any]:
     cycle_km = mode_stats.get('CYCLING', {}).get('total_km', 0.0)
     subway_km = mode_stats.get('IN_SUBWAY', {}).get('total_km', 0.0)
     subway_trips = mode_stats.get('IN_SUBWAY', {}).get('count', 0)
-    drive_km = mode_stats.get('IN_PASSENGER_VEHICLE', {}).get('total_km', 0.0)
+    drive_km = mode_stats.get('DRIVING', {}).get('total_km', 0.0) or mode_stats.get('IN_PASSENGER_VEHICLE', {}).get('total_km', 0.0)
     train_km = mode_stats.get('IN_TRAIN', {}).get('total_km', 0.0)
 
     earth_orbits = round(fly_km / EARTH_CIRCUMFERENCE_KM, 1)
@@ -284,6 +284,7 @@ MODE_METADATA: Dict[str, Dict[str, str]] = {
     "CYCLING": {"label": "Cycling", "icon": "fa-bicycle", "color": "#0284c7"},
     "ON_BICYCLE": {"label": "Cycling", "icon": "fa-bicycle", "color": "#0284c7"},
     "FLYING": {"label": "Flying", "icon": "fa-plane", "color": "#a855f7"},
+    "DRIVING": {"label": "Driving", "icon": "fa-car", "color": "#ef4444"},
     "IN_PASSENGER_VEHICLE": {"label": "Driving", "icon": "fa-car", "color": "#ef4444"},
     "IN_VEHICLE": {"label": "Driving", "icon": "fa-car", "color": "#ef4444"},
     "MOTORCYCLING": {"label": "Motorcycle", "icon": "fa-motorcycle", "color": "#f97316"},
