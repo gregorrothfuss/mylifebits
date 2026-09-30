@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 Import daily summaries from photos_vault.db into timeline_viewer.db (memories)
-and synthesize authentic Google Maps Timeline protobufs (segment_type=4)
-for odlh-storage.db.
+for web UI display. ODLH export of notes is omitted because Google Maps
+Timeline no longer contains viewholders or layout code to render note cards.
 """
 
-import os
 import sys
 import sqlite3
 from datetime import datetime, timezone
@@ -14,8 +13,6 @@ from pathlib import Path
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent
 PHOTOS_DB = Path("/Users/rothfuss/projects/gregor_cos/photos_vault.db")
 VIEWER_DB = WORKSPACE_DIR / "timeline_viewer.db"
-INPUT_ODLH_DB = WORKSPACE_DIR / "scratch" / "odlh_v54_convergence.db"
-OUTPUT_ODLH_DB = WORKSPACE_DIR / "scratch" / "odlh_v55_with_notes.db"
 
 def encode_varint(val: int) -> bytes:
     res = bytearray()
@@ -137,49 +134,8 @@ def run_import():
     conn_viewer.commit()
     conn_viewer.close()
     print(f"[✓] Successfully upserted {imported_count} photo day notes into {VIEWER_DB}!")
-
-    # Now create/update odlh-storage.db with segment_type = 4 rows
-    if INPUT_ODLH_DB.exists():
-        print(f"[*] Updating ODLH database: copying {INPUT_ODLH_DB} -> {OUTPUT_ODLH_DB}...")
-        import shutil
-        shutil.copy2(INPUT_ODLH_DB, OUTPUT_ODLH_DB)
-
-        conn_odlh = sqlite3.connect(OUTPUT_ODLH_DB)
-        cursor = conn_odlh.cursor()
-
-        # Delete any prior photo notes to ensure idempotency
-        cursor.execute("DELETE FROM semantic_segment_table WHERE origin_id LIKE 'photo_mem_%';")
-
-        odlh_inserted = 0
-        for start_s, end_s, d_str, mem_id, proto_bytes in records:
-            cursor.execute("""
-                INSERT INTO semantic_segment_table (
-                    timestamp_millis, database_id, origin_id, segment_id, semantic_segment,
-                    obfuscated_gaia_id, shown_in_timeline, is_finalized,
-                    start_timestamp_seconds, end_timestamp_seconds, segment_type, hierarchy_level
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """, (
-                start_s * 1000,
-                'odlh',
-                mem_id,
-                mem_id,
-                proto_bytes,
-                '112933909772421946808',
-                1,
-                1,
-                start_s,
-                end_s,
-                4,  # segment_type = 4: TimelineMemory
-                0
-            ))
-            odlh_inserted += 1
-
-        conn_odlh.commit()
-        # Verify integrity
-        integrity = conn_odlh.execute("PRAGMA integrity_check;").fetchone()[0]
-        type4_count = conn_odlh.execute("SELECT count(*) FROM semantic_segment_table WHERE segment_type = 4;").fetchone()[0]
-        conn_odlh.close()
-        print(f"[✓] ODLH database updated: inserted {odlh_inserted} note segments. Total segment_type=4 count: {type4_count}. Integrity: {integrity}")
+    print("[*] ODLH export omitted: notes are preserved exclusively in timeline_viewer.db for the local UI, as Google Maps Timeline no longer contains viewholders to render note cards.")
 
 if __name__ == "__main__":
     run_import()
+

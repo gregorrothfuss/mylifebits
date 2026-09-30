@@ -1,49 +1,34 @@
 {
-  "goal": "Inject photo daily summaries as timeline day notes, deploy to Pixel 8, check APK code for note rendering, and produce 10-screenshot report",
-  "active_step_id": 4,
+  "goal": "Remove photo day summaries from device ODLH export while preserving them in the web UI",
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Reverse engineer decompiled APKs to determine if Google Maps Timeline still has code/viewholders to render notes and identify protobuf wire format",
+      "description": "Update enrichment/import_photo_summaries_as_notes.py to remove ODLH export and keep photo summaries strictly in timeline_viewer.db for the UI",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Extract photo daily summaries and inject notes into timeline database and odlh protobufs",
+      "description": "Deploy clean ODLH (odlh_v54_convergence.db without synthetic notes) to Pixel 8",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Deploy reconstructed timeline with notes to Pixel 8",
-      "status": "completed"
-    },
-    {
-      "id": 4,
-      "description": "Capture 10 on-device screenshots of days with notes and compile detailed report",
+      "description": "Verify UI notes display, audit API contracts, and run API unit tests",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "/Users/rothfuss/projects/gregor_cos/photos_vault.db",
-      "timeline_viewer.db",
-      "scratch/odlh_v55_with_notes.db",
-      "static/app.js",
       "enrichment/import_photo_summaries_as_notes.py",
-      "scratch/device_proofs/p8_day_2026_09_15.png",
-      "scratch/device_proofs/p8_day_2026_09_14.png",
-      "scratch/device_proofs/p8_day_2026_09_13.png",
-      "scratch/device_proofs/p8_day_2026_09_12.png",
-      "scratch/device_proofs/p8_day_2026_09_11.png",
-      "scratch/device_proofs/p8_day_2026_09_10.png",
-      "scratch/device_proofs/p8_day_2026_09_09.png",
-      "scratch/device_proofs/p8_day_2026_09_08.png",
-      "scratch/device_proofs/p8_day_2026_09_07.png",
-      "scratch/device_proofs/p8_day_2026_09_06.png"
+      "scratch/odlh_v54_convergence.db",
+      "timeline_viewer.db",
+      "static/app.js"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
-      "tests/test_clean_api.py"
+      "tests/test_clean_api.py",
+      "tests/test_e2e_server.py"
     ],
     "scratch_logs": []
   }
