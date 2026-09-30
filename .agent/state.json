@@ -1,38 +1,32 @@
 {
-  "goal": "Fix person search, eliminate duplicate photo place attribution, remove semantic_type query leak, and propagate query to URL",
-  "active_step_id": 5,
+  "goal": "Support exhaustive person visits retrieval (1000+ visits) and dedicated person visits UI",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Fix photo place attribution in api/photo_search.py to strictly associate each photo with a single place and validate spatio-temporal bounds",
+      "description": "Create /api/people/visits endpoint returning exhaustive visits with photos for a tagged individual",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Add first-class person search in api/routes/search.py matching photos.people and contacts, returning person visits instead of CLIP noise",
+      "description": "Fix get_places_with_photos_for_concept in api/photo_search.py to query all places without artificial limit cap for person queries",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Remove semantic_type leakage in api/routes/places.py and prevent mystery matches",
+      "description": "Add dedicated Person Visits Modal in static/app.js and wire person search clicks/enter to display exhaustive visits",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Propagate search query ?q= to window.location.search and support initial query param boot in static/app.js",
-      "status": "completed"
-    },
-    {
-      "id": 5,
       "description": "Run contract audit, execute test suite, restart server, verify end-to-end",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "api/photo_search.py",
       "api/routes/search.py",
-      "api/routes/places.py",
+      "api/photo_search.py",
       "static/app.js",
       "static/index.html"
     ],
@@ -42,7 +36,8 @@
       "tests/test_e2e_server.py"
     ],
     "scratch_logs": [
-      ".agent/scratch/pytest.log"
+      ".agent/scratch/audit.log",
+      ".agent/scratch/test.log"
     ]
   }
 }

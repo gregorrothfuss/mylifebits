@@ -16,7 +16,7 @@ import urllib.request
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
-from api.db import query_all
+from api.db import query_all, query_one
 
 logger = logging.getLogger("photo_search")
 
@@ -219,38 +219,65 @@ def get_places_with_photos_for_concept(
         return {}
 
     # Check if query matches tagged people in photos
-    person_photos = query_all("""
+    person_check = query_one(
+        "SELECT count(*) as cnt FROM photos WHERE people LIKE ? LIMIT 1;",
+        (f"%{clean_q}%",)
+    )
+    if person_check and person_check.get("cnt", 0) > 0:
+        sql = """
+            SELECT s.id, s.place_id, s.place_name, count(p.sha256) as photo_count,
+                   max(p.sha256) as top_sha, max(p.filename) as top_filename
+            FROM (
+                SELECT sha256, filename, timestamp_utc, place_id
+                FROM photos
+                WHERE people LIKE ? AND timestamp_utc IS NOT NULL
+            ) p
+            JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
+            WHERE s.segment_type = 'visit' AND s.place_id IS NOT NULL
+            GROUP BY s.id;
+        """
+        p_rows = query_all(sql, (f"%{clean_q}%",))
+        places_map: Dict[str, Dict[str, Any]] = {}
+        for r in p_rows:
+            pid = r["place_id"]
+            if pid not in places_map:
+                places_map[pid] = {
+                    "place_id": pid,
+                    "photo_count": 0,
+                    "visit_count": 0,
+                    "max_score": 1.0,
+                    "top_photo": {
+                        "sha256": r["top_sha"],
+                        "filename": r.get("top_filename"),
+                        "preview_url": f"/api/photo?sha256={r['top_sha']}",
+                        "score": 1.0,
+                    }
+                }
+            places_map[pid]["visit_count"] += 1
+            places_map[pid]["photo_count"] += r["photo_count"]
+        return places_map
+
+    photos = query_photo_semantic_index(clean_q, limit=limit)
+    if not photos:
+        return {}
+
+    sha_scores = {
+        p["sha256"]: float(p.get("score", 0.0))
+        for p in photos
+        if p.get("sha256") and float(p.get("score", 0.0)) >= min_score
+    }
+    if not sha_scores:
+        return {}
+
+    shas = list(sha_scores.keys())
+    placeholders = ",".join("?" for _ in shas)
+
+    # Fetch photo metadata
+    photo_rows = query_all(f"""
         SELECT sha256, filename, timestamp_utc, latitude, longitude, place_id
         FROM photos
-        WHERE people LIKE ? AND timestamp_utc IS NOT NULL
-        LIMIT ?;
-    """, (f"%{clean_q}%", limit))
-
-    if person_photos:
-        sha_scores = {p["sha256"]: 1.0 for p in person_photos}
-        photo_rows = person_photos
-    else:
-        photos = query_photo_semantic_index(clean_q, limit=limit)
-        if not photos:
-            return {}
-
-        sha_scores = {
-            p["sha256"]: float(p.get("score", 0.0))
-            for p in photos
-            if p.get("sha256") and float(p.get("score", 0.0)) >= min_score
-        }
-        if not sha_scores:
-            return {}
-
-        shas = list(sha_scores.keys())
-        placeholders = ",".join("?" for _ in shas)
-
-        # Fetch photo metadata
-        photo_rows = query_all(f"""
-            SELECT sha256, filename, timestamp_utc, latitude, longitude, place_id
-            FROM photos
-            WHERE sha256 IN ({placeholders}) AND timestamp_utc IS NOT NULL;
-        """, shas)
+        WHERE sha256 IN ({placeholders}) AND timestamp_utc IS NOT NULL;
+    """, shas)
 
     places_map: Dict[str, Dict[str, Any]] = {}
 

@@ -1971,6 +1971,146 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-close-place-visits")?.addEventListener("click", closePlaceVisitsModal);
   document.getElementById("btn-done-place-visits")?.addEventListener("click", closePlaceVisitsModal);
 
+  // Person Visits History Modal
+  window.closePersonVisitsModal = closePersonVisitsModal;
+  function closePersonVisitsModal() {
+    const modal = document.getElementById("person-visits-modal");
+    if (modal) {
+      modal.style.display = "none";
+      modal.classList.add("hidden");
+    }
+    const viewPlacesBtn = document.getElementById("btn-person-view-places");
+    if (viewPlacesBtn) viewPlacesBtn.style.display = "none";
+  }
+
+  window.openPersonVisitsModal = openPersonVisitsModal;
+  async function openPersonVisitsModal(personName) {
+    const modal = document.getElementById("person-visits-modal");
+    const body = document.getElementById("person-visits-body");
+    const titleEl = document.getElementById("person-visits-title");
+    const subEl = document.getElementById("person-visits-subtitle");
+    const countEl = document.getElementById("person-visits-footer-count");
+    if (!modal || !body) return;
+
+    modal.style.display = "flex";
+    modal.classList.remove("hidden");
+    if (titleEl) titleEl.textContent = personName || "Person Visits";
+    if (subEl) subEl.textContent = "Loading visit records...";
+    if (countEl) countEl.textContent = "";
+    body.innerHTML = '<div class="loading-spinner" style="padding:40px;text-align:center;"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading all visit records...</div>';
+
+    try {
+      const res = await fetch(`/api/people/visits?name=${encodeURIComponent(personName)}&limit=1500`);
+      const data = await res.json();
+
+      if (data.status !== "SUCCESS" || !data.visits) {
+        body.innerHTML = '<div class="empty-state">No visits recorded with this person.</div>';
+        return;
+      }
+
+      const viewPlacesBtn = document.getElementById("btn-person-view-places");
+      if (viewPlacesBtn) {
+        viewPlacesBtn.style.display = "inline-flex";
+        viewPlacesBtn.onclick = () => {
+          closePersonVisitsModal();
+          const targetName = data.name || personName;
+          currentPlacesQuery = targetName;
+          updateUrlQuery(targetName);
+          switchTab("places");
+          loadPlaces(targetName);
+        };
+      }
+
+      if (titleEl) titleEl.textContent = data.name || personName;
+      if (subEl) {
+        const contactInfo = data.contact?.email ? ` · ${data.contact.email}` : '';
+        subEl.textContent = `${(data.total_visits || data.count).toLocaleString()} visits recorded with ${data.name}${contactInfo}`;
+      }
+      if (countEl) {
+        countEl.textContent = `Showing all ${(data.total_visits || data.count).toLocaleString()} visits`;
+      }
+
+      if (data.visits.length === 0) {
+        body.innerHTML = '<div class="empty-state">No visits recorded with this person.</div>';
+        return;
+      }
+
+      let html = `
+        <div class="person-visits-table-wrapper" style="overflow-x:auto;">
+          <table class="table" style="width:100%;font-size:12.5px;border-collapse:collapse;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border-color);text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;">
+                <th style="padding:8px 10px;">#</th>
+                <th style="padding:8px 10px;">Date</th>
+                <th style="padding:8px 10px;">Place / Location</th>
+                <th style="padding:8px 10px;">Time Window</th>
+                <th style="padding:8px 10px;">Photos</th>
+                <th style="padding:8px 10px;text-align:right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      data.visits.forEach((v, idx) => {
+        const startStr = v.start_time ? v.start_time.slice(11, 16) : '--:--';
+        const endStr = v.end_time ? v.end_time.slice(11, 16) : '--:--';
+        const durMin = Math.round(v.duration_minutes || 0);
+        let durStr = `${durMin}m`;
+        if (durMin >= 60) {
+          const hrs = Math.floor(durMin / 60);
+          const rem = durMin % 60;
+          durStr = rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
+        }
+
+        const thumbHtml = v.preview_url
+          ? `<img src="${v.preview_url}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid var(--border-color);" alt="Photo" onerror="this.style.display='none'">`
+          : '';
+
+        const placeSub = v.city || v.place_address || '';
+
+        html += `
+          <tr style="border-bottom:1px solid var(--border-color);transition:background 0.15s;" onmouseover="this.style.background='var(--bg-subtle)'" onmouseout="this.style.background='transparent'">
+            <td style="padding:8px 10px;color:var(--text-muted);font-family:var(--font-mono);font-size:11px;">${idx + 1}</td>
+            <td style="padding:8px 10px;font-weight:600;color:var(--text-main);font-family:var(--font-mono);white-space:nowrap;">${v.date}</td>
+            <td style="padding:8px 10px;max-width:240px;">
+              <div style="font-weight:600;color:var(--text-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(v.place_name || 'Visit')}</div>
+              ${placeSub ? `<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(placeSub)}</div>` : ''}
+            </td>
+            <td style="padding:8px 10px;color:var(--text-muted);white-space:nowrap;">
+              <div>${startStr} – ${endStr}</div>
+              <span class="tag-badge" style="font-size:10px;background:rgba(59,130,246,0.12);color:var(--accent-blue);font-weight:600;">${durStr}</span>
+            </td>
+            <td style="padding:8px 10px;white-space:nowrap;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                ${thumbHtml}
+                <span class="tag-badge" style="font-size:11px;background:rgba(168,85,247,0.15);color:var(--accent-purple);font-weight:600;"><i class="fa-solid fa-camera"></i> ${v.photo_count}</span>
+              </div>
+            </td>
+            <td style="padding:8px 10px;text-align:right;white-space:nowrap;">
+              <button class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:11px;cursor:pointer;" onclick="closePersonVisitsModal(); window.jumpToTimelineDay('${v.date}', true, 'person', ${v.id})">
+                <i class="fa-solid fa-route"></i> Jump
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      body.innerHTML = html;
+    } catch (err) {
+      console.error("Person visits load error:", err);
+      body.innerHTML = '<div class="empty-state">Error loading visits for this person.</div>';
+    }
+  }
+
+  document.getElementById("btn-close-person-visits")?.addEventListener("click", closePersonVisitsModal);
+  document.getElementById("btn-done-person-visits")?.addEventListener("click", closePersonVisitsModal);
+
   // Load Contributor Reviews Tab
   async function loadReviews(query = "") {
     const grid = document.getElementById("reviews-grid-container");
@@ -4875,24 +5015,24 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        // 2. Specific visit with a person
+        // 2. Person match: open exhaustive person visits modal
+        const personMatch = results.find(r => r.type === "PERSON");
+        if (personMatch) {
+          openPersonVisitsModal(personMatch.name || personMatch.title);
+          return;
+        }
+
+        // 3. Specific visit with a person
         const personVisit = results.find(r => r.type === "PERSON_VISIT");
         if (personVisit) {
           selectSearchResult(personVisit);
           return;
         }
 
-        // 3. Specific visit with a visual photo match
+        // 4. Specific visit with a visual photo match
         const photoVisit = results.find(r => r.type === "PHOTO_VISIT");
         if (photoVisit) {
           selectSearchResult(photoVisit);
-          return;
-        }
-
-        // 4. Person contact / entity
-        const personMatch = results.find(r => r.type === "PERSON");
-        if (personMatch) {
-          selectSearchResult(personMatch);
           return;
         }
 
@@ -5010,6 +5150,20 @@ document.addEventListener("DOMContentLoaded", () => {
           header.appendChild(actionBtn);
         }
 
+        if (title === "People & Contacts" && people.length > 0) {
+          const personName = people[0].name || people[0].title;
+          const actionBtn = document.createElement("button");
+          actionBtn.className = "search-group-action-btn";
+          actionBtn.innerHTML = `All visits with ${escapeHtml(personName)} <i class="fa-solid fa-arrow-right"></i>`;
+          actionBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            dropdown.style.display = "none";
+            updateUrlQuery(personName);
+            openPersonVisitsModal(personName);
+          });
+          header.appendChild(actionBtn);
+        }
+
         dropdown.appendChild(header);
 
         items.forEach(it => {
@@ -5067,10 +5221,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (it.type === "PERSON") {
         const searchQ = it.name || it.title;
-        currentPlacesQuery = searchQ;
         updateUrlQuery(searchQ);
-        switchTab("places");
-        loadPlaces(searchQ);
+        openPersonVisitsModal(searchQ);
         return;
       }
 

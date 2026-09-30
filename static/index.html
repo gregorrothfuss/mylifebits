@@ -1042,9 +1042,37 @@
     </div>
   </div>
 
+  <!-- Person Full Visits History Modal -->
+  <div id="person-visits-modal" class="modal-overlay hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.8);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);">
+    <div class="modal-card" style="max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;background:var(--bg-card);border-radius:14px;border:1px solid var(--border-color);overflow:hidden;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
+      <div class="modal-header" style="padding:16px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;background:var(--bg-subtle);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(168,85,247,0.15);color:var(--accent-purple);display:flex;align-items:center;justify-content:center;font-size:16px;">
+            <i class="fa-solid fa-user-group"></i>
+          </div>
+          <div>
+            <h3 id="person-visits-title" style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);">Person Visits</h3>
+            <span id="person-visits-subtitle" class="sub-text" style="font-size:12px;color:var(--text-muted);">All recorded visits with this person</span>
+          </div>
+        </div>
+        <button id="btn-close-person-visits" class="icon-btn" style="background:transparent;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="person-visits-body" style="padding:16px 20px;overflow-y:auto;flex:1;">
+        <!-- Loaded dynamically -->
+      </div>
+      <div class="modal-footer" style="padding:12px 20px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;background:var(--bg-subtle);">
+        <span id="person-visits-footer-count" style="font-size:12px;color:var(--text-muted);"></span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="btn-person-view-places" class="btn btn-secondary" style="padding:6px 14px;font-size:12px;cursor:pointer;display:none;"><i class="fa-solid fa-map-location-dot"></i> View Places in Catalog</button>
+          <button id="btn-done-person-visits" class="btn btn-secondary" style="padding:6px 16px;font-size:13px;cursor:pointer;">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Leaflet JS & Heat Plugin -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="app.js?v=4.4"></script>
+  <script src="app.js?v=4.5"></script>
 </body>
 </html>
