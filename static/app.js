@@ -1548,7 +1548,8 @@ document.addEventListener("DOMContentLoaded", () => {
         .then(data => {
           if (data.status === "SUCCESS") {
             const bcPoints = data.breadcrumbs || [];
-            document.getElementById("count-breadcrumbs").textContent = bcPoints.length;
+            const countEl = document.getElementById("count-breadcrumbs");
+            if (countEl) countEl.textContent = bcPoints.length;
             
             // Draw Trajectory Polyline
             const validCoords = bcPoints.filter(p => !p.is_excluded && p.anomaly_type !== 'TELEPORTATION').map(p => [p.lat, p.lng]);
@@ -1618,7 +1619,8 @@ document.addEventListener("DOMContentLoaded", () => {
         })
         .catch(err => console.error("Error loading breadcrumbs:", err));
     } else {
-      document.getElementById("count-breadcrumbs").textContent = "0";
+      const countEl = document.getElementById("count-breadcrumbs");
+      if (countEl) countEl.textContent = "0";
     }
 
     if (bounds.length > 0) {
@@ -4041,8 +4043,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Local ODLH Re-Inference Engine Trigger
   async function triggerReinferDay() {
     const btn = document.getElementById("btn-reinfer-day");
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Re-Inferring...';
-    btn.disabled = true;
+    if (btn) {
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Re-Inferring...';
+      btn.disabled = true;
+    }
 
     try {
       const res = await fetch("/api/reinfer-day", {
@@ -4126,8 +4130,10 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       alert("Error executing re-inference: " + e.message);
     } finally {
-      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Re-Infer Day';
-      btn.disabled = false;
+      if (btn) {
+        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Re-Infer Day';
+        btn.disabled = false;
+      }
     }
   }
 
