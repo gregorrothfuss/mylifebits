@@ -84,6 +84,10 @@ document.addEventListener("DOMContentLoaded", () => {
   let allPlacesMapData = [];
   let showRawSignals = false;
 
+  function getGlobalSearchQuery() {
+    return document.getElementById("global-search-input")?.value?.trim() || "";
+  }
+
   // Map Layer Groups
   let visitLayerGroup = L.layerGroup();
   let routeLayerGroup = L.layerGroup();
@@ -367,7 +371,8 @@ document.addEventListener("DOMContentLoaded", () => {
       setTimeout(() => {
         if (placesMap) placesMap.invalidateSize(true);
       }, 100);
-      loadPlaces();
+      const q = getGlobalSearchQuery();
+      loadPlaces(q);
     } else if (targetTab === "heatmap") {
       setTimeout(() => {
         if (!heatMap) {
@@ -4759,26 +4764,64 @@ document.addEventListener("DOMContentLoaded", () => {
       }, 150);
     });
 
+    function showSearchInPlacesList(q) {
+      if (!q) return;
+      dropdown.style.display = "none";
+      currentPlacesQuery = q;
+      currentCategory = "ALL";
+      currentCity = "ALL";
+      const citySelect = document.getElementById("places-city-select");
+      if (citySelect) citySelect.value = "ALL";
+      document.querySelectorAll(".cat-pill").forEach(p => {
+        if (p.getAttribute("data-cat") === "ALL") p.classList.add("active");
+        else p.classList.remove("active");
+      });
+      switchTab("places");
+      loadPlaces(q);
+      input.value = q;
+      if (clearBtn) clearBtn.style.display = "block";
+    }
+
     async function executeSearchNow(q) {
       if (!q) return;
       clearTimeout(debounceTimer);
+      dropdown.style.display = "none";
+
+      const dMatch = q.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+      if (dMatch) {
+        const dt = `${dMatch[1]}-${dMatch[2].padStart(2, '0')}-${dMatch[3].padStart(2, '0')}`;
+        jumpToTimelineDay(dt, true, "search");
+        return;
+      }
+
+      const activeTab = document.querySelector(".tab-btn.active")?.getAttribute("data-tab") || "";
+
+      if (activeTab === "places") {
+        currentCategory = "ALL";
+        currentCity = "ALL";
+        loadPlaces(q);
+        return;
+      }
+      if (activeTab === "trips") {
+        loadTrips(q, "ALL");
+        return;
+      }
+
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=15`);
         const data = await res.json();
-        if (data.status === "SUCCESS" && data.results && data.results.length > 0) {
-          selectSearchResult(data.results[0]);
-        } else {
-          // Direct date parse fallback (e.g. 2015-03-28, 3/28/15)
-          const dMatch = q.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
-          if (dMatch) {
-            const dt = `${dMatch[1]}-${dMatch[2].padStart(2, '0')}-${dMatch[3].padStart(2, '0')}`;
-            currentDate = dt;
-            switchTab("timeline");
-            loadDay(currentDate);
-          }
+        const results = data.results || [];
+        const dateMatch = results.find(r => r.type === "DATE");
+        if (dateMatch) {
+          selectSearchResult(dateMatch);
+          return;
         }
+
+        // Default to displaying results in the Places catalog
+        showSearchInPlacesList(q);
       } catch (err) {
         console.error("Execute search error:", err);
+        showSearchInPlacesList(q);
       }
     }
 
@@ -4799,12 +4842,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       } else if (e.key === "Enter") {
         e.preventDefault();
+        const q = input.value.trim();
+        if (!q) return;
         if (selectedIdx >= 0 && selectedIdx < currentResults.length) {
           selectSearchResult(currentResults[selectedIdx]);
-        } else if (currentResults.length > 0) {
-          selectSearchResult(currentResults[0]);
         } else {
-          await executeSearchNow(input.value.trim());
+          await executeSearchNow(q);
         }
       } else if (e.key === "Escape") {
         dropdown.style.display = "none";
@@ -4868,7 +4911,21 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!items.length) return;
         const header = document.createElement("div");
         header.className = "search-group-header";
-        header.innerHTML = `<i class="fa-solid ${icon}"></i> ${title} (${items.length})`;
+        const titleSpan = document.createElement("span");
+        titleSpan.innerHTML = `<i class="fa-solid ${icon}"></i> ${title} (${items.length})`;
+        header.appendChild(titleSpan);
+
+        if (title === "Places & POIs") {
+          const actionBtn = document.createElement("button");
+          actionBtn.className = "search-group-action-btn";
+          actionBtn.innerHTML = `Show in Places list <i class="fa-solid fa-arrow-right"></i>`;
+          actionBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            showSearchInPlacesList(query);
+          });
+          header.appendChild(actionBtn);
+        }
+
         dropdown.appendChild(header);
 
         items.forEach(it => {
@@ -4945,11 +5002,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (it.type === "PLACE" || it.place_id) {
+        const searchQ = getGlobalSearchQuery() || it.title;
+        currentPlacesQuery = searchQ;
         switchTab("places");
+        loadPlaces(searchQ);
         if (it.place_id) {
           openPlaceVisitsModal(it.place_id, it.title);
-        } else {
-          loadPlaces(it.title);
         }
         const lat = parseFloat(it.latitude);
         const lng = parseFloat(it.longitude);
