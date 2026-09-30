@@ -282,7 +282,7 @@ def search(req: Request) -> Response:
         place_results.append({
             "type": "PLACE",
             "place_id": pid,
-            "title": r["place_name"] or "Home/Place",
+            "title": r["place_name"] or r["place_address"] or "Visit",
             "subtitle": sub,
             "category": r["category"] or "Other / POI",
             "latitude": r["latitude"],

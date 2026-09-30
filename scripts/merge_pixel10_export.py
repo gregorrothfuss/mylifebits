@@ -324,46 +324,12 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                     p_addr = sp_match.get('address')
                     p_cat = sp_match.get('category', 'Other / POI')
                     p_city, p_country = extract_city_country(p_addr, lat, lng)
-                elif lat is not None and lng is not None:
-                    # Reverse geocode fallback to eliminate raw coordinate fallbacks
-                    geo = reverse_geocode_osm(lat, lng)
-                    if geo and geo.get('name'):
-                        pid = f"osm_{lat:.5f}_{lng:.5f}"
-                        p_name = geo['name']
-                        p_addr = geo.get('address')
-                        p_cat = geo.get('category', 'Other / POI')
-                        p_city = geo.get('city')
-                        p_country = geo.get('country')
-                        c.execute("""
-                            INSERT OR IGNORE INTO places (
-                                place_id, name, address, semantic_type, category, city, country,
-                                user_confirmed, latitude, longitude, visit_count, source
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                        """, (
-                            pid, p_name, p_addr, sem_type, p_cat, p_city, p_country,
-                            0, lat, lng, 1, 'PIXEL10_EXPORT_2026'
-                        ))
-                    else:
-                        p_city, p_country = extract_city_country(None, lat, lng)
-                        synth = synthesize_place_name(None, None, sem_type)
-                        c.execute("""
-                            INSERT OR IGNORE INTO places (
-                                place_id, name, address, semantic_type, category, city, country,
-                                user_confirmed, latitude, longitude, visit_count, source
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                        """, (
-                            pid, synth, None, sem_type, 'Other / POI', p_city, p_country,
-                            0, lat, lng, 1, 'PIXEL10_EXPORT_2026'
-                        ))
-                        p_name = synth
                 else:
-                    synth = synthesize_place_name(None, None, sem_type)
-                    p_name = synth
+                    p_name = None
 
-            synth_name = synthesize_place_name(p_name, p_addr, sem_type)
-            lbl, cat = get_date_aware_label(db_path, synth_name, lat, lng, d_str)
+            lbl, cat = get_date_aware_label(db_path, p_name, lat, lng, d_str)
             if lbl:
-                synth_name = lbl
+                p_name = lbl
                 p_cat = cat
 
             c.execute("""
@@ -375,7 +341,7 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
                 'visit', local_st or st_raw, local_et or et_raw, float(st_ts), float(et_ts), dur_min,
-                d_str, yr, mo, dy, lat, lng, pid, synth_name,
+                d_str, yr, mo, dy, lat, lng, pid, p_name,
                 p_addr, sem_type, p_cat, p_city, prob, hl,
                 0, 'PIXEL10_EXPORT_2026', rev_rating, rev_photos
             ))

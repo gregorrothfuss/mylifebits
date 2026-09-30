@@ -570,7 +570,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (s.segment_type === "visit") {
         block.classList.add(s.hierarchy_level === 1 ? "child-visit" : "visit");
-        block.title = `Visit: ${s.place_name || 'Home/Place'} (${s.start_time.slice(11,16)} - ${s.end_time.slice(11,16)})`;
+        block.title = `Visit: ${s.place_name || s.place_address || 'Visit'} (${s.start_time.slice(11,16)} - ${s.end_time.slice(11,16)})`;
       } else {
         const act = (s.activity_type || "").toUpperCase();
         if (act.includes("VEHICLE") || act.includes("DRIV") || act.includes("BUS") || act.includes("TAXI")) block.classList.add("drive");
@@ -707,7 +707,7 @@ document.addEventListener("DOMContentLoaded", () => {
           : (s.duration_minutes < 1 ? `${Math.max(5, Math.round(s.duration_minutes * 60))}s` : `${Math.round(s.duration_minutes)}m`);
 
         if (s.segment_type === "visit") {
-          const title = s.place_name || s.catalog_place_name || "Home/Place";
+          const title = s.place_name || s.catalog_place_name || s.place_address || "Visit";
           const addr = s.place_address || s.catalog_place_address || (s.latitude ? `${s.latitude.toFixed(4)}, ${s.longitude.toFixed(4)}` : "");
           const cat = s.catalog_category || s.category || "Other / POI";
           const city = s.catalog_city || s.city || "";
@@ -1327,7 +1327,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         marker.on("click", () => selectSegment(s.id));
 
-        const title = s.place_name || s.catalog_place_name || "Home/Place";
+        const title = s.place_name || s.catalog_place_name || s.place_address || "Visit";
         const addr = s.place_address || s.catalog_place_address || "";
         const rating = s.catalog_review_rating || s.review_rating;
 
@@ -3935,7 +3935,7 @@ document.addEventListener("DOMContentLoaded", () => {
             html += `
               <div class="card" style="padding:6px 10px;margin-bottom:4px;font-size:11px;display:flex;align-items:center;justify-content:space-between;">
                 <div>
-                  <strong style="color:#3b82f6;">${v.place_name || 'Home/Place'}</strong>
+                  <strong style="color:#3b82f6;">${v.place_name || v.place_address || 'Visit'}</strong>
                   <span style="color:#94a3b8;margin-left:6px;">${st} - ${et} (${v.duration_minutes}m)</span>
                 </div>
                 <span class="tag-badge category-tag">${v.category || 'Place'}</span>

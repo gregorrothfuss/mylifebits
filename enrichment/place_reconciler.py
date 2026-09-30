@@ -647,31 +647,7 @@ def reconcile_place_spatial(
         close_conn = True
 
     try:
-        # 2. Check custom_labeled_places within 35m
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT name, address, latitude, longitude
-            FROM custom_labeled_places
-            WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-              AND abs(latitude - ?) < 0.0005 AND abs(longitude - ?) < 0.0005;
-            """,
-            (lat, lng),
-        )
-        for cl_name, cl_addr, cl_lat, cl_lng in c.fetchall():
-            if not is_nameless_place(cl_name):
-                d = haversine_distance(lat, lng, cl_lat, cl_lng)
-                if d <= 35.0:
-                    return {
-                        "place_id": f"custom_label_{cl_lat:.4f}_{cl_lng:.4f}",
-                        "name": cl_name,
-                        "address": cl_addr,
-                        "category": "Home & Residence" if "Home" in cl_name else "Other / POI",
-                        "distance_meters": d,
-                        "matched_by": "custom_labeled_places",
-                    }
-
-        # 3. Check canonical catalog places
+        # 2. Check canonical catalog places
         candidates = get_nearby_catalog_candidates(conn, lat, lng, max_radius_meters=max_radius_meters)
         if candidates:
             best = candidates[0]
@@ -882,15 +858,6 @@ def resolve_visit_place(
         match = reconcile_place_spatial(db_path, lat, lng, date_str=date_str, conn=conn)
         if match:
             return match
-
-        # 6. If allowed, reverse geocode to eliminate raw coordinate fallbacks
-        if allow_reverse_geocode and lat is not None and lng is not None:
-            geo = reverse_geocode_osm(lat, lng)
-            if geo and geo.get("name"):
-                geo["place_id"] = incoming_place_id or f"osm_{lat:.5f}_{lng:.5f}"
-                geo["distance_meters"] = 0.0
-                geo["matched_by"] = "reverse_geocode_osm"
-                return geo
 
         return None
     finally:

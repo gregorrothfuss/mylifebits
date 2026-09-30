@@ -121,11 +121,8 @@ def get_day(req: Request) -> Response:
                     if sp_match.get("place_id"):
                         s["catalog_place_id"] = sp_match["place_id"]
                 else:
-                    fallback_name = cur_addr or (
-                        f"Location ({s['latitude']:.4f}, {s['longitude']:.4f})" if s.get("latitude") else "Point of Interest"
-                    )
-                    s["place_name"] = fallback_name
-                    s["catalog_place_name"] = fallback_name
+                    s["place_name"] = cur_addr or ""
+                    s["catalog_place_name"] = cur_addr or ""
 
             s["review_rating"] = s.get("catalog_review_rating") or s.get("review_rating")
             s["review_text"] = s.get("catalog_review_text") or s.get("review_text")
