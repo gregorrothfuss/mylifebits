@@ -1,21 +1,27 @@
 {
-  "goal": "Fix SecurityError by wrapping localStorage access in safeStorage helper",
-  "active_step_id": 2,
+  "goal": "Replace watermark-ridden CARTO basemaps with authentic Google Maps raster tiles and watermark-free GIS styles",
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Implement safeStorage helper and replace bare localStorage access in static/app.js",
+      "description": "Replace CARTO tile endpoints in static/app.js with authentic Google Maps (Roadmap default, Terrain, Hybrid, Satellite) and Esri Street Map",
       "status": "completed"
     },
     {
       "id": 2,
+      "description": "Update map style dropdowns in static/index.html to reflect Google Maps Roadmap, Terrain, Hybrid, Satellite, and Esri",
+      "status": "completed"
+    },
+    {
+      "id": 3,
       "description": "Verify API contracts and test suite to ensure zero regressions",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "static/app.js"
+      "static/app.js",
+      "static/index.html"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",

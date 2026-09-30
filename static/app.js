@@ -216,50 +216,61 @@ document.addEventListener("DOMContentLoaded", () => {
     return `<span class="star-rating" title="${rating} Stars">${stars}</span>`;
   }
 
-  // Modern, high-fidelity Map Styles (Clean, Apple/Google Maps aesthetic)
+  // Authentic Google Maps & Watermark-Free GIS Map Styles (100% Free, Zero API Key Required)
   const MAP_STYLES = {
-    voyager: {
-      id: "voyager",
-      name: "Voyager (Modern)",
-      url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    google_roads: {
+      id: "google_roads",
+      name: "Google Maps (Roadmap)",
+      url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
       options: {
         maxZoom: 20,
-        subdomains: "abcd",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+        subdomains: ["0", "1", "2", "3"],
+        attribution: '&copy; <a href="https://maps.google.com" target="_blank">Google Maps</a>'
       },
-      fallback: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      fallback: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
     },
-    positron: {
-      id: "positron",
-      name: "Clean Light",
-      url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    google_terrain: {
+      id: "google_terrain",
+      name: "Google Terrain",
+      url: "https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
       options: {
         maxZoom: 20,
-        subdomains: "abcd",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+        subdomains: ["0", "1", "2", "3"],
+        attribution: '&copy; <a href="https://maps.google.com" target="_blank">Google Maps</a>'
       },
-      fallback: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      fallback: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
     },
-    dark: {
-      id: "dark",
-      name: "Dark Matter",
-      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    google_hybrid: {
+      id: "google_hybrid",
+      name: "Google Hybrid",
+      url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
       options: {
         maxZoom: 20,
-        subdomains: "abcd",
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+        subdomains: ["0", "1", "2", "3"],
+        attribution: '&copy; <a href="https://maps.google.com" target="_blank">Google Maps</a>'
       },
-      fallback: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      fallback: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
     },
-    satellite: {
-      id: "satellite",
-      name: "Satellite",
-      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    google_satellite: {
+      id: "google_satellite",
+      name: "Google Satellite",
+      url: "https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+      options: {
+        maxZoom: 20,
+        subdomains: ["0", "1", "2", "3"],
+        attribution: '&copy; <a href="https://maps.google.com" target="_blank">Google Maps</a>'
+      },
+      fallback: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+    },
+    esri_street: {
+      id: "esri_street",
+      name: "Esri World Street",
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
       options: {
         maxZoom: 19,
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community'
+        attribution: 'Tiles &copy; Esri &mdash; Sources: Esri, DeLorme, NAVTEQ, USGS, TomTom'
       },
-      fallback: "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+      fallback: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
     },
     osm: {
       id: "osm",
@@ -269,7 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
         maxZoom: 19,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
       },
-      fallback: "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+      fallback: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
     }
   };
 
@@ -291,8 +302,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  let currentMapStyle = safeStorage.getItem("mylifebits_map_style") || "voyager";
-  if (!MAP_STYLES[currentMapStyle]) currentMapStyle = "voyager";
+  let currentMapStyle = safeStorage.getItem("mylifebits_map_style") || "google_roads";
+  if (currentMapStyle === "voyager" || currentMapStyle === "positron" || currentMapStyle === "dark" || !MAP_STYLES[currentMapStyle]) {
+    currentMapStyle = "google_roads";
+    safeStorage.setItem("mylifebits_map_style", "google_roads");
+  }
 
   // Active base tile layers indexed by map container ID
   const activeTileLayers = new Map();
@@ -308,7 +322,7 @@ document.addEventListener("DOMContentLoaded", () => {
       customOpts = styleKeyOrOptions;
     }
 
-    const style = MAP_STYLES[key] || MAP_STYLES.voyager;
+    const style = MAP_STYLES[key] || MAP_STYLES.google_roads;
     const mergedOptions = { ...style.options, ...customOpts };
     const layer = L.tileLayer(style.url, mergedOptions);
 
