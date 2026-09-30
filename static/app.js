@@ -621,16 +621,30 @@ document.addEventListener("DOMContentLoaded", () => {
             <i class="fa-solid fa-camera" style="color:#0284c7;"></i> Photos from this Day
             <span class="tag-badge" style="background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:700;">${dayData.photos.length}</span>
           </div>
-          <span style="font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, 0, 'Photos from ${dayData.date}')">View All (${dayData.photos.length}) <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+          <span class="day-photos-view-all-btn" style="font-size:11px;color:var(--text-muted);cursor:pointer;">View All (${dayData.photos.length}) <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
         </div>
         <div class="day-photos-strip" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
           ${dayData.photos.map((p, idx) => `
-            <div class="review-photo-thumb-wrapper" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(p.place_name || dayData.date).replace(/'/g, "\\'")}', '${escapeHtml(p.filename || '')}')" title="${escapeHtml(p.filename || '')} (${escapeHtml(p.place_name || '')})">
+            <div class="review-photo-thumb-wrapper day-photo-thumb" data-idx="${idx}" title="${escapeHtml(p.filename || '')} (${escapeHtml(p.place_name || '')})">
               <img class="review-photo-thumb" src="${getPhotoUrl(p.preview_url, 180)}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border-color);" alt="Photo" loading="lazy" onerror="this.parentElement.style.display='none'" />
             </div>
           `).join('')}
         </div>
       `;
+      photosBox.querySelector(".day-photos-view-all-btn")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        window.openPhotoLightbox(photoUrls, 0, `Photos from ${dayData.date}`, "");
+      });
+      photosBox.querySelectorAll(".day-photo-thumb").forEach(thumb => {
+        thumb.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const idx = parseInt(thumb.getAttribute("data-idx") || "0", 10);
+          const p = dayData.photos[idx] || {};
+          window.openPhotoLightbox(photoUrls, idx, p.place_name || dayData.date, p.filename || "");
+        });
+      });
       container.appendChild(photosBox);
     }
 
@@ -729,7 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="tag-badge category-tag">${escapeHtml(cat)}</span>
                 ${s.source === 'plazes' ? '<span class="tag-badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;font-size:10px;font-weight:600;"><i class="fa-solid fa-bolt"></i> Plazes</span>' : ''}
                 ${rating ? `<span class="tag-badge review-tag" title="Your Personal Rating: ${rating} Stars">${renderStars(rating)}</span>` : ''}
-                ${s.review_photos && s.review_photos.length ? `<span class="tag-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
+                ${s.review_photos && s.review_photos.length ? `<span class="tag-badge visit-photo-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;cursor:pointer;" title="View photos in lightbox"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
                 <button class="icon-btn edit-place-btn" style="width:20px;height:20px;font-size:10px;margin-left:auto;" title="Edit Visit Details"><i class="fa-solid fa-pen"></i></button>
               </div>
               ${s.review_text ? `
@@ -740,7 +754,7 @@ document.addEventListener("DOMContentLoaded", () => {
               ${s.review_photos && s.review_photos.length ? `
                 <div class="review-photos-strip" style="margin-top:6px;">
                   ${s.review_photos.map((url, idx) => `
-                    <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(s.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(title).replace(/'/g, "\\'")}', '${escapeHtml(s.review_text || '').replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${s.review_photos.length})">
+                    <div class="review-photo-thumb-wrapper visit-photo-thumb" data-idx="${idx}" title="View photo (${idx+1}/${s.review_photos.length})">
                       <img class="review-photo-thumb" src="${getPhotoUrl(url, 240)}" alt="Photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
                     </div>
                   `).join('')}
@@ -837,6 +851,23 @@ document.addEventListener("DOMContentLoaded", () => {
             openEditSegmentModal(s);
           });
 
+          // Attach robust click listeners to visit photo thumbnails and badge
+          card.querySelectorAll(".visit-photo-thumb").forEach(thumb => {
+            thumb.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const idx = parseInt(thumb.getAttribute("data-idx") || "0", 10);
+              const photos = s.review_photos || [];
+              window.openPhotoLightbox(photos, idx, title, s.review_text || "");
+            });
+          });
+
+          card.querySelector(".visit-photo-badge")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.openPhotoLightbox(s.review_photos || [], 0, title, s.review_text || "");
+          });
+
         } else {
           const actType = (s.activity_type || "TRAVEL").toUpperCase();
           const iconClass = ACTIVITY_ICONS[actType] || ACTIVITY_ICONS["DEFAULT"];
@@ -876,14 +907,14 @@ document.addEventListener("DOMContentLoaded", () => {
                   : `<span class="tag-badge"><i class="fa-solid fa-arrows-left-right"></i> ${displayDistKm} km</span>`
                 }
                 ${hasSnapped ? '<span class="tag-badge snapped"><i class="fa-solid fa-route"></i> Snapped Route</span>' : ''}
-                ${s.review_photos && s.review_photos.length ? `<span class="tag-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
+                ${s.review_photos && s.review_photos.length ? `<span class="tag-badge activity-photo-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;cursor:pointer;" title="View photos in lightbox"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
                 ${!isStationaryActivity ? `<button class="btn-3d-ride" title="Ride along this route in 3D Earth view"><i class="fa-solid fa-earth-americas"></i> 3D Ride</button>` : ''}
                 <button class="icon-btn edit-activity-btn" style="width:20px;height:20px;font-size:10px;margin-left:auto;" title="Edit Activity Details"><i class="fa-solid fa-pen"></i></button>
               </div>
               ${s.review_photos && s.review_photos.length ? `
                 <div class="review-photos-strip" style="margin-top:6px;">
                   ${s.review_photos.map((url, idx) => `
-                    <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(s.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(actTitle).replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${s.review_photos.length})">
+                    <div class="review-photo-thumb-wrapper activity-photo-thumb" data-idx="${idx}" title="View photo (${idx+1}/${s.review_photos.length})">
                       <img class="review-photo-thumb" src="${getPhotoUrl(url, 240)}" alt="Photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
                     </div>
                   `).join('')}
@@ -971,6 +1002,23 @@ document.addEventListener("DOMContentLoaded", () => {
           card.querySelector(".btn-3d-ride")?.addEventListener("click", (e) => {
             e.stopPropagation();
             openEarthRidePlayer(s.id, false);
+          });
+
+          // Attach robust click listeners to activity photo thumbnails and badge
+          card.querySelectorAll(".activity-photo-thumb").forEach(thumb => {
+            thumb.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const idx = parseInt(thumb.getAttribute("data-idx") || "0", 10);
+              const photos = s.review_photos || [];
+              window.openPhotoLightbox(photos, idx, actTitle, "");
+            });
+          });
+
+          card.querySelector(".activity-photo-badge")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.openPhotoLightbox(s.review_photos || [], 0, actTitle, "");
           });
         }
 
@@ -1669,7 +1717,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ${p.review_photos && p.review_photos.length ? `
             <div class="review-photos-strip" style="margin-top:6px;">
               ${p.review_photos.map((url, idx) => `
-                <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(p.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(p.name || '').replace(/'/g, "\\'")}', '${escapeHtml(p.review_text || '').replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${p.review_photos.length})">
+                <div class="review-photo-thumb-wrapper places-photo-thumb" data-idx="${idx}" title="View photo (${idx+1}/${p.review_photos.length})">
                   <img class="review-photo-thumb" style="width:48px;height:48px;" src="${getPhotoUrl(url, 200)}" alt="Place photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
                 </div>
               `).join('')}
@@ -1687,6 +1735,15 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
       `;
+
+      card.querySelectorAll(".places-photo-thumb").forEach(thumb => {
+        thumb.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const idx = parseInt(thumb.getAttribute("data-idx") || "0", 10);
+          window.openPhotoLightbox(p.review_photos || [], idx, p.name || 'Place', p.review_text || "");
+        });
+      });
 
       card.querySelector(".view-place-btn")?.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1756,11 +1813,11 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="place-photos-modal-strip" style="margin-bottom:14px;padding:10px 12px;background:var(--bg-subtle);border-radius:8px;border:1px solid var(--border-color);">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
               <span style="font-size:12px;font-weight:600;color:var(--text-main);"><i class="fa-solid fa-camera" style="color:#0284c7;"></i> Photos at this Place (${data.photos.length})</span>
-              <span style="font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, 0, '${escapeHtml(data.place?.name || placeName || 'Place').replace(/'/g, "\\'")}')">View Fullscreen <i class="fa-solid fa-expand"></i></span>
+              <span class="modal-photos-view-all-btn" style="font-size:11px;color:var(--text-muted);cursor:pointer;">View Fullscreen <i class="fa-solid fa-expand"></i></span>
             </div>
             <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
               ${data.photos.map((p, pIdx) => `
-                <div class="review-photo-thumb-wrapper" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, ${pIdx}, '${escapeHtml(data.place?.name || placeName || 'Place').replace(/'/g, "\\'")}', '${p.local_date || ''}')" title="${escapeHtml(p.filename || '')} (${p.local_date || ''})">
+                <div class="review-photo-thumb-wrapper modal-place-photo-thumb" data-idx="${pIdx}" title="${escapeHtml(p.filename || '')} (${p.local_date || ''})">
                   <img src="${getPhotoUrl(p.preview_url, 160)}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;cursor:pointer;" alt="Photo" loading="lazy" />
                 </div>
               `).join('')}
@@ -1817,6 +1874,24 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
 
       body.innerHTML = html;
+
+      body.querySelector(".modal-photos-view-all-btn")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const pUrls = (data.photos || []).map(p => p.preview_url);
+        window.openPhotoLightbox(pUrls, 0, data.place?.name || placeName || 'Place', '');
+      });
+
+      body.querySelectorAll(".modal-place-photo-thumb").forEach(thumb => {
+        thumb.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const pIdx = parseInt(thumb.getAttribute("data-idx") || "0", 10);
+          const p = (data.photos || [])[pIdx] || {};
+          const pUrls = (data.photos || []).map(x => x.preview_url);
+          window.openPhotoLightbox(pUrls, pIdx, data.place?.name || placeName || 'Place', p.local_date || '');
+        });
+      });
     } catch (e) {
       console.error("Error loading place visits:", e);
       body.innerHTML = `<div class="empty-state">Error loading visit history: ${escapeHtml(e.message)}</div>`;
@@ -1873,7 +1948,7 @@ document.addEventListener("DOMContentLoaded", () => {
               ${photos.length ? `
                 <div class="review-photos-grid">
                   ${photos.map((url, idx) => `
-                    <div class="review-photo-thumb-wrapper" onclick="window.openPhotoLightbox(${JSON.stringify(photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(placeName).replace(/'/g, "\\'")}', '${escapeHtml(reviewText).replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${photos.length})">
+                    <div class="review-photo-thumb-wrapper review-tab-photo-thumb" data-idx="${idx}" title="View photo (${idx+1}/${photos.length})">
                       <img class="review-photo-thumb" src="${getPhotoUrl(url, 360)}" alt="Review photo ${idx+1}" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
                     </div>
                   `).join('')}
@@ -1885,6 +1960,16 @@ document.addEventListener("DOMContentLoaded", () => {
               ${r.google_maps_url ? `<a href="${r.google_maps_url}" target="_blank" class="tag-badge snapped" style="text-decoration:none;"><i class="fa-solid fa-arrow-up-right-from-square"></i> Google Maps</a>` : ''}
             </div>
           `;
+
+          card.querySelectorAll(".review-tab-photo-thumb").forEach(thumb => {
+            thumb.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const idx = parseInt(thumb.getAttribute("data-idx") || "0", 10);
+              window.openPhotoLightbox(photos, idx, placeName, reviewText);
+            });
+          });
+
           grid.appendChild(card);
         });
       }
@@ -4854,6 +4939,7 @@ window.openPhotoLightbox = function(photoUrls, initialIdx = 0, placeTitle = "", 
   modal.dataset.reviewText = reviewText || "";
 
   updateLightboxView();
+  modal.style.display = "flex";
   modal.classList.remove("hidden");
 };
 
@@ -4862,7 +4948,10 @@ window.closePhotoLightbox = function(e) {
     return;
   }
   const modal = document.getElementById("photo-lightbox-modal");
-  if (modal) modal.classList.add("hidden");
+  if (modal) {
+    modal.style.display = "none";
+    modal.classList.add("hidden");
+  }
 };
 
 window.lightboxPrev = function() {
