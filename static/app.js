@@ -45,6 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function getPhotoUrl(url, size = 400) {
     if (!url) return '';
+    if (url.startsWith('/api/photo')) return url;
     return `/api/photo?url=${encodeURIComponent(url)}&size=${size}`;
   }
   window.getPhotoUrl = getPhotoUrl;
@@ -582,9 +583,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const visitsCount = segments.filter(s => s.segment_type === "visit").length;
     const activitiesCount = segments.filter(s => s.segment_type === "activity").length;
     const totalKm = segments.reduce((acc, s) => acc + (s.distance_meters || 0) / 1000.0, 0);
+    const dayPhotosCount = dayData.photo_count || (dayData.photos ? dayData.photos.length : 0);
 
     document.getElementById("day-summary-text").textContent = 
-      `${visitsCount} visits · ${activitiesCount} travel movements · ${totalKm.toFixed(1)} km · ${gaps.length} gaps`;
+      `${visitsCount} visits · ${activitiesCount} travel movements · ${totalKm.toFixed(1)} km · ${gaps.length} gaps` + (dayPhotosCount ? ` · ${dayPhotosCount} photos` : '');
 
     if (segments.length === 0 && (!dayData.memories || dayData.memories.length === 0)) {
       container.innerHTML = '<div class="empty-state"><p>No timeline records recorded for this day.</p></div>';
@@ -605,6 +607,31 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         container.appendChild(memCard);
       });
+    }
+
+    // Render interactive day photos gallery if photos exist for this day
+    if (dayData.photos && dayData.photos.length > 0) {
+      const photosBox = document.createElement("div");
+      photosBox.className = "card day-photos-box";
+      photosBox.style.cssText = "background:var(--bg-subtle);border:1px solid var(--border-color);padding:10px 12px;border-radius:8px;margin-bottom:12px;";
+      const photoUrls = dayData.photos.map(p => p.preview_url);
+      photosBox.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-main);">
+            <i class="fa-solid fa-camera" style="color:#0284c7;"></i> Photos from this Day
+            <span class="tag-badge" style="background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:700;">${dayData.photos.length}</span>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, 0, 'Photos from ${dayData.date}')">View All (${dayData.photos.length}) <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+        </div>
+        <div class="day-photos-strip" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+          ${dayData.photos.map((p, idx) => `
+            <div class="review-photo-thumb-wrapper" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(p.place_name || dayData.date).replace(/'/g, "\\'")}', '${escapeHtml(p.filename || '')}')" title="${escapeHtml(p.filename || '')} (${escapeHtml(p.place_name || '')})">
+              <img class="review-photo-thumb" src="${getPhotoUrl(p.preview_url, 180)}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid var(--border-color);" alt="Photo" loading="lazy" onerror="this.parentElement.style.display='none'" />
+            </div>
+          `).join('')}
+        </div>
+      `;
+      container.appendChild(photosBox);
     }
 
     // Separate top-level events and child visits
@@ -705,18 +732,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${s.review_photos && s.review_photos.length ? `<span class="tag-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
                 <button class="icon-btn edit-place-btn" style="width:20px;height:20px;font-size:10px;margin-left:auto;" title="Edit Visit Details"><i class="fa-solid fa-pen"></i></button>
               </div>
-              ${s.review_text || (s.review_photos && s.review_photos.length) ? `
+              ${s.review_text ? `
                 <div class="user-review-snippet" style="margin-top:6px;padding:6px 10px;background:#f0fdf4;border-left:3px solid #22c55e;border-radius:6px;font-size:11px;color:#166534;">
-                  ${s.review_text ? `<div style="display:flex;align-items:flex-start;gap:4px;"><i class="fa-solid fa-star" style="color:#f59e0b;font-size:10px;margin-top:2px;"></i><div><strong>Your Review:</strong> "${escapeHtml(s.review_text)}"</div></div>` : ''}
-                  ${s.review_photos && s.review_photos.length ? `
-                    <div class="review-photos-strip" style="margin-top:6px;">
-                      ${s.review_photos.map((url, idx) => `
-                        <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(s.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(title).replace(/'/g, "\\'")}', '${escapeHtml(s.review_text || '').replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${s.review_photos.length})">
-                          <img class="review-photo-thumb" src="${getPhotoUrl(url, 240)}" alt="Review photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
-                        </div>
-                      `).join('')}
+                  <div style="display:flex;align-items:flex-start;gap:4px;"><i class="fa-solid fa-star" style="color:#f59e0b;font-size:10px;margin-top:2px;"></i><div><strong>Your Review:</strong> "${escapeHtml(s.review_text)}"</div></div>
+                </div>
+              ` : ''}
+              ${s.review_photos && s.review_photos.length ? `
+                <div class="review-photos-strip" style="margin-top:6px;">
+                  ${s.review_photos.map((url, idx) => `
+                    <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(s.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(title).replace(/'/g, "\\'")}', '${escapeHtml(s.review_text || '').replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${s.review_photos.length})">
+                      <img class="review-photo-thumb" src="${getPhotoUrl(url, 240)}" alt="Photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
                     </div>
-                  ` : ''}
+                  `).join('')}
                 </div>
               ` : ''}
               ${s.event_title ? `
@@ -849,9 +876,19 @@ document.addEventListener("DOMContentLoaded", () => {
                   : `<span class="tag-badge"><i class="fa-solid fa-arrows-left-right"></i> ${displayDistKm} km</span>`
                 }
                 ${hasSnapped ? '<span class="tag-badge snapped"><i class="fa-solid fa-route"></i> Snapped Route</span>' : ''}
+                ${s.review_photos && s.review_photos.length ? `<span class="tag-badge" style="font-size:10px;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:600;"><i class="fa-solid fa-camera"></i> ${s.review_photos.length}</span>` : ''}
                 ${!isStationaryActivity ? `<button class="btn-3d-ride" title="Ride along this route in 3D Earth view"><i class="fa-solid fa-earth-americas"></i> 3D Ride</button>` : ''}
                 <button class="icon-btn edit-activity-btn" style="width:20px;height:20px;font-size:10px;margin-left:auto;" title="Edit Activity Details"><i class="fa-solid fa-pen"></i></button>
               </div>
+              ${s.review_photos && s.review_photos.length ? `
+                <div class="review-photos-strip" style="margin-top:6px;">
+                  ${s.review_photos.map((url, idx) => `
+                    <div class="review-photo-thumb-wrapper" onclick="event.stopPropagation(); window.openPhotoLightbox(${JSON.stringify(s.review_photos).replace(/"/g, '&quot;')}, ${idx}, '${escapeHtml(actTitle).replace(/'/g, "\\'")}')" title="View photo (${idx+1}/${s.review_photos.length})">
+                      <img class="review-photo-thumb" src="${getPhotoUrl(url, 240)}" alt="Photo" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display='none'" />
+                    </div>
+                  `).join('')}
+                </div>
+              ` : ''}
               ${(() => {
                 const matchingFlightFix = (dayData.fix_proposals || []).find(f => f.target_id === s.id && f.target_type === 'flight' && f.status === 'PENDING');
                 if (!matchingFlightFix) return '';
@@ -1205,6 +1242,13 @@ document.addEventListener("DOMContentLoaded", () => {
             ${addr ? `<p style="margin:4px 0 0 0;color:#cbd5e1;font-size:11px;">${addr}</p>` : ''}
             <p style="margin:4px 0 0 0;color:#94a3b8;font-size:11px;">${s.start_time.slice(11,16)} - ${s.end_time.slice(11,16)} (${s.duration_minutes.toFixed(0)} min)</p>
             <p style="color:#c084fc;font-size:10px;margin-top:2px;">${cat} · ${s.catalog_city || ''}</p>
+            ${s.review_photos && s.review_photos.length ? `
+              <div style="margin-top:6px;display:flex;gap:4px;overflow-x:auto;">
+                ${s.review_photos.slice(0, 4).map(u => `
+                  <img src="${getPhotoUrl(u, 100)}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #cbd5e1;" alt="Photo" loading="lazy" />
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
         `);
 
@@ -1700,12 +1744,32 @@ document.addEventListener("DOMContentLoaded", () => {
         subEl.textContent = `${data.count} total recorded visits${addr}`;
       }
 
-      if (data.visits.length === 0) {
+      if (data.visits.length === 0 && (!data.photos || data.photos.length === 0)) {
         body.innerHTML = '<div class="empty-state">No visits found.</div>';
         return;
       }
 
-      let html = `
+      let photosHtml = '';
+      if (data.photos && data.photos.length > 0) {
+        const photoUrls = data.photos.map(p => p.preview_url);
+        photosHtml = `
+          <div class="place-photos-modal-strip" style="margin-bottom:14px;padding:10px 12px;background:var(--bg-subtle);border-radius:8px;border:1px solid var(--border-color);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <span style="font-size:12px;font-weight:600;color:var(--text-main);"><i class="fa-solid fa-camera" style="color:#0284c7;"></i> Photos at this Place (${data.photos.length})</span>
+              <span style="font-size:11px;color:var(--text-muted);cursor:pointer;" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, 0, '${escapeHtml(data.place?.name || placeName || 'Place').replace(/'/g, "\\'")}')">View Fullscreen <i class="fa-solid fa-expand"></i></span>
+            </div>
+            <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+              ${data.photos.map((p, pIdx) => `
+                <div class="review-photo-thumb-wrapper" onclick="window.openPhotoLightbox(${JSON.stringify(photoUrls).replace(/"/g, '&quot;')}, ${pIdx}, '${escapeHtml(data.place?.name || placeName || 'Place').replace(/'/g, "\\'")}', '${p.local_date || ''}')" title="${escapeHtml(p.filename || '')} (${p.local_date || ''})">
+                  <img src="${getPhotoUrl(p.preview_url, 160)}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;cursor:pointer;" alt="Photo" loading="lazy" />
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      let html = photosHtml + `
         <div class="place-visits-table-wrapper" style="overflow-x:auto;">
           <table class="table" style="width:100%;font-size:12.5px;border-collapse:collapse;">
             <thead>

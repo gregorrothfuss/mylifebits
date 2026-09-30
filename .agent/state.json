@@ -1,29 +1,45 @@
 {
-  "goal": "Switch map tile layers in timeline studio to OpenStreetMap with reliable fallbacks and zero API key requirement",
-  "active_step_id": 2,
+  "goal": "Use the photo index in gregor_cos to enrich day and places views with photos",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Inspect all tileLayer declarations in static/app.js and implement resilient OpenStreetMap tile provider with fallback",
+      "description": "Audit photo index in gregor_cos and design integration architecture for day and places views",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Verify web tests and linting to ensure zero regressions",
+      "description": "Enrich backend routes: serve gregor_cos photo previews, integrate photo matching in /api/day and /api/places",
+      "status": "completed"
+    },
+    {
+      "id": 3,
+      "description": "Enrich frontend UI in static/app.js: render photo strips, counts, day photo bar, and place visits photo gallery",
+      "status": "completed"
+    },
+    {
+      "id": 4,
+      "description": "Run API contract audits, unit tests, and verify photo enrichment end-to-end",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "static/app.js"
+      "api/routes/photos.py",
+      "api/routes/timeline.py",
+      "api/routes/places.py",
+      "server.py",
+      "static/app.js",
+      "scripts/verify_photo_enrichment_e2e.py"
     ],
     "test_files": [
       "tests/test_e2e_server.py",
-      "tests/test_clean_api.py"
+      "tests/test_clean_api.py",
+      "scripts/verify_photo_enrichment_e2e.py"
     ],
     "scratch_logs": [
       ".agent/scratch/audit.log",
-      ".agent/scratch/unittest_all.log"
+      ".agent/scratch/pytest.log"
     ]
   }
 }

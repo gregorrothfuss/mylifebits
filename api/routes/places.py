@@ -135,10 +135,31 @@ def get_place_visits(req: Request) -> Response:
 
     place_meta = query_one("""
         SELECT place_id, name, address, category, city, country, latitude, longitude, 
-               visit_count, review_rating, first_visit_time, last_visit_time
+               visit_count, review_rating, first_visit_time, last_visit_time, review_photos, review_photo_count
         FROM places
         WHERE place_id = ?;
     """, (place_id,))
+
+    if place_meta:
+        rp = place_meta.get("review_photos")
+        if isinstance(rp, str) and rp.strip():
+            try:
+                place_meta["review_photos"] = json.loads(rp)
+            except Exception:
+                place_meta["review_photos"] = []
+        elif not isinstance(rp, list):
+            place_meta["review_photos"] = []
+
+    photos = query_all("""
+        SELECT sha256, filename, preview_path, timestamp_utc, timezone_offset,
+               local_date, latitude, longitude, people, face_count
+        FROM photos
+        WHERE place_id = ?
+        ORDER BY timestamp_utc DESC
+        LIMIT 100;
+    """, (place_id,))
+    for p in photos:
+        p["preview_url"] = f"/api/photo?sha256={p['sha256']}"
 
     return json_response({
         "status": "SUCCESS",
@@ -146,6 +167,8 @@ def get_place_visits(req: Request) -> Response:
         "place": place_meta,
         "count": len(visits),
         "visits": visits,
+        "photos": photos,
+        "photo_count": len(photos),
     })
 
 

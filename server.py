@@ -4,6 +4,7 @@ Serves the standalone Timeline Viewer UI and modular API routes.
 """
 
 from __future__ import annotations
+import sys
 
 import http.server
 import os
@@ -46,6 +47,39 @@ class TimelineViewerHandler(http.server.SimpleHTTPRequestHandler):
             return
         if self.path.startswith("/api/"):
             self._dispatch_api("GET")
+        elif self.path.startswith("/previews/"):
+            parsed_path = urllib.parse.urlparse(self.path).path
+            fname = os.path.basename(parsed_path)
+            cand_dirs = [
+                "/Users/rothfuss/projects/gregor_cos/previews",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gregor_cos", "previews"),
+                os.path.expanduser("~/projects/gregor_cos/previews"),
+            ]
+            file_path = None
+            for cd in cand_dirs:
+                cp = os.path.join(cd, fname)
+                if os.path.isfile(cp):
+                    file_path = cp
+                    break
+
+            if file_path:
+                try:
+                    with open(file_path, "rb") as f:
+                        data = f.read()
+                    self.send_response(200)
+                    mime = "image/webp" if fname.lower().endswith(".webp") else "image/jpeg"
+                    self.send_header("Content-Type", mime)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
+            else:
+                self.send_error(404, "Preview not found")
+                return
         else:
             if self.path in ("/", ""):
                 self.path = "/index.html"
@@ -92,5 +126,6 @@ class ThreadedTimelineServer:
 
 
 if __name__ == "__main__":
-    server = ThreadedTimelineServer(port=8080)
+    port = int(os.environ.get("PORT", sys.argv[1] if len(sys.argv) > 1 else 8082))
+    server = ThreadedTimelineServer(port=port)
     server.start()

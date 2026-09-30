@@ -1,33 +1,118 @@
 """
-Photo Proxy API for Google User Content with local disk caching.
+Photo Proxy and Index API with local disk caching and gregor_cos photo vault integration.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import ssl
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from api.response import Response, binary_response, error_response
+from api.db import query_all, query_one
+from api.response import Response, binary_response, error_response, json_response
 from api.router import Request, router
 
 CACHE_DIR = Path.home() / ".gregor_mylifebits" / "photo_cache"
 SSL_CTX = ssl._create_unverified_context()
 
+# Candidate directories where gregor_cos previews reside
+PREVIEWS_SEARCH_DIRS = [
+    Path("/Users/rothfuss/projects/gregor_cos/previews"),
+    Path(__file__).resolve().parent.parent.parent.parent / "gregor_cos" / "previews",
+    Path.home() / "projects" / "gregor_cos" / "previews",
+    Path.home() / "Documents" / "antigravity" / "gregor_cos" / "previews",
+]
+
+
+def find_preview_file(identifier: str) -> Optional[Path]:
+    """Finds a WebP or JPEG preview file by sha256 or filename."""
+    if not identifier:
+        return None
+
+    clean_id = identifier.strip().replace("previews/", "").replace("/previews/", "")
+    # Check for direct file or sha256
+    m_sha = re.search(r"([0-9a-fA-F]{64})", clean_id)
+    candidates = []
+    if m_sha:
+        sha = m_sha.group(1).lower()
+        candidates.extend([f"{sha}.webp", f"{sha}.jpg", f"{sha}.jpeg", sha])
+    candidates.append(clean_id)
+    if not clean_id.endswith(".webp") and not clean_id.endswith(".jpg"):
+        candidates.append(f"{clean_id}.webp")
+
+    for base_dir in PREVIEWS_SEARCH_DIRS:
+        if not base_dir.exists():
+            continue
+        for cand in candidates:
+            p = base_dir / cand
+            if p.is_file() and p.stat().st_size > 0:
+                return p
+
+    return None
+
 
 @router.get("/api/photo")
 def proxy_photo(req: Request) -> Response:
-    """Proxies and caches remote photos."""
+    """
+    Proxies and caches remote photos, and serves local previews from gregor_cos.
+    Supports ?sha256=<hash> or ?url=<preview_path_or_url>.
+    """
+    req_sha = req.get_str("sha256")
     raw_url = req.get_str("url")
     size = req.get_str("size", "400")
 
+    # 1. Check local gregor_cos previews via direct sha256 or preview URL
+    local_ident = req_sha or raw_url
+    if local_ident and not local_ident.startswith("http"):
+        local_path = find_preview_file(local_ident)
+        if local_path:
+            try:
+                data = local_path.read_bytes()
+                mime = "image/webp" if local_path.suffix.lower() == ".webp" else "image/jpeg"
+                return binary_response(
+                    data,
+                    content_type=mime,
+                    status_code=200,
+                    headers={
+                        "Cache-Control": "public, max-age=31536000, immutable",
+                        "Access-Control-Allow-Origin": "*",
+                    },
+                )
+            except Exception:
+                pass
+
+    # Check if raw_url contains embedded sha256 parameter
+    if raw_url and "?sha256=" in raw_url:
+        try:
+            parsed = urllib.parse.urlparse(raw_url)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "sha256" in qs and qs["sha256"]:
+                local_path = find_preview_file(qs["sha256"][0])
+                if local_path:
+                    data = local_path.read_bytes()
+                    mime = "image/webp" if local_path.suffix.lower() == ".webp" else "image/jpeg"
+                    return binary_response(
+                        data,
+                        content_type=mime,
+                        status_code=200,
+                        headers={
+                            "Cache-Control": "public, max-age=31536000, immutable",
+                            "Access-Control-Allow-Origin": "*",
+                        },
+                    )
+        except Exception:
+            pass
+
+    # 2. Remote photo proxying (Google User Content)
     if not raw_url or not raw_url.startswith("http"):
-        return error_response("Missing or invalid 'url' parameter", status_code=400)
+        return error_response("Missing or invalid 'url' or 'sha256' parameter", status_code=400)
 
     target_url = raw_url
     if size in ("orig", "0"):
@@ -57,9 +142,12 @@ def proxy_photo(req: Request) -> Response:
                 fetch_req = urllib.request.Request(
                     target_url,
                     headers={
-                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-                    }
+                        "User-Agent": (
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        ),
+                        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                    },
                 )
                 with urllib.request.urlopen(fetch_req, timeout=10, context=SSL_CTX) as resp:
                     data = resp.read()
@@ -67,7 +155,7 @@ def proxy_photo(req: Request) -> Response:
                     image_data = data
                     cache_path.write_bytes(data)
                     break
-            except Exception as e:
+            except Exception:
                 time.sleep(0.2 * (attempt + 1))
 
     if image_data and len(image_data) > 100:
@@ -75,7 +163,80 @@ def proxy_photo(req: Request) -> Response:
             image_data,
             content_type="image/jpeg",
             status_code=200,
-            headers={"Cache-Control": "public, max-age=31536000, immutable"}
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
         )
 
     return error_response("Failed to fetch image", status_code=404)
+
+
+@router.get("/api/photos")
+def get_photos(req: Request) -> Response:
+    """
+    Returns paginated photos filtered by date, place_id, or bounding timestamps.
+    """
+    date_str = req.get_str("date")
+    place_id = req.get_str("place_id")
+    q = req.get_str("q")
+    start_ts = req.get_float("start_ts", 0.0)
+    end_ts = req.get_float("end_ts", 0.0)
+    limit = min(500, max(1, req.get_int("limit", 100)))
+    offset = max(0, req.get_int("offset", 0))
+
+    where: List[str] = ["1=1"]
+    params: List[Any] = []
+
+    if date_str:
+        where.append("local_date = ?")
+        params.append(date_str)
+
+    if place_id:
+        where.append("place_id = ?")
+        params.append(place_id)
+
+    if start_ts > 0:
+        where.append("timestamp_utc >= ?")
+        params.append(int(start_ts))
+
+    if end_ts > 0:
+        where.append("timestamp_utc <= ?")
+        params.append(int(end_ts))
+
+    if q:
+        where.append("(place_name LIKE ? OR address LIKE ? OR filename LIKE ?)")
+        wild = f"%{q}%"
+        params.extend([wild, wild, wild])
+
+    where_sql = "WHERE " + " AND ".join(where)
+
+    total_row = query_one(f"SELECT COUNT(*) as cnt FROM photos {where_sql};", params)
+    total = total_row["cnt"] if total_row else 0
+
+    sql = f"""
+        SELECT sha256, filename, preview_path, timestamp_utc, timezone_offset,
+               local_date, latitude, longitude, place_id, place_name, address, city, country, people, face_count
+        FROM photos
+        {where_sql}
+        ORDER BY timestamp_utc ASC
+        LIMIT ? OFFSET ?;
+    """
+    rows = query_all(sql, params + [limit, offset])
+
+    for r in rows:
+        r["preview_url"] = f"/api/photo?sha256={r['sha256']}"
+        raw_p = r.get("people")
+        if isinstance(raw_p, str) and raw_p.strip():
+            try:
+                r["people"] = json.loads(raw_p)
+            except Exception:
+                r["people"] = [raw_p]
+        elif not isinstance(raw_p, list):
+            r["people"] = []
+
+    return json_response({
+        "status": "SUCCESS",
+        "count": len(rows),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "photos": rows,
+    })
