@@ -18,12 +18,15 @@ import random
 import asyncio
 import argparse
 import datetime
+import hashlib
+import sqlite3
 from pathlib import Path
 from typing import Optional, Dict, Any
 
 # Ensure project paths are accessible
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent
 COS_DIR = Path("/Users/rothfuss/projects/gregor_cos")
+COS_DB_PATH = COS_DIR / "photos_vault.db"
 DEFAULT_PROFILE_DIR = Path.home() / ".google_photos_session"
 DEFAULT_INBOX_DIR = Path.home() / "Downloads" / "photo_inbox"
 STATE_FILE = DEFAULT_PROFILE_DIR / "sync_state.json"
@@ -38,6 +41,24 @@ try:
     HAS_PIPELINE = True
 except ImportError:
     HAS_PIPELINE = False
+
+
+def is_takeout_photo(filename: str, sha256: str) -> bool:
+    if not COS_DB_PATH.exists():
+        return False
+    try:
+        conn = sqlite3.connect(str(COS_DB_PATH))
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT zip_source FROM media_items 
+            WHERE (sha256 = ? OR filename = ?) AND zip_source LIKE 'takeout-%'
+        """, (sha256, filename))
+        row = cur.fetchone()
+        conn.close()
+        return bool(row and row[0] and str(row[0]).startswith("takeout-"))
+    except Exception:
+        pass
+    return False
 
 
 def load_sync_state(state_file: Path) -> Dict[str, Any]:
@@ -74,7 +95,8 @@ async def run_sync(
     inbox_dir: Path = DEFAULT_INBOX_DIR,
     profile_dir: Path = DEFAULT_PROFILE_DIR,
     dry_run: bool = False,
-    no_ingest: bool = False
+    no_ingest: bool = False,
+    backfill: bool = False
 ):
     from playwright.async_api import async_playwright
 
@@ -82,14 +104,15 @@ async def run_sync(
     inbox_dir.mkdir(parents=True, exist_ok=True)
     state_file = profile_dir / "sync_state.json"
     sync_state = load_sync_state(state_file)
-    last_checkpoint_id = sync_state.get("last_synced_photo_id")
+    last_checkpoint_id = None if backfill else sync_state.get("last_synced_photo_id")
 
     print("=" * 60)
     print(" Google Photos Incremental CDP Sync Engine")
     print("=" * 60)
     print(f"Profile Directory : {profile_dir}")
     print(f"Inbox Directory   : {inbox_dir}")
-    print(f"Last Checkpoint   : {last_checkpoint_id or 'None (initial pass)'}")
+    print(f"Mode              : {'Backfill to Takeout Boundary' if backfill else 'Incremental'}")
+    print(f"Last Checkpoint   : {last_checkpoint_id or 'None (initial pass / backfill)'}")
     print(f"Sync Limit        : {limit} photo(s)")
     print(f"Headless Mode     : {headless and not login_mode}")
     print("=" * 60)
@@ -97,7 +120,6 @@ async def run_sync(
     async with async_playwright() as p:
         browser_context = await p.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
-            channel="chrome",
             headless=headless and not login_mode,
             accept_downloads=True,
             viewport={"width": 1280, "height": 850},
@@ -178,6 +200,7 @@ async def run_sync(
         head_photo_id = current_id
         downloaded_files = []
         consecutive_same_url = 0
+        consecutive_takeout_hits = 0
 
         print(f"[*] Starting traversal from newest photo: {head_photo_id}")
 
@@ -209,6 +232,21 @@ async def run_sync(
                         await download.save_as(str(target_path))
                         downloaded_files.append(target_path)
                         print(f"     Saved: {filename} ({os.path.getsize(target_path):,} bytes)")
+
+                        # Check if photo connects to known Takeout history
+                        try:
+                            with open(target_path, "rb") as f:
+                                f_sha = hashlib.sha256(f.read()).hexdigest()
+                            if is_takeout_photo(filename, f_sha):
+                                consecutive_takeout_hits += 1
+                                print(f"     [Takeout Match] {filename} is already in Takeout archive.")
+                                if consecutive_takeout_hits >= 2:
+                                    print(f"[✓] Reached historical Takeout boundary! Successfully bridged gap back to Sep 15.")
+                                    break
+                            else:
+                                consecutive_takeout_hits = 0
+                        except Exception:
+                            pass
                     except Exception as e:
                         print(f"     [Download Warning] {e}")
                 else:
@@ -285,7 +323,8 @@ def main():
     parser.add_argument("--login", action="store_true", help="Launch visible browser to perform one-time Google login")
     parser.add_argument("--headless", action="store_true", default=True, help="Run headless (default: True)")
     parser.add_argument("--no-headless", dest="headless", action="store_false", help="Run with visible browser window")
-    parser.add_argument("--limit", type=int, default=100, help="Maximum number of photos to download (default: 100)")
+    parser.add_argument("--backfill", action="store_true", help="Traverse backward until reaching the Takeout archive boundary")
+    parser.add_argument("--limit", type=int, default=500, help="Maximum number of photos to download (default: 500)")
     parser.add_argument("--inbox-dir", type=Path, default=DEFAULT_INBOX_DIR, help="Destination directory for downloads")
     parser.add_argument("--profile-dir", type=Path, default=DEFAULT_PROFILE_DIR, help="Persistent browser profile dir")
     parser.add_argument("--dry-run", action="store_true", help="Inspect and report photos without downloading")
@@ -300,7 +339,8 @@ def main():
         inbox_dir=args.inbox_dir,
         profile_dir=args.profile_dir,
         dry_run=args.dry_run,
-        no_ingest=args.no_ingest
+        no_ingest=args.no_ingest,
+        backfill=args.backfill
     ))
 
 
