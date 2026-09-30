@@ -1,45 +1,40 @@
 {
-  "goal": "Use the photo index in gregor_cos to enrich day and places views with photos",
+  "goal": "Eliminate POI loss: reconcile unconfirmed and raw coordinate visits against canonical places catalog and reverse geocoding",
   "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Audit photo index in gregor_cos and design integration architecture for day and places views",
+      "description": "Create spatial and reverse-geocoding place resolution engine to reconcile unconfirmed and coordinate visits against canonical places catalog",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Enrich backend routes: serve gregor_cos photo previews, integrate photo matching in /api/day and /api/places",
+      "description": "Integrate spatial place reconciliation into merge_pixel10_export.py and api/routes/timeline.py",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Enrich frontend UI in static/app.js: render photo strips, counts, day photo bar, and place visits photo gallery",
+      "description": "Heal existing database segments (including Canary Cafe and other September 2026 visits) and verify zero coordinate-string fallbacks",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Run API contract audits, unit tests, and verify photo enrichment end-to-end",
+      "description": "Run API contract audits, unit tests, and verify fix end-to-end",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "api/routes/photos.py",
+      "enrichment/place_reconciler.py",
+      "scripts/merge_pixel10_export.py",
       "api/routes/timeline.py",
-      "api/routes/places.py",
-      "server.py",
-      "static/app.js",
-      "scripts/verify_photo_enrichment_e2e.py"
+      "scripts/heal_unconfirmed_visits.py"
     ],
     "test_files": [
-      "tests/test_e2e_server.py",
+      "tests/test_place_reconciliation.py",
       "tests/test_clean_api.py",
-      "scripts/verify_photo_enrichment_e2e.py"
+      "tests/test_e2e_server.py"
     ],
-    "scratch_logs": [
-      ".agent/scratch/audit.log",
-      ".agent/scratch/pytest.log"
-    ]
+    "scratch_logs": []
   }
 }

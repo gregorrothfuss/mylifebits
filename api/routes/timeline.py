@@ -13,6 +13,7 @@ from api.response import Response, error_response, json_response
 from api.router import Request, router
 from breadcrumbs import haversine_distance
 from enrichment.local_timezone import format_local_time_strings
+from enrichment.place_reconciler import is_nameless_place, resolve_visit_place
 from life_periods import get_date_aware_label
 
 
@@ -98,12 +99,33 @@ def get_day(req: Request) -> Response:
                 s["catalog_place_name"] = label
                 s["category"] = cat
                 s["catalog_category"] = cat
-            elif not cur_name or cur_name.strip() in ["Place", "Home/Place", "Unconfirmed Location"]:
-                fallback_name = cur_addr or (
-                    f"Location ({s['latitude']:.4f}, {s['longitude']:.4f})" if s.get("latitude") else "Point of Interest"
+            elif is_nameless_place(cur_name):
+                sp_match = resolve_visit_place(
+                    DEFAULT_DB_PATH,
+                    s.get("latitude"),
+                    s.get("longitude"),
+                    cur_name,
+                    cur_addr,
+                    date_str=date_str,
+                    allow_reverse_geocode=False,
                 )
-                s["place_name"] = fallback_name
-                s["catalog_place_name"] = fallback_name
+                if sp_match:
+                    s["place_name"] = sp_match["name"]
+                    s["catalog_place_name"] = sp_match["name"]
+                    if sp_match.get("address"):
+                        s["place_address"] = sp_match["address"]
+                        s["catalog_place_address"] = sp_match["address"]
+                    if sp_match.get("category"):
+                        s["category"] = sp_match["category"]
+                        s["catalog_category"] = sp_match["category"]
+                    if sp_match.get("place_id"):
+                        s["catalog_place_id"] = sp_match["place_id"]
+                else:
+                    fallback_name = cur_addr or (
+                        f"Location ({s['latitude']:.4f}, {s['longitude']:.4f})" if s.get("latitude") else "Point of Interest"
+                    )
+                    s["place_name"] = fallback_name
+                    s["catalog_place_name"] = fallback_name
 
             s["review_rating"] = s.get("catalog_review_rating") or s.get("review_rating")
             s["review_text"] = s.get("catalog_review_text") or s.get("review_text")
