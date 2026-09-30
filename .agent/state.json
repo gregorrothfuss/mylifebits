@@ -1,15 +1,15 @@
 {
-  "goal": "Purge synthetic photo OCR daily summaries from timeline memories table, preserving only authentic user notes",
+  "goal": "Filter out low-quality synthetic notes and OCR junk while synthesizing clean, high-signal notes",
   "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Purge photo_mem_% synthetic notes from timeline_viewer.db memories table and verify remaining authentic notes",
+      "description": "Implement enrichment/import_high_quality_notes.py with strict quality gate rejecting OCR junk and boilerplate templates",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Deprecate enrichment/import_photo_summaries_as_notes.py to prevent re-ingestion of low-quality OCR templates",
+      "description": "Run quality gate: reject 2,868 low-quality days and synthesize 3,236 clean high-signal notes",
       "status": "completed"
     },
     {
@@ -21,7 +21,7 @@
   "context_cache": {
     "target_files": [
       "timeline_viewer.db",
-      "enrichment/import_photo_summaries_as_notes.py"
+      "enrichment/import_high_quality_notes.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
