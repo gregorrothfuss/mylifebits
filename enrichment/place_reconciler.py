@@ -878,14 +878,9 @@ def resolve_visit_place(
         if not is_nameless_place(current_name):
             return None
 
-        # 5. Spatial match against existing catalog & life periods
+        # 5. Spatial match against existing catalog & life periods (fallback only, never create aliases)
         match = reconcile_place_spatial(db_path, lat, lng, date_str=date_str, conn=conn)
         if match:
-            # If Google minted a new Place ID for an existing venue, permanently alias it
-            if incoming_place_id and match.get("place_id") and incoming_place_id != match["place_id"]:
-                record_place_alias(conn, incoming_place_id, match["place_id"])
-                if close_conn:
-                    conn.commit()
             return match
 
         # 6. If allowed, reverse geocode to eliminate raw coordinate fallbacks

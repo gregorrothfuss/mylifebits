@@ -279,8 +279,44 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                 p_cat = aliased_info['category']
                 p_city = aliased_info['city']
                 rev_rating = aliased_info.get('review_rating')
+            elif pid and pid.startswith("ChIJ") and not pid.startswith("ChIJAAAAAAAAAA"):
+                # Fetch authentic venue details from Google Maps Knowledge Graph
+                g_match = fetch_google_maps_place_details(pid, conn=conn, db_path=db_path)
+                if g_match and g_match.get("name") and not is_nameless_place(g_match["name"]):
+                    p_name = g_match["name"]
+                    p_addr = g_match.get("address")
+                    p_cat = g_match.get("category", "Other / POI")
+                    p_city, p_country = extract_city_country(p_addr, lat, lng)
+                    c.execute("""
+                        INSERT INTO places (
+                            place_id, name, address, category, city, country,
+                            latitude, longitude, primary_type, user_confirmed,
+                            visit_count, source
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'GOOGLE_MAPS_KNOWLEDGE_GRAPH')
+                        ON CONFLICT(place_id) DO UPDATE SET
+                            name = excluded.name,
+                            address = COALESCE(excluded.address, places.address),
+                            category = CASE WHEN places.category IS NULL OR places.category = 'Other / POI' THEN excluded.category ELSE places.category END,
+                            city = COALESCE(excluded.city, places.city),
+                            country = COALESCE(excluded.country, places.country);
+                    """, (pid, p_name, p_addr, p_cat, p_city, p_country, lat, lng, g_match.get("primary_type")))
+                    conn.commit()
+                    places_catalog[pid] = {
+                        'place_id': pid, 'name': p_name, 'address': p_addr, 'category': p_cat,
+                        'city': p_city, 'lat': lat, 'lng': lng, 'rating': None, 'photos': None
+                    }
+                else:
+                    p_city, p_country = extract_city_country(None, lat, lng)
+            elif pid and pid.startswith("ChIJAAAAAAAAAA"):
+                syn_match = resolve_synthetic_feature_id(conn, pid)
+                if syn_match:
+                    pid = syn_match['place_id']
+                    p_name = syn_match['name']
+                    p_addr = syn_match.get('address')
+                    p_cat = syn_match.get('category', 'Other / POI')
+                    p_city = syn_match.get('city')
             else:
-                # Spatial reconciliation against canonical catalog and life periods
+                # Spatial reconciliation against canonical catalog only for non-ChIJ/unidentified coordinates
                 sp_match = reconcile_place_spatial(db_path, lat, lng, date_str=d_str, conn=conn)
                 if sp_match:
                     pid = sp_match['place_id']
@@ -288,8 +324,6 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                     p_addr = sp_match.get('address')
                     p_cat = sp_match.get('category', 'Other / POI')
                     p_city, p_country = extract_city_country(p_addr, lat, lng)
-                    if incoming_pid and incoming_pid != pid:
-                        record_place_alias(conn, incoming_pid, pid)
                 elif lat is not None and lng is not None:
                     # Reverse geocode fallback to eliminate raw coordinate fallbacks
                     geo = reverse_geocode_osm(lat, lng)
