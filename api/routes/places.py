@@ -25,6 +25,14 @@ def get_places(req: Request) -> Response:
     sort_by = req.get_str("sort_by", "visits")
     min_visits = req.get_int("min_visits", 1)
 
+    photo_places_map: Dict[str, Dict[str, Any]] = {}
+    if q:
+        try:
+            from api.photo_search import get_places_with_photos_for_concept
+            photo_places_map = get_places_with_photos_for_concept(q, limit=80, min_score=0.48)
+        except Exception:
+            photo_places_map = {}
+
     where: List[str] = ["1=1"]
     params: List[Any] = []
 
@@ -33,9 +41,15 @@ def get_places(req: Request) -> Response:
         params.append(min_visits)
 
     if q:
-        where.append("(name LIKE ? OR address LIKE ? OR semantic_type LIKE ? OR city LIKE ? OR review_text LIKE ?)")
         wildcard = f"%{q}%"
-        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
+        if photo_places_map:
+            pids = list(photo_places_map.keys())
+            placeholders = ",".join("?" for _ in pids)
+            where.append(f"(name LIKE ? OR address LIKE ? OR semantic_type LIKE ? OR city LIKE ? OR review_text LIKE ? OR place_id IN ({placeholders}))")
+            params.extend([wildcard, wildcard, wildcard, wildcard, wildcard] + pids)
+        else:
+            where.append("(name LIKE ? OR address LIKE ? OR semantic_type LIKE ? OR city LIKE ? OR review_text LIKE ?)")
+            params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
 
     if category and category.upper() != "ALL":
         where.append("category = ?")
@@ -51,6 +65,7 @@ def get_places(req: Request) -> Response:
     where_sql = "WHERE " + " AND ".join(where)
 
     # Sort order
+    order_params: List[Any] = []
     if sort_by == "rating":
         order_sql = "ORDER BY review_rating DESC, visit_count DESC"
     elif sort_by == "name":
@@ -60,7 +75,16 @@ def get_places(req: Request) -> Response:
     elif sort_by == "last_visit":
         order_sql = "ORDER BY last_visit_time DESC"
     else:
-        order_sql = "ORDER BY visit_count DESC"
+        if q and photo_places_map:
+            pids = list(photo_places_map.keys())
+            p_holders = ",".join("?" for _ in pids)
+            order_sql = f"ORDER BY (CASE WHEN place_id IN ({p_holders}) THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END), visit_count DESC"
+            order_params = pids + [f"%{q}%"]
+        elif q:
+            order_sql = "ORDER BY (CASE WHEN name LIKE ? THEN 0 ELSE 1 END), visit_count DESC"
+            order_params = [f"%{q}%"]
+        else:
+            order_sql = "ORDER BY visit_count DESC"
 
     # Fetch
     fetch_sql = f"""
@@ -69,10 +93,20 @@ def get_places(req: Request) -> Response:
         {order_sql}
         LIMIT ? OFFSET ?;
     """
-    places = query_all(fetch_sql, params + [limit, offset])
+    places = query_all(fetch_sql, params + order_params + [limit, offset])
 
     import json
     for p in places:
+        pid = p.get("place_id")
+        if pid and pid in photo_places_map:
+            p_info = photo_places_map[pid]
+            p["photo_matches"] = p_info.get("photo_count", 0)
+            p["photo_match_score"] = p_info.get("max_score", 0.0)
+            p["photo_preview"] = p_info.get("top_photo")
+        else:
+            p["photo_matches"] = 0
+            p["photo_match_score"] = 0.0
+            p["photo_preview"] = None
         raw_photos = p.get("review_photos")
         if isinstance(raw_photos, str) and raw_photos.strip():
             try:
@@ -196,9 +230,21 @@ def get_places_map_points(req: Request) -> Response:
         params.append(city)
 
     if q:
-        where.append("(name LIKE ? OR address LIKE ? OR city LIKE ?)")
+        photo_places_map = {}
+        try:
+            from api.photo_search import get_places_with_photos_for_concept
+            photo_places_map = get_places_with_photos_for_concept(q, limit=80, min_score=0.48)
+        except Exception:
+            photo_places_map = {}
         wild = f"%{q}%"
-        params.extend([wild, wild, wild])
+        if photo_places_map:
+            pids = list(photo_places_map.keys())
+            placeholders = ",".join("?" for _ in pids)
+            where.append(f"(name LIKE ? OR address LIKE ? OR city LIKE ? OR place_id IN ({placeholders}))")
+            params.extend([wild, wild, wild] + pids)
+        else:
+            where.append("(name LIKE ? OR address LIKE ? OR city LIKE ?)")
+            params.extend([wild, wild, wild])
 
     sql = f"""
         SELECT place_id, name, address, latitude, longitude, category, city, 

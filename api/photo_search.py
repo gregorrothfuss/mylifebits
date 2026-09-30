@@ -202,3 +202,104 @@ def search_visits_by_photo_semantics(
     # Sort visits by max photo score DESC, then photo count DESC
     results.sort(key=lambda x: (x["max_score"], x["photo_count"]), reverse=True)
     return results[:limit]
+
+
+def get_places_with_photos_for_concept(
+    query: str,
+    limit: int = 80,
+    min_score: float = 0.50,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Returns place_ids where photos matching query were taken,
+    mapping place_id -> {"photo_count": N, "max_score": float, "top_photo": dict}
+    """
+    clean_q = query.strip()
+    if not clean_q:
+        return {}
+
+    photos = query_photo_semantic_index(clean_q, limit=limit)
+    if not photos:
+        return {}
+
+    sha_scores = {
+        p["sha256"]: float(p.get("score", 0.0))
+        for p in photos
+        if p.get("sha256") and float(p.get("score", 0.0)) >= min_score
+    }
+    if not sha_scores:
+        return {}
+
+    shas = list(sha_scores.keys())
+    placeholders = ",".join("?" for _ in shas)
+
+    places_map: Dict[str, Dict[str, Any]] = {}
+
+    # 1. Direct place_ids in photos table
+    direct_rows = query_all(f"""
+        SELECT sha256, place_id, filename, preview_path
+        FROM photos
+        WHERE sha256 IN ({placeholders}) AND place_id IS NOT NULL;
+    """, shas)
+
+    for r in direct_rows:
+        pid = r["place_id"]
+        sha = r["sha256"]
+        score = sha_scores.get(sha, 0.0)
+        if pid not in places_map:
+            places_map[pid] = {
+                "place_id": pid,
+                "photo_count": 0,
+                "max_score": score,
+                "top_photo": {
+                    "sha256": sha,
+                    "filename": r.get("filename"),
+                    "preview_url": f"/api/photo?sha256={sha}",
+                    "score": round(score, 3),
+                }
+            }
+        places_map[pid]["photo_count"] += 1
+        if score > places_map[pid]["max_score"]:
+            places_map[pid]["max_score"] = score
+            places_map[pid]["top_photo"] = {
+                "sha256": sha,
+                "filename": r.get("filename"),
+                "preview_url": f"/api/photo?sha256={sha}",
+                "score": round(score, 3),
+            }
+
+    # 2. Photos mapped to visit segments via timestamp (+/- 60s)
+    seg_rows = query_all(f"""
+        SELECT p.sha256, p.filename, p.preview_path, s.place_id
+        FROM photos p
+        JOIN segments s ON p.timestamp_utc >= (s.start_ts - 60) AND p.timestamp_utc <= (s.end_ts + 60)
+        WHERE p.sha256 IN ({placeholders}) AND s.segment_type = 'visit' AND s.place_id IS NOT NULL;
+    """, shas)
+
+    for r in seg_rows:
+        pid = r["place_id"]
+        sha = r["sha256"]
+        score = sha_scores.get(sha, 0.0)
+        if pid not in places_map:
+            places_map[pid] = {
+                "place_id": pid,
+                "photo_count": 0,
+                "max_score": score,
+                "top_photo": {
+                    "sha256": sha,
+                    "filename": r.get("filename"),
+                    "preview_url": f"/api/photo?sha256={sha}",
+                    "score": round(score, 3),
+                }
+            }
+        places_map[pid]["photo_count"] += 1
+        if score > places_map[pid]["max_score"]:
+            places_map[pid]["max_score"] = score
+            places_map[pid]["top_photo"] = {
+                "sha256": sha,
+                "filename": r.get("filename"),
+                "preview_url": f"/api/photo?sha256={sha}",
+                "score": round(score, 3),
+            }
+
+    return places_map
+

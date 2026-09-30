@@ -1,27 +1,35 @@
 {
-  "goal": "Eliminate hardcoded chronology labels and purge developer throat clearing across UI",
-  "active_step_id": 3,
+  "goal": "Integrate photo semantic search into Places catalog and fix search ranking to prioritize photo content over review text",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Remove hardcoded chronology dates and developer throat clearing in static/index.html and dynamically compute span in static/app.js",
+      "description": "Integrate photo semantic search into api/routes/places.py to match places where relevant photos were taken",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Purge extraneous developer meta-commentary, hardcoded record counts, and throat-clearing subtitles across tabs in static/index.html",
+      "description": "Prioritize photo visit matches in api/routes/search.py, separate name matches from review matches, and show review snippets",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Verify API contracts and test suite with 0 errors, bump cache buster",
+      "description": "Update static/app.js to display photo badges in places catalog and highlight photo previews in search dropdown, restart server",
+      "status": "completed"
+    },
+    {
+      "id": 4,
+      "description": "Run API contract audit and test suite to verify 0 errors",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "static/index.html",
-      "static/app.js"
+      "api/routes/places.py",
+      "api/routes/search.py",
+      "api/photo_search.py",
+      "static/app.js",
+      "static/index.html"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",

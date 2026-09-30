@@ -51,49 +51,21 @@ def search(req: Request) -> Response:
                 "icon": "fa-calendar-day"
             })
 
-    # 2. Places / POI Search
-    place_limit = min(8, limit)
-    place_rows = query_all("""
-        SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
-               max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
-               p.review_text, p.review_rating
-        FROM segments s
-        LEFT JOIN places p ON s.place_id = p.place_id
-        WHERE s.segment_type = 'visit' AND (s.place_name LIKE ? OR s.place_address LIKE ? OR p.review_text LIKE ?)
-        GROUP BY s.place_name, s.place_address
-        ORDER BY visit_count DESC
-        LIMIT ?;
-    """, (f"%{q}%", f"%{q}%", f"%{q}%", place_limit))
-
-    for r in place_rows:
-        results.append({
-            "type": "PLACE",
-            "place_id": r.get("place_id"),
-            "title": r["place_name"] or "Home/Place",
-            "subtitle": r["place_address"] or (f"{r['latitude']:.4f}, {r['longitude']:.4f}" if r.get("latitude") else "Unknown location"),
-            "category": r["category"] or "Other / POI",
-            "latitude": r["latitude"],
-            "longitude": r["longitude"],
-            "date": r["last_date"],
-            "visit_count": r["visit_count"],
-            "first_date": r["first_date"],
-            "icon": "fa-location-dot"
-        })
-
-    # 3. Photo Semantic Search (Visits matching visual concepts)
+    # 2. Photo Semantic Search (Visits matching visual concepts)
+    photo_visits_results: List[Dict[str, Any]] = []
     if not m_iso and not m_us:
         try:
             from api.photo_search import search_visits_by_photo_semantics
-            photo_visits = search_visits_by_photo_semantics(q, limit=12, min_score=0.52)
+            photo_visits = search_visits_by_photo_semantics(q, limit=12, min_score=0.48)
             for v in photo_visits:
                 top_p = v.get("top_photo") or {}
                 cnt = v.get("photo_count", 1)
-                results.append({
+                photo_visits_results.append({
                     "type": "PHOTO_VISIT",
                     "segment_id": v["id"],
                     "place_id": v.get("place_id"),
                     "title": v["place_name"] or "Visit",
-                    "subtitle": f"{cnt} photo match{'es' if cnt > 1 else ''} (score {v['max_score']:.2f}) · {v.get('city') or v.get('place_address') or v['date']}",
+                    "subtitle": f"{cnt} photo match{'es' if cnt > 1 else ''} · {v.get('city') or v.get('place_address') or v['date']}",
                     "date": v["date"],
                     "time": f"{v['start_time']} - {v['end_time']}",
                     "category": v.get("category") or "Other / POI",
@@ -110,7 +82,56 @@ def search(req: Request) -> Response:
             # Non-blocking if photos service is unreachable
             pass
 
+    # 3. Places / POI Search with Match Priority (Name > Address > Review)
+    wildcard = f"%{q}%"
+    place_limit = min(12, limit)
+    place_rows = query_all("""
+        SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
+               max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
+               p.review_text, p.review_rating,
+               (CASE WHEN s.place_name LIKE ? THEN 1 WHEN s.place_address LIKE ? THEN 2 ELSE 3 END) as match_priority
+        FROM segments s
+        LEFT JOIN places p ON s.place_id = p.place_id
+        WHERE s.segment_type = 'visit' AND (s.place_name LIKE ? OR s.place_address LIKE ? OR p.review_text LIKE ?)
+        GROUP BY s.place_name, s.place_address
+        ORDER BY match_priority ASC, visit_count DESC
+        LIMIT ?;
+    """, (wildcard, wildcard, wildcard, wildcard, wildcard, place_limit))
+
+    place_results: List[Dict[str, Any]] = []
+    review_match_count = 0
+    for r in place_rows:
+        is_review_only = (r["match_priority"] == 3)
+        if is_review_only:
+            review_match_count += 1
+            if review_match_count > 3:
+                continue
+            rev = r.get("review_text") or ""
+            idx = rev.lower().find(q.lower())
+            start = max(0, idx - 18)
+            end = min(len(rev), idx + len(q) + 26)
+            snippet = ("..." if start > 0 else "") + rev[start:end].strip() + ("..." if end < len(rev) else "")
+            sub = f"Review match: \"{snippet}\""
+        else:
+            sub = r["place_address"] or (f"{r['latitude']:.4f}, {r['longitude']:.4f}" if r.get("latitude") else "Unknown location")
+
+        place_results.append({
+            "type": "PLACE",
+            "place_id": r.get("place_id"),
+            "title": r["place_name"] or "Home/Place",
+            "subtitle": sub,
+            "category": r["category"] or "Other / POI",
+            "latitude": r["latitude"],
+            "longitude": r["longitude"],
+            "date": r["last_date"],
+            "visit_count": r["visit_count"],
+            "first_date": r["first_date"],
+            "icon": "fa-location-dot",
+            "is_review_match": is_review_only,
+        })
+
     # 4. Categories Search
+    category_results: List[Dict[str, Any]] = []
     cat_rows = query_all("""
         SELECT category, count(DISTINCT date) as days_count, count(id) as visit_count, max(date) as last_date
         FROM segments
@@ -120,7 +141,7 @@ def search(req: Request) -> Response:
     """, (f"%{q}%",))
 
     for r in cat_rows:
-        results.append({
+        category_results.append({
             "type": "CATEGORY",
             "title": f"Category: {r['category']}",
             "subtitle": f"{r['visit_count']} visits across {r['days_count']} days · Last: {r['last_date']}",
@@ -128,7 +149,8 @@ def search(req: Request) -> Response:
             "icon": "fa-tag"
         })
 
-    return json_response({"status": "SUCCESS", "count": len(results), "results": results[:limit]})
+    all_results = results + photo_visits_results + place_results + category_results
+    return json_response({"status": "SUCCESS", "count": len(all_results), "results": all_results[:limit]})
 
 
 @router.get("/api/visits/search")

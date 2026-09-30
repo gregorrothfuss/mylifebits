@@ -1754,10 +1754,20 @@ document.addEventListener("DOMContentLoaded", () => {
             <div>
               <span class="place-name">${escapeHtml(p.name || 'Place')}</span>
               ${stars ? `<div style="margin-top:2px;">${stars}</div>` : ''}
+              ${p.photo_matches ? `<div style="margin-top:3px;"><span class="pill-badge purple" style="font-size:10px;padding:2px 6px;border-radius:4px;"><i class="fa-solid fa-camera"></i> ${p.photo_matches} matching photo${p.photo_matches > 1 ? 's' : ''}</span></div>` : ''}
             </div>
             <span class="place-visits" style="cursor:pointer;" title="Click to view all ${p.visit_count} visits">${p.visit_count} visits</span>
           </div>
           <div class="place-address" style="margin-top:6px;">${escapeHtml(p.address || (p.latitude ? `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}` : 'No address'))}</div>
+          ${p.photo_preview ? `
+            <div class="place-matched-photo-strip" style="margin-top:6px;display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-main);border-radius:6px;border:1px solid rgba(168,85,247,0.25);">
+              <img src="${p.photo_preview.preview_url}" style="width:40px;height:40px;border-radius:4px;object-fit:cover;" alt="Matched photo" onerror="this.style.display='none'">
+              <div style="font-size:11px;color:var(--text-muted);min-width:0;flex:1;">
+                <div style="font-weight:600;color:var(--accent-purple);"><i class="fa-solid fa-sparkles"></i> ${(p.photo_match_score * 100).toFixed(0)}% visual match</div>
+                <div style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(p.photo_preview.filename || '')}</div>
+              </div>
+            </div>
+          ` : ''}
           ${p.review_text ? `<div class="review-snippet-box">"${escapeHtml(p.review_text.slice(0, 100))}..."</div>` : ''}
           ${p.review_photos && p.review_photos.length ? `
             <div class="review-photos-strip" style="margin-top:6px;">
@@ -4766,7 +4776,7 @@ document.addEventListener("DOMContentLoaded", () => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
         try {
-          const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=15`);
+          const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=25`);
           const data = await res.json();
           if (data.status === "SUCCESS") {
             renderSearchDropdown(data.results, q);
@@ -4821,7 +4831,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=15`);
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=25`);
         const data = await res.json();
         const results = data.results || [];
         const dateMatch = results.find(r => r.type === "DATE");
