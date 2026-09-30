@@ -52,6 +52,72 @@ def is_nameless_place(name: Optional[str]) -> bool:
     return False
 
 
+def init_place_aliases_table(conn: sqlite3.Connection) -> None:
+    """Ensures the place_aliases table exists to permanently track mutated/new Google Place IDs."""
+    c = conn.cursor()
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS place_aliases (
+            alias_place_id TEXT PRIMARY KEY,
+            canonical_place_id TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    c.execute("CREATE INDEX IF NOT EXISTS idx_place_aliases_canonical ON place_aliases(canonical_place_id);")
+
+
+def get_aliased_place(conn: sqlite3.Connection, place_id: str) -> Optional[Dict[str, Any]]:
+    """Resolves an incoming place_id to its canonical place record if aliased."""
+    if not place_id:
+        return None
+    init_place_aliases_table(conn)
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT p.place_id, p.name, p.address, p.category, p.city, p.country,
+               p.latitude, p.longitude, p.visit_count, p.review_rating, p.has_review
+        FROM place_aliases pa
+        JOIN places p ON pa.canonical_place_id = p.place_id
+        WHERE pa.alias_place_id = ?;
+        """,
+        (place_id,),
+    )
+    row = c.fetchone()
+    if row:
+        return {
+            "place_id": row[0],
+            "name": row[1],
+            "address": row[2],
+            "category": row[3] or "Other / POI",
+            "city": row[4],
+            "country": row[5],
+            "latitude": row[6],
+            "longitude": row[7],
+            "visit_count": row[8] or 0,
+            "review_rating": row[9],
+            "has_review": row[10] or 0,
+            "matched_by": "place_aliases",
+        }
+    return None
+
+
+def record_place_alias(conn: sqlite3.Connection, alias_place_id: str, canonical_place_id: str) -> None:
+    """Permanently records that alias_place_id maps to canonical_place_id."""
+    if not alias_place_id or not canonical_place_id or alias_place_id == canonical_place_id:
+        return
+    init_place_aliases_table(conn)
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT OR IGNORE INTO place_aliases (alias_place_id, canonical_place_id)
+        VALUES (?, ?);
+        """,
+        (alias_place_id, canonical_place_id),
+    )
+
+
+
 def get_nearby_catalog_candidates(
     conn: sqlite3.Connection,
     lat: float,
@@ -320,31 +386,54 @@ def resolve_visit_place(
     current_name: Optional[str] = None,
     current_address: Optional[str] = None,
     date_str: Optional[str] = None,
+    incoming_place_id: Optional[str] = None,
     allow_reverse_geocode: bool = True,
     conn: Optional[sqlite3.Connection] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Complete end-to-end place resolver:
-    If current_name is a valid, real name, returns it as-is.
-    If current_name is nameless, unconfirmed, or raw-coordinate:
-    1. Tries spatial reconciliation against places catalog and life periods.
-    2. If not found and allow_reverse_geocode is True, falls back to reverse geocode.
+    1. If incoming_place_id is already in place_aliases, returns canonical place immediately.
+    2. If current_name is a valid, non-placeholder name, returns None (already resolved).
+    3. Spatially reconciles against places catalog, life periods, and custom labeled places.
+       If matched and incoming_place_id is provided, automatically records place alias.
+    4. If no catalog match and allow_reverse_geocode is True, falls back to reverse geocode.
     """
-    if not is_nameless_place(current_name):
+    close_conn = False
+    if conn is None:
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        close_conn = True
+
+    try:
+        # 1. Check known place aliases
+        if incoming_place_id:
+            aliased = get_aliased_place(conn, incoming_place_id)
+            if aliased:
+                return aliased
+
+        if not is_nameless_place(current_name):
+            return None
+
+        # 2. Spatial match against existing catalog & life periods
+        match = reconcile_place_spatial(db_path, lat, lng, date_str=date_str, conn=conn)
+        if match:
+            # If Google minted a new Place ID for an existing venue, permanently alias it
+            if incoming_place_id and match.get("place_id") and incoming_place_id != match["place_id"]:
+                record_place_alias(conn, incoming_place_id, match["place_id"])
+                if close_conn:
+                    conn.commit()
+            return match
+
+        # 3. If allowed, reverse geocode to eliminate raw coordinate fallbacks
+        if allow_reverse_geocode and lat is not None and lng is not None:
+            geo = reverse_geocode_osm(lat, lng)
+            if geo and geo.get("name"):
+                geo["place_id"] = incoming_place_id or f"osm_{lat:.5f}_{lng:.5f}"
+                geo["distance_meters"] = 0.0
+                geo["matched_by"] = "reverse_geocode_osm"
+                return geo
+
         return None
+    finally:
+        if close_conn:
+            conn.close()
 
-    # Spatial match against existing catalog
-    match = reconcile_place_spatial(db_path, lat, lng, date_str=date_str, conn=conn)
-    if match:
-        return match
-
-    # If allowed, reverse geocode to eliminate raw coordinate fallbacks
-    if allow_reverse_geocode and lat is not None and lng is not None:
-        geo = reverse_geocode_osm(lat, lng)
-        if geo and geo.get("name"):
-            geo["place_id"] = f"osm_{lat:.5f}_{lng:.5f}"
-            geo["distance_meters"] = 0.0
-            geo["matched_by"] = "reverse_geocode_osm"
-            return geo
-
-    return None

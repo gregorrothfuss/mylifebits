@@ -107,6 +107,7 @@ def get_day(req: Request) -> Response:
                     cur_name,
                     cur_addr,
                     date_str=date_str,
+                    incoming_place_id=s.get("place_id"),
                     allow_reverse_geocode=False,
                 )
                 if sp_match:

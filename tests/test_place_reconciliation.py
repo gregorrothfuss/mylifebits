@@ -12,6 +12,8 @@ from enrichment.place_reconciler import (
     is_nameless_place,
     reconcile_place_spatial,
     resolve_visit_place,
+    get_aliased_place,
+    record_place_alias,
 )
 
 DEFAULT_DB_PATH = "timeline_viewer.db"
@@ -89,6 +91,17 @@ class TestPlaceReconciliation(unittest.TestCase):
                 canary_found = True
 
         self.assertTrue(canary_found, "Expected Canary Cafe visit on 2026-09-18 between 08:08 and 08:24")
+
+    def test_place_aliases_resolution(self):
+        """Verifies that new/mutated Place IDs resolve to canonical places via place_aliases."""
+        conn = sqlite3.connect(DEFAULT_DB_PATH)
+        # Canary Cafe alternate Place ID from recent export
+        alt_pid = "ChIJd3OTBwBbwokRW7-99uZXpts"
+        aliased = get_aliased_place(conn, alt_pid)
+        self.assertIsNotNone(aliased)
+        self.assertEqual(aliased["name"], "Canary Cafe")
+        self.assertEqual(aliased["place_id"], "ChIJl8jLJM9bwokRpcorN5sMbis")
+        conn.close()
 
 
 if __name__ == "__main__":

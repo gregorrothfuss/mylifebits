@@ -1,6 +1,6 @@
 {
   "goal": "Eliminate POI loss: reconcile unconfirmed and raw coordinate visits against canonical places catalog and reverse geocoding",
-  "active_step_id": 4,
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
@@ -21,6 +21,11 @@
       "id": 4,
       "description": "Run API contract audits, unit tests, and verify fix end-to-end",
       "status": "completed"
+    },
+    {
+      "id": 5,
+      "description": "Implement place_aliases table and alias tracking in place_reconciler.py and importer.py to permanently handle mutated/new Place IDs",
+      "status": "completed"
     }
   ],
   "context_cache": {
@@ -28,7 +33,7 @@
       "enrichment/place_reconciler.py",
       "scripts/merge_pixel10_export.py",
       "api/routes/timeline.py",
-      "scripts/heal_unconfirmed_visits.py"
+      "tests/test_place_reconciliation.py"
     ],
     "test_files": [
       "tests/test_place_reconciliation.py",

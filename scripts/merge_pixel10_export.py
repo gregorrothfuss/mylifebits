@@ -26,7 +26,7 @@ if WORKSPACE_DIR not in sys.path:
 from db import get_db_connection, DEFAULT_DB_PATH
 from importer import parse_latlng_str, parse_iso_with_tz_offset, haversine_km, classify_category, extract_city_country, synthesize_place_name
 from life_periods import get_date_aware_label
-from enrichment.place_reconciler import is_nameless_place, reconcile_place_spatial, reverse_geocode_osm
+from enrichment.place_reconciler import is_nameless_place, reconcile_place_spatial, reverse_geocode_osm, get_aliased_place, record_place_alias
 
 def enforce_zero_gap_constraints(conn, date_str: str) -> None:
     """Enforces zero-gap timeline continuity on save, merging adjacent duplicate visits,
@@ -253,6 +253,9 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
             p_name, p_addr, p_cat, p_city = None, None, 'Other / POI', None
             rev_rating, rev_photos = None, None
 
+            incoming_pid = pid
+            aliased_info = get_aliased_place(conn, pid) if pid else None
+
             if pid and pid in places_catalog and not is_nameless_place(places_catalog[pid]['name']):
                 p_info = places_catalog[pid]
                 p_name = p_info['name']
@@ -261,6 +264,13 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                 p_city = p_info['city']
                 rev_rating = p_info['rating']
                 rev_photos = p_info['photos']
+            elif aliased_info:
+                pid = aliased_info['place_id']
+                p_name = aliased_info['name']
+                p_addr = aliased_info['address']
+                p_cat = aliased_info['category']
+                p_city = aliased_info['city']
+                rev_rating = aliased_info.get('review_rating')
             else:
                 # Spatial reconciliation against canonical catalog and life periods
                 sp_match = reconcile_place_spatial(db_path, lat, lng, date_str=d_str, conn=conn)
@@ -270,6 +280,8 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                     p_addr = sp_match.get('address')
                     p_cat = sp_match.get('category', 'Other / POI')
                     p_city, p_country = extract_city_country(p_addr, lat, lng)
+                    if incoming_pid and incoming_pid != pid:
+                        record_place_alias(conn, incoming_pid, pid)
                 elif lat is not None and lng is not None:
                     # Reverse geocode fallback to eliminate raw coordinate fallbacks
                     geo = reverse_geocode_osm(lat, lng)
