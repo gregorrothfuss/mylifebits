@@ -1,42 +1,39 @@
 {
-  "goal": "Eliminate POI loss by prioritizing local catalogs, 64-bit feature IDs, and single-lookup cached Google resolution",
-  "active_step_id": 5,
+  "goal": "Inject photo daily summaries as timeline day notes, deploy to Pixel 8, check APK code for note rendering, and produce 10-screenshot report",
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Build Google Maps Knowledge Graph place resolver with persistent single-lookup cache and retry backoff in enrichment/place_reconciler.py",
+      "description": "Reverse engineer decompiled APKs to determine if Google Maps Timeline still has code/viewholders to render notes and identify protobuf wire format",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Hydrate missing Google Place IDs from pixel10_export into google_place_cache and places tables in timeline_viewer.db",
+      "description": "Extract photo daily summaries and inject notes into timeline database and odlh protobufs",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Update segment 2700109 to canonical LeTish Cafe (ChIJd3OTBwBbwokRW7-99uZXpts)",
-      "status": "completed"
+      "description": "Deploy reconstructed timeline with notes to Pixel 8",
+      "status": "in_progress"
     },
     {
       "id": 4,
-      "description": "Integrate automatic Google Place resolution with single-lookup cache into merge_pixel10_export.py so future imports never drop POIs",
-      "status": "completed"
-    },
-    {
-      "id": 5,
-      "description": "Run test suite, verify API contracts, and commit verified steps",
-      "status": "completed"
+      "description": "Capture 10 on-device screenshots of days with notes and compile detailed report",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "enrichment/place_reconciler.py",
-      "scripts/merge_pixel10_export.py"
+      "/Users/rothfuss/projects/gregor_cos/photos_vault.db",
+      "timeline_viewer.db",
+      "scratch/odlh_v55_with_notes.db",
+      "static/app.js",
+      "enrichment/import_photo_summaries_as_notes.py"
     ],
     "test_files": [
-      "tests/test_place_reconciliation.py",
-      "tests/test_clean_api.py",
-      "scripts/audit_api_contracts.py"
+      "scripts/audit_api_contracts.py",
+      "tests/test_clean_api.py"
     ],
     "scratch_logs": []
   }

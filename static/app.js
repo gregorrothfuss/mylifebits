@@ -596,13 +596,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (dayData.memories && dayData.memories.length > 0) {
       dayData.memories.forEach(m => {
         const memCard = document.createElement("div");
-        memCard.className = "card";
-        memCard.style.cssText = "background:rgba(251,191,36,0.1);border:1px solid #fbbf24;padding:10px 14px;border-radius:8px;margin-bottom:10px;display:flex;align-items:center;gap:10px;";
+        memCard.className = "card timeline-memory-card";
+        memCard.style.cssText = "background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);padding:12px 14px;border-radius:8px;margin-bottom:12px;display:flex;align-items:flex-start;gap:12px;";
+        const noteText = escapeHtml(m.raw_text || m.title || "Day Note");
+        const titleText = escapeHtml(m.title && m.title !== m.raw_text ? m.title : "Day Note");
         memCard.innerHTML = `
-          <i class="fa-solid fa-note-sticky" style="color:#fbbf24;font-size:18px;"></i>
-          <div>
-            <span style="font-size:11px;font-weight:600;color:#fbbf24;text-transform:uppercase;letter-spacing:0.5px;">User Timeline Memory</span>
-            <p style="margin:2px 0 0 0;font-size:13px;font-weight:500;color:#f8fafc;">"${m.title || 'Day Note'}"</p>
+          <i class="fa-solid fa-note-sticky" style="color:#d97706;font-size:20px;margin-top:2px;flex-shrink:0;"></i>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+              <span style="font-size:11px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:0.5px;">${titleText}</span>
+              <span style="font-size:10px;font-weight:600;color:var(--text-muted);">Timeline Note</span>
+            </div>
+            <p style="margin:0;font-size:13px;font-weight:400;color:var(--text-main);line-height:1.45;">${noteText}</p>
           </div>
         `;
         container.appendChild(memCard);
