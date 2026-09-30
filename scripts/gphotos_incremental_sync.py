@@ -127,7 +127,7 @@ async def run_sync(
 
         # Regular incremental sync pass
         print(f"\n[1/4] Navigating to Recently Added: {GPHOTOS_RECENTLY_ADDED_URL} ...")
-        await page.goto(GPHOTOS_RECENTLY_ADDED_URL, wait_until="networkidle")
+        await page.goto(GPHOTOS_RECENTLY_ADDED_URL, wait_until="domcontentloaded")
 
         # Check if auth required
         if "accounts.google.com" in page.url:
@@ -181,52 +181,68 @@ async def run_sync(
 
         print(f"[*] Starting traversal from newest photo: {head_photo_id}")
 
-        while len(downloaded_files) < limit:
-            current_id = extract_photo_id(page.url)
-
-            if not current_id:
-                print(f"[-] Exited photo viewer at URL: {page.url}")
-                break
-
-            if current_id == last_checkpoint_id:
-                print(f"[✓] Reached checkpoint ID {last_checkpoint_id}. Sync boundary reached.")
-                break
-
-            print(f"  -> [{len(downloaded_files) + 1}/{limit}] Downloading photo: {current_id}")
-
-            if not dry_run:
-                try:
-                    async with page.expect_download(timeout=20000) as download_info:
-                        await page.keyboard.press("Shift+KeyD")
-                    download = await download_info.value
-                    filename = download.suggested_filename
-                    target_path = inbox_dir / filename
-                    await download.save_as(str(target_path))
-                    downloaded_files.append(target_path)
-                    print(f"     Saved: {filename} ({os.path.getsize(target_path):,} bytes)")
-                except Exception as e:
-                    print(f"     [Download Warning] {e}")
-            else:
-                downloaded_files.append(Path(f"dry_run_{current_id}.jpg"))
-                print(f"     [DRY RUN] Would download {current_id}")
-
-            # Natural jitter delay between downloads
-            await asyncio.sleep(random.uniform(0.7, 1.2))
-
-            # Step to next photo (older photo in _tra_)
-            prev_url = page.url
-            await page.keyboard.press("ArrowRight")
-            await page.wait_for_timeout(600)
-
-            if page.url == prev_url:
-                consecutive_same_url += 1
-                if consecutive_same_url >= 2:
-                    print("[✓] Reached end of available stream.")
+        try:
+            while len(downloaded_files) < limit:
+                if page.is_closed():
+                    print("[-] Page closed.")
                     break
-            else:
-                consecutive_same_url = 0
 
-        await browser_context.close()
+                current_id = extract_photo_id(page.url)
+
+                if not current_id:
+                    print(f"[-] Exited photo viewer at URL: {page.url}")
+                    break
+
+                if current_id == last_checkpoint_id:
+                    print(f"[✓] Reached checkpoint ID {last_checkpoint_id}. Sync boundary reached.")
+                    break
+
+                print(f"  -> [{len(downloaded_files) + 1}/{limit}] Downloading photo: {current_id}")
+
+                if not dry_run:
+                    try:
+                        async with page.expect_download(timeout=20000) as download_info:
+                            await page.keyboard.press("Shift+KeyD")
+                        download = await download_info.value
+                        filename = download.suggested_filename
+                        target_path = inbox_dir / filename
+                        await download.save_as(str(target_path))
+                        downloaded_files.append(target_path)
+                        print(f"     Saved: {filename} ({os.path.getsize(target_path):,} bytes)")
+                    except Exception as e:
+                        print(f"     [Download Warning] {e}")
+                else:
+                    downloaded_files.append(Path(f"dry_run_{current_id}.jpg"))
+                    print(f"     [DRY RUN] Would download {current_id}")
+
+                # Natural jitter delay between downloads
+                await asyncio.sleep(random.uniform(0.7, 1.2))
+
+                # Step to next photo (older photo in _tra_)
+                prev_url = page.url
+                try:
+                    await page.keyboard.press("ArrowRight")
+                    await asyncio.sleep(0.6)
+                except Exception:
+                    break
+
+                if page.is_closed():
+                    break
+
+                if page.url == prev_url:
+                    consecutive_same_url += 1
+                    if consecutive_same_url >= 2:
+                        print("[✓] Reached end of available stream.")
+                        break
+                else:
+                    consecutive_same_url = 0
+        except Exception as e:
+            print(f"[-] Stream traversal stopped: {e}")
+        finally:
+            try:
+                await browser_context.close()
+            except Exception:
+                pass
 
     print(f"\n[4/4] Sync complete. Downloaded {len(downloaded_files)} new photo(s).")
 
