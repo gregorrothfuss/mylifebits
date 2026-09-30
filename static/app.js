@@ -590,8 +590,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const totalKm = segments.reduce((acc, s) => acc + (s.distance_meters || 0) / 1000.0, 0);
     const dayPhotosCount = dayData.photo_count || (dayData.photos ? dayData.photos.length : 0);
 
-    document.getElementById("day-summary-text").textContent = 
-      `${visitsCount} visits · ${activitiesCount} travel movements · ${totalKm.toFixed(1)} km · ${gaps.length} gaps` + (dayPhotosCount ? ` · ${dayPhotosCount} photos` : '');
+    const summaryParts = [
+      `${visitsCount} visits`,
+      `${activitiesCount} trips`,
+      `${totalKm.toFixed(1)} km`
+    ];
+    if (gaps.length > 0) {
+      summaryParts.push(`${gaps.length} gaps`);
+    }
+    document.getElementById("day-summary-text").textContent = summaryParts.join(" · ");
 
     if (segments.length === 0 && (!dayData.memories || dayData.memories.length === 0)) {
       container.innerHTML = '<div class="empty-state"><p>No timeline records recorded for this day.</p></div>';
@@ -600,20 +607,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (dayData.memories && dayData.memories.length > 0) {
       dayData.memories.forEach(m => {
+        const noteText = escapeHtml(m.raw_text || m.title || "");
+        if (!noteText) return;
         const memCard = document.createElement("div");
         memCard.className = "card timeline-memory-card";
-        memCard.style.cssText = "background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);padding:12px 14px;border-radius:8px;margin-bottom:12px;display:flex;align-items:flex-start;gap:12px;";
-        const noteText = escapeHtml(m.raw_text || m.title || "Day Note");
-        const titleText = escapeHtml(m.title && m.title !== m.raw_text ? m.title : "Day Note");
+        memCard.style.cssText = "background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);padding:10px 14px;border-radius:8px;margin-bottom:12px;display:flex;align-items:center;gap:10px;";
         memCard.innerHTML = `
-          <i class="fa-solid fa-note-sticky" style="color:#d97706;font-size:20px;margin-top:2px;flex-shrink:0;"></i>
-          <div style="flex:1;min-width:0;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
-              <span style="font-size:11px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:0.5px;">${titleText}</span>
-              <span style="font-size:10px;font-weight:600;color:var(--text-muted);">Timeline Note</span>
-            </div>
-            <p style="margin:0;font-size:13px;font-weight:400;color:var(--text-main);line-height:1.45;">${noteText}</p>
-          </div>
+          <i class="fa-solid fa-note-sticky" style="color:#d97706;font-size:16px;flex-shrink:0;"></i>
+          <p style="margin:0;font-size:13.5px;font-weight:500;color:var(--text-main);line-height:1.4;">${noteText}</p>
         `;
         container.appendChild(memCard);
       });

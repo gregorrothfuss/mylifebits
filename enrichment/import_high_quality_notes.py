@@ -5,6 +5,8 @@ Filters out:
 - All OCR garbage snippets ('Visible signage in the shots included...').
 - All boilerplate template filler ('A collection of N photos documented in...').
 - All low-quality days lacking verified visual themes or identified companions (~50% of days).
+- Redundant taxonomy category concatenation ('Dining & Food and Dinner Gathering').
+- Unnecessary photo count noise ('(10 photos)').
 
 Preserves authentic user Takeout notes.
 """
@@ -19,7 +21,74 @@ PHOTOS_DB = Path("/Users/rothfuss/projects/gregor_cos/photos_vault.db")
 VIEWER_DB = WORKSPACE_DIR / "timeline_viewer.db"
 
 
-def synthesize_clean_note(date_str, count, people, themes, locations):
+def normalize_loc(loc: str) -> str:
+    if not loc:
+        return ""
+    loc = loc.replace("ZÜrich", "Zürich").replace("Zuerich", "Zürich")
+    if "/" in loc:
+        parts = [p.strip() for p in loc.split("/")]
+        loc = parts[-1] if len(parts) > 1 else parts[0]
+    if loc == "New york":
+        loc = "New York"
+    return loc.strip()
+
+
+def simplify_themes(themes: list[str]) -> list[str]:
+    has_dinner = "Dinner Gathering" in themes
+    has_dining = "Dining & Food" in themes
+    has_museum = "Museum Exhibits" in themes
+    has_art = "Sculptures & Art" in themes
+    has_murals = "Street Art Murals" in themes
+    has_hike = "Mountain Hike" in themes
+    has_trails = "Forest Trails" in themes
+    has_snow = "Winter Snow" in themes
+    has_beach = "Coastal Beach" in themes
+    has_drinks = "Drinks & Cocktails" in themes
+    has_biking = "Biking" in themes
+    has_boats = "Ferry & Boats" in themes
+    has_lakes = "Rivers & Lakeshore" in themes
+    has_books = "Books & Bookstore" in themes
+    has_coffee = "Coffee & Cafes" in themes
+
+    out = []
+    if has_dinner:
+        out.append("Dinner")
+    elif has_dining:
+        out.append("Dining")
+    if has_museum and (has_art or has_murals):
+        out.append("Museum & Art")
+    elif has_art and has_murals:
+        out.append("Art & Murals")
+    elif has_museum:
+        out.append("Museum")
+    elif has_art:
+        out.append("Art")
+    elif has_murals:
+        out.append("Street Art")
+    if has_drinks and not out:
+        out.append("Drinks")
+    if has_hike:
+        out.append("Hike")
+    elif has_trails and not out:
+        out.append("Nature walk")
+    if has_snow and "Hike" not in out and not out:
+        out.append("Snow")
+    if has_beach and not out:
+        out.append("Beach")
+    if has_biking and not out:
+        out.append("Biking")
+    if has_boats and not out:
+        out.append("Boats")
+    if has_lakes and not out:
+        out.append("Lakeshore")
+    if has_books and not out:
+        out.append("Bookstore")
+    if has_coffee and not out:
+        out.append("Coffee")
+    return out[:2]
+
+
+def synthesize_clean_note(date_str, people, themes, locations):
     """
     Quality gate & clean synthesis. Returns (title, text) or None if low quality.
     """
@@ -37,45 +106,38 @@ def synthesize_clean_note(date_str, count, people, themes, locations):
     if not valid_themes and not clean_p:
         return None
 
-    # People phrasing
+    simplified = simplify_themes(valid_themes)
+    loc = normalize_loc(locations[0]) if locations else ""
+
     if len(clean_p) == 1:
         p_str = f"with {clean_p[0]}"
     elif len(clean_p) == 2:
         p_str = f"with {clean_p[0]} and {clean_p[1]}"
     elif len(clean_p) > 2:
-        p_str = f"with {clean_p[0]}, {clean_p[1]}, and {len(clean_p)-2} others"
+        n_others = len(clean_p) - 2
+        other_word = "other" if n_others == 1 else "others"
+        p_str = f"with {clean_p[0]}, {clean_p[1]}, and {n_others} {other_word}"
     else:
         p_str = ""
 
-    # Theme phrasing
-    if len(valid_themes) == 1:
-        t_str = valid_themes[0]
-    elif len(valid_themes) == 2:
-        t_str = f"{valid_themes[0]} and {valid_themes[1]}"
-    elif len(valid_themes) > 2:
-        t_str = f"{valid_themes[0]}, {valid_themes[1]}, and {valid_themes[2]}"
-    else:
-        t_str = ""
+    t_str = " & ".join(simplified)
 
-    # Clean location
-    loc_str = locations[0] if locations else ""
-
-    parts = []
-    if t_str and loc_str:
-        parts.append(f"{t_str} in {loc_str}")
+    if t_str and loc and p_str:
+        text = f"{t_str} in {loc} {p_str}."
+    elif t_str and p_str:
+        text = f"{t_str} {p_str}."
+    elif t_str and loc:
+        text = f"{t_str} in {loc}."
+    elif loc and p_str:
+        text = f"In {loc} {p_str}."
+    elif p_str:
+        text = f"{p_str[0].upper() + p_str[1:]}."
     elif t_str:
-        parts.append(t_str)
-    elif loc_str:
-        parts.append(f"Photos in {loc_str}")
+        text = f"{t_str}."
     else:
-        parts.append("Day moments")
+        return None
 
-    if p_str:
-        parts.append(p_str)
-
-    text = " ".join(parts).strip()
-    text = text[0].upper() + text[1:] + f" ({count} photos)."
-    title = t_str or (f"With {clean_p[0]}" if clean_p else loc_str or "Photo Highlights")
+    title = text.rstrip(".")
     return title, text
 
 
@@ -126,9 +188,8 @@ def run_import():
         themes = json.loads(r["themes"] or "[]")
         people = json.loads(r["people"] or "[]")
         locations = json.loads(r["locations"] or "[]")
-        count = r["photo_count"] or 1
 
-        clean_result = synthesize_clean_note(d_str, count, people, themes, locations)
+        clean_result = synthesize_clean_note(d_str, people, themes, locations)
         if not clean_result:
             rejected += 1
             continue
@@ -150,9 +211,9 @@ def run_import():
     total_after = conn_viewer.execute("SELECT count(*) FROM memories;").fetchone()[0]
     conn_viewer.close()
 
-    print(f"[✓] Quality Gate Filter Complete:")
-    print(f"    - Accepted high-quality notes: {accepted:,}")
-    print(f"    - Rejected low-quality boilerplate days: {rejected:,}")
+    print(f"[✓] Clean High-Signal Notes Ingestion Complete:")
+    print(f"    - Accepted notes: {accepted:,}")
+    print(f"    - Rejected low-quality / boilerplate: {rejected:,}")
     print(f"    - Total memories in timeline_viewer.db: {total_after:,}")
 
 

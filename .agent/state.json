@@ -1,27 +1,36 @@
 {
-  "goal": "Filter out low-quality synthetic notes and OCR junk while synthesizing clean, high-signal notes",
-  "active_step_id": 3,
+  "goal": "Eliminate throat clearing in UI and notes, make search bar prominent, eliminate photo duplication across segments, and remove export geojson",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Implement enrichment/import_high_quality_notes.py with strict quality gate rejecting OCR junk and boilerplate templates",
+      "description": "Refactor notes synthesis in enrichment/import_high_quality_notes.py (strip photo count, deduplicate themes) and re-ingest",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Run quality gate: reject 2,868 low-quality days and synthesize 3,236 clean high-signal notes",
+      "description": "Update static/app.js to remove memory card headers/badges and strip photo counts from day summary",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Verify API contracts and test suite",
+      "description": "Update static/index.html and static/style.css to remove export geojson, eliminate navbar clutter, and place search bar prominently",
+      "status": "completed"
+    },
+    {
+      "id": 4,
+      "description": "Fix photo assignment algorithm in api/routes/timeline.py to eliminate cross-segment duplication",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "timeline_viewer.db",
-      "enrichment/import_high_quality_notes.py"
+      "enrichment/import_high_quality_notes.py",
+      "static/app.js",
+      "static/index.html",
+      "static/style.css",
+      "api/routes/timeline.py",
+      "timeline_viewer.db"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",

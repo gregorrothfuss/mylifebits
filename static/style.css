@@ -89,7 +89,7 @@ body {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  min-width: 220px;
+  min-width: 170px;
 }
 
 .logo-icon {
@@ -113,7 +113,7 @@ body {
 }
 
 .brand-text h1 {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-main);
   letter-spacing: -0.3px;
@@ -126,13 +126,91 @@ body {
   white-space: nowrap;
 }
 
+/* Global Search Bar (Prominently Positioned) */
+.global-search-container {
+  position: relative;
+  flex: 0 1 340px;
+  min-width: 240px;
+  max-width: 400px;
+}
+
+.global-search-wrapper {
+  display: flex;
+  align-items: center;
+  background-color: #f8f9fa;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 6px 14px;
+  gap: 9px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(60,64,67,0.08);
+}
+
+.global-search-wrapper:hover {
+  background-color: #ffffff;
+  border-color: #c2c7d0;
+}
+
+.global-search-wrapper:focus-within {
+  background-color: #ffffff;
+  border-color: var(--accent-blue);
+  box-shadow: 0 1px 6px rgba(26,115,232,0.25), 0 2px 8px rgba(60,64,67,0.15);
+}
+
+.global-search-wrapper .search-icon {
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.global-search-wrapper input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font-size: 13px;
+  font-family: var(--font-sans);
+  min-width: 0;
+}
+
+.global-search-wrapper input::placeholder {
+  color: #70757a;
+}
+
+.global-search-wrapper .search-shortcut-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: #ffffff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.global-search-wrapper .search-clear-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 /* Navigation Tabs */
 .nav-tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   background-color: #f1f3f4;
-  padding: 4px 6px;
-  border-radius: 24px;
+  padding: 4px;
+  border-radius: 20px;
   flex-shrink: 0;
 }
 
@@ -140,14 +218,14 @@ body {
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-muted);
-  padding: 6px 13px;
-  border-radius: 20px;
+  padding: 6px 12px;
+  border-radius: 16px;
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
@@ -176,68 +254,6 @@ body {
 .pill-badge.blue { background-color: var(--accent-blue-bg); color: var(--accent-blue); border: 1px solid #c2e7ff; }
 .pill-badge.green { background-color: var(--accent-green-bg); color: var(--accent-green); border: 1px solid #c4eed0; }
 .pill-badge.purple { background-color: var(--accent-purple-bg); color: var(--accent-purple); border: 1px solid #e9d5ff; }
-
-/* Global Search Bar */
-.global-search-container {
-  position: relative;
-  flex: 1;
-  max-width: 400px;
-  min-width: 200px;
-}
-
-.global-search-wrapper {
-  display: flex;
-  align-items: center;
-  background-color: #ffffff;
-  border: 1px solid var(--border-color);
-  border-radius: 24px;
-  padding: 5px 12px;
-  gap: 8px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(60,64,67,0.12);
-}
-
-.global-search-wrapper:focus-within {
-  border-color: var(--accent-blue);
-  box-shadow: 0 1px 6px rgba(26,115,232,0.25), 0 2px 8px rgba(60,64,67,0.15);
-}
-
-.global-search-wrapper .search-icon {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.global-search-wrapper input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--text-main);
-  font-size: 12.5px;
-  font-family: var(--font-sans);
-}
-
-.global-search-wrapper input::placeholder {
-  color: var(--text-dim);
-}
-
-.global-search-wrapper .search-shortcut-badge {
-  font-size: 10px;
-  color: var(--text-dim);
-  background: #f1f3f4;
-  padding: 2px 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color);
-}
-
-.global-search-wrapper .search-clear-btn {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  padding: 2px 4px;
-  font-size: 11px;
-}
 
 .global-search-dropdown {
   position: absolute;

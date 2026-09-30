@@ -320,54 +320,64 @@ def get_day(req: Request) -> Response:
                     candidate_photos.append(ep)
                     seen_shas.add(ep["sha256"])
 
-    # Attach matching photos to visit & activity segments strictly by timestamp interval
+    # Initialize photo lists per segment
     for s in segments:
-        s_photos = []
-        s_start = s.get("start_ts")
-        s_end = s.get("end_ts")
+        s["photos"] = []
 
-        if s["segment_type"] == "visit":
-            if s_start and s_end:
-                for p in candidate_photos:
-                    p_ts = p.get("timestamp_utc")
-                    if not p_ts:
-                        continue
+    # Map each candidate photo to AT MOST ONE best segment (zero cross-segment duplication)
+    for p in candidate_photos:
+        p_ts = p.get("timestamp_utc")
+        if not p_ts:
+            continue
 
-                    # Strict time bounding: must fall within visit window (with +/- 60s tolerance for clock drift)
-                    if not (s_start - 60 <= p_ts <= s_end + 60):
-                        continue
+        best_seg = None
+        best_score = -1.0
 
-                    p_pid = p.get("place_id")
-                    match = False
+        for s in segments:
+            s_start = s.get("start_ts")
+            s_end = s.get("end_ts")
+            if not s_start or not s_end:
+                continue
 
-                    if s.get("place_id") and p_pid and s["place_id"] == p_pid:
-                        match = True
-                    elif s.get("latitude") is not None and p.get("latitude") is not None:
-                        dist_m = haversine_distance(s["latitude"], s["longitude"], p["latitude"], p["longitude"])
-                        if dist_m <= 250:
-                            match = True
-                    elif p.get("latitude") is None and not p_pid:
-                        # Indoor/GPS-less camera photo strictly within visit interval
-                        if s_start <= p_ts <= s_end:
-                            match = True
+            is_inside = (s_start <= p_ts <= s_end)
+            is_near = (s_start - 60 <= p_ts <= s_end + 60)
+            if not is_near:
+                continue
 
-                    if match:
-                        s_photos.append(p)
+            score = 100.0 if is_inside else 20.0
 
-            s["photos"] = s_photos
-            s["photo_count"] = len(s_photos)
-            s["review_photos"] = [f"/api/photo?sha256={sp['sha256']}" for sp in s_photos]
+            if s["segment_type"] == "visit":
+                score += 10.0  # Preference for visit destinations over transit activities at boundary
+                if s.get("place_id") and p.get("place_id") and s["place_id"] == p["place_id"]:
+                    score += 50.0
+                elif s.get("latitude") is not None and p.get("latitude") is not None:
+                    dist = haversine_distance(s["latitude"], s["longitude"], p["latitude"], p["longitude"])
+                    if dist <= 150:
+                        score += 40.0
+                    elif dist <= 300:
+                        score += 20.0
+            elif s["segment_type"] == "activity":
+                if is_inside:
+                    score += 5.0
 
-        elif s["segment_type"] == "activity":
-            if s_start and s_end:
-                for p in candidate_photos:
-                    p_ts = p.get("timestamp_utc")
-                    if p_ts and (s_start - 30 <= p_ts <= s_end + 30):
-                        s_photos.append(p)
+            # Proximity to center of segment as fine-grained tiebreaker
+            seg_mid = (s_start + s_end) / 2.0
+            dist_from_mid = abs(p_ts - seg_mid)
+            seg_span = max(1.0, float(s_end - s_start))
+            score += max(0.0, 1.0 - (dist_from_mid / seg_span))
 
-            s["photos"] = s_photos
-            s["photo_count"] = len(s_photos)
-            s["review_photos"] = [f"/api/photo?sha256={sp['sha256']}" for sp in s_photos]
+            if score > best_score:
+                best_score = score
+                best_seg = s
+
+        if best_seg is not None:
+            best_seg["photos"].append(p)
+
+    # Finalize photo metadata per segment
+    for s in segments:
+        s_photos = s["photos"]
+        s["photo_count"] = len(s_photos)
+        s["review_photos"] = [f"/api/photo?sha256={sp['sha256']}" for sp in s_photos]
 
     return json_response({
         "status": "SUCCESS",
