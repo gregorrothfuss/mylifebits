@@ -459,8 +459,12 @@
             </div>
           </div>
 
-          <!-- Life Chronology -->
-          <div class="life-periods-container card" id="life-periods-section">
+          <div class="places-grid" id="places-grid-container">
+            <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading Places Catalog...</div>
+          </div>
+
+          <!-- Life Chronology (Below catalog, hidden during search) -->
+          <div class="life-periods-container card" id="life-periods-section" style="margin-top:24px;">
             <div class="life-periods-header">
               <div class="life-periods-title">
                 <i class="fa-solid fa-timeline" style="color:var(--accent-purple);font-size:18px;"></i>
@@ -470,10 +474,6 @@
             <div class="life-periods-track" id="life-periods-track-container">
               <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading Chronology...</div>
             </div>
-          </div>
-
-          <div class="places-grid" id="places-grid-container">
-            <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading Places Catalog...</div>
           </div>
         </div>
       </section>
@@ -1045,6 +1045,6 @@
   <!-- Leaflet JS & Heat Plugin -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="app.js?v=4.2"></script>
+  <script src="app.js?v=4.3"></script>
 </body>
 </html>

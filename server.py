@@ -93,6 +93,14 @@ class TimelineViewerHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_error(404, "File not found")
 
+    def end_headers(self) -> None:
+        p = getattr(self, "path", "")
+        if p.endswith(".html") or p in ("/", "") or p.endswith(".js") or p.endswith(".css"):
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_OPTIONS(self) -> None:
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")

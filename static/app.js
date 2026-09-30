@@ -1666,7 +1666,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load Places Catalog with Category & City Filtering and in-memory caching
   async function loadPlaces(query = "") {
     currentPlacesQuery = query;
-    loadLifePeriods();
+    const lifeSec = document.getElementById("life-periods-section");
+    if (lifeSec) {
+      lifeSec.style.display = (query && query.trim()) ? "none" : "block";
+    }
+    if (!query || !query.trim()) {
+      loadLifePeriods();
+    }
     loadAllPlacesMap(query);
 
     const grid = document.getElementById("places-grid-container");
