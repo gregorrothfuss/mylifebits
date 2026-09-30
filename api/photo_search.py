@@ -137,7 +137,7 @@ def search_visits_by_photo_semantics(
                    place_name, place_address, place_id, category, latitude, longitude, city
             FROM segments
             WHERE segment_type = 'visit'
-              AND ? >= (start_ts - 60) AND ? <= (end_ts + 60);
+              AND ? >= start_ts AND ? <= end_ts;
         """, (ts, ts))
 
         for seg in candidate_segs:

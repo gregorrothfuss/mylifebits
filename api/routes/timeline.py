@@ -368,12 +368,11 @@ def get_day(req: Request) -> Response:
             if not s_start or not s_end:
                 continue
 
-            is_inside = (s_start <= p_ts <= s_end)
-            is_near = (s_start - 60 <= p_ts <= s_end + 60)
-            if not is_near:
+            # Strict duration overlap: photo must be taken during segment duration
+            if not (s_start <= p_ts <= s_end):
                 continue
 
-            score = 100.0 if is_inside else 20.0
+            score = 100.0
 
             if s["segment_type"] == "visit":
                 score += 10.0  # Preference for visit destinations over transit activities at boundary
@@ -386,8 +385,7 @@ def get_day(req: Request) -> Response:
                     elif dist <= 300:
                         score += 20.0
             elif s["segment_type"] == "activity":
-                if is_inside:
-                    score += 5.0
+                score += 5.0
 
             # Proximity to center of segment as fine-grained tiebreaker
             seg_mid = (s_start + s_end) / 2.0

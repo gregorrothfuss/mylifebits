@@ -259,7 +259,7 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
 
             # Resolve place details and ensure place exists in places table to satisfy FK
             p_name, p_addr, p_cat, p_city = None, None, 'Other / POI', None
-            rev_rating, rev_photos = None, None
+            rev_rating = None
 
             incoming_pid = pid
             aliased_info = get_aliased_place(conn, pid) if pid else None
@@ -271,7 +271,6 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                 p_cat = p_info['category']
                 p_city = p_info['city']
                 rev_rating = p_info['rating']
-                rev_photos = p_info['photos']
             elif aliased_info:
                 pid = aliased_info['place_id']
                 p_name = aliased_info['name']
@@ -343,7 +342,7 @@ def run_merge(export_path: str = EXPORT_FILE, db_path: str = DEFAULT_DB_PATH) ->
                 'visit', local_st or st_raw, local_et or et_raw, float(st_ts), float(et_ts), dur_min,
                 d_str, yr, mo, dy, lat, lng, pid, p_name,
                 p_addr, sem_type, p_cat, p_city, prob, hl,
-                0, 'PIXEL10_EXPORT_2026', rev_rating, rev_photos
+                0, 'PIXEL10_EXPORT_2026', rev_rating, None
             ))
             inserted_visits += 1
             modified_dates.add(d_str)
