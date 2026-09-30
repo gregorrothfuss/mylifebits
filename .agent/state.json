@@ -1,34 +1,33 @@
 {
-  "goal": "Fix missing search thumbnails via DB preview_path lookup, add place/date thumbnails, and expose jumpToTimelineDay globally",
-  "active_step_id": 1,
+  "goal": "Eliminate synthetic rectangle/L-step paths, snap activities to authentic road curves, and enforce honest chord rendering",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Add DB preview_path/filename resolution in api/routes/photos.py to fix 17,038 photos with differing preview hashes",
+      "description": "Harden road_snapper.py and api/routes/timeline.py to detect and reject synthetic rectangle/L-step corner paths",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Add photo thumbnails to PLACE and DATE search results in api/routes/search.py",
+      "description": "Cleanse timeline_viewer.db by replacing fake L-steps with genuine OSRM street curves for 2026/recent days and resetting unsnapped to chords",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Expose window.jumpToTimelineDay on window in static/app.js so Jump buttons work in all modals and views",
+      "description": "Verify date 2026-07-20 and full dataset, run API contract audit and E2E test suite",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Run contract audit, execute test suite, restart service, and verify end-to-end",
+      "description": "Restart service, verify on live https://mylifebits.local, and commit changes",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "api/routes/photos.py",
-      "api/routes/search.py",
-      "static/app.js",
-      "static/index.html"
+      "road_snapper.py",
+      "api/routes/timeline.py",
+      "static/app.js"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",

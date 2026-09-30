@@ -46,6 +46,19 @@ def query_osrm_api(lat1: float, lon1: float, lat2: float, lon2: float, osrm_mode
         pass
     return None, None
 
+def is_synthetic_rectangle_path(pts: List[List[float]]) -> bool:
+    """Detects artificial axis-aligned L-step corners or bounding boxes."""
+    if not pts:
+        return False
+    if len(pts) == 3:
+        p1, p2, p3 = pts[0], pts[1], pts[2]
+        # Intermediate point matches p1 latitude & p3 longitude, or p3 latitude & p1 longitude
+        return (abs(p2[0] - p1[0]) < 1e-5 and abs(p2[1] - p3[1]) < 1e-5) or \
+               (abs(p2[0] - p3[0]) < 1e-5 and abs(p2[1] - p1[1]) < 1e-5)
+    if len(pts) in [4, 5] and pts[0] == pts[-1]:
+        return True
+    return False
+
 def snap_activity_to_streets(
     waypoints: List[List[float]],
     mode: str = "CYCLING"
@@ -58,6 +71,10 @@ def snap_activity_to_streets(
         return waypoints
     if len(waypoints) == 1:
         return waypoints
+
+    # Strip synthetic rectangle L-step corners or bounding boxes
+    if is_synthetic_rectangle_path(waypoints):
+        waypoints = [waypoints[0], waypoints[-1]]
         
     start_pt = waypoints[0]
     end_pt = waypoints[-1]
@@ -91,7 +108,7 @@ def snap_activity_to_streets(
     if row:
         coords = json.loads(row[0])
         conn.close()
-        if len(coords) >= 2:
+        if len(coords) >= 2 and not is_synthetic_rectangle_path(coords):
             return coords
 
     # Query real OSRM
@@ -103,8 +120,8 @@ def snap_activity_to_streets(
         conn.close()
         return pts
 
-    # If intermediate waypoints were provided (e.g. 3+ points), interpolate between them
-    if len(waypoints) > 2:
+    # If intermediate waypoints were provided (e.g. 3+ points and non-synthetic), interpolate between them
+    if len(waypoints) > 2 and not is_synthetic_rectangle_path(waypoints):
         conn.close()
         return waypoints
 

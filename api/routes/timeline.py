@@ -155,6 +155,16 @@ def get_day(req: Request) -> Response:
                 except Exception:
                     coords = []
 
+            # Reject synthetic rectangle/L-step corner paths and closed bounding boxes
+            if coords:
+                if len(coords) == 3:
+                    p1, p2, p3 = coords[0], coords[1], coords[2]
+                    if (abs(p2[0] - p1[0]) < 1e-5 and abs(p2[1] - p3[1]) < 1e-5) or \
+                       (abs(p2[0] - p3[0]) < 1e-5 and abs(p2[1] - p1[1]) < 1e-5):
+                        coords = []
+                elif len(coords) in [4, 5] and coords[0] == coords[-1]:
+                    coords = []
+
             if not coords and s.get("latitude") is not None and s.get("end_lat") is not None:
                 coords = [[s["latitude"], s["longitude"]], [s["end_lat"], s["end_lng"]]]
 
