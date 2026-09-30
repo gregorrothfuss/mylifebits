@@ -1,35 +1,27 @@
 {
-  "goal": "Add photo semantic search index to search visits by visual concepts",
-  "active_step_id": 4,
+  "goal": "Purge synthetic photo OCR daily summaries from timeline memories table, preserving only authentic user notes",
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Implement api/photo_search.py connecting semantic photo search with timeline visit matching and in-memory LRU caching",
+      "description": "Purge photo_mem_% synthetic notes from timeline_viewer.db memories table and verify remaining authentic notes",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Integrate photo semantic search into api/routes/search.py and add api/visits/search endpoint",
+      "description": "Deprecate enrichment/import_photo_summaries_as_notes.py to prevent re-ingestion of low-quality OCR templates",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Update static/app.js and static/style.css to render photo-matched visits with thumbnails and jump-to-visit highlighting",
-      "status": "completed"
-    },
-    {
-      "id": 4,
-      "description": "Verify contract tests, schema integrity, and end-to-end integration",
+      "description": "Verify API contracts and test suite",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "api/photo_search.py",
-      "api/routes/search.py",
-      "api/router.py",
-      "static/app.js",
-      "static/style.css"
+      "timeline_viewer.db",
+      "enrichment/import_photo_summaries_as_notes.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
