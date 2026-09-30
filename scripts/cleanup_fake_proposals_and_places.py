@@ -67,9 +67,11 @@ def main() -> None:
         DELETE FROM fix_proposals
         WHERE patch_data_json LIKE '%citi_bike_startedat%'
            OR reasoning LIKE '%citi_bike_startedat%'
-           OR (target_type = 'place' AND target_id = 0 AND reasoning LIKE '%citi_bike_%');
+           OR (target_type = 'place' AND target_id = 0 AND reasoning LIKE '%citi_bike_%')
+           OR patch_data_json LIKE '%pier_11_wall_st_ferry%'
+           OR reasoning LIKE '%pier_11_wall_st_ferry%';
     """)
-    print(f"Purged {c.rowcount} stale synthetic Citi Bike proposals from fix_proposals.")
+    print(f"Purged {c.rowcount} stale synthetic proposals from fix_proposals.")
 
     print("\n=== Step 2: Remapping 26 Synthetic Segments to Canonical ChIJ IDs ===")
     remapped_count = 0
@@ -109,10 +111,10 @@ def main() -> None:
     print("\n=== Step 3: Purging Unreferenced Synthetic Places ===")
     c.execute("""
         DELETE FROM places
-        WHERE place_id LIKE 'citi_bike%'
+        WHERE (place_id LIKE 'citi_bike%' OR place_id = 'pier_11_wall_st_ferry')
           AND place_id NOT IN (SELECT DISTINCT place_id FROM segments WHERE place_id IS NOT NULL);
     """)
-    print(f"Purged {c.rowcount} unreferenced synthetic citi_bike_% records from places table.")
+    print(f"Purged {c.rowcount} unreferenced synthetic records from places table.")
 
     conn.commit()
     conn.close()
