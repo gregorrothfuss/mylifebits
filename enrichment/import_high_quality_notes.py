@@ -38,7 +38,31 @@ def clean_location_candidate(loc: str) -> str | None:
     return loc.strip() or None
 
 
-def pick_best_location(locations: list[str]) -> str:
+def pick_best_location(locations: list[str], conn_viewer: sqlite3.Connection | None = None, date_str: str | None = None) -> str:
+    # If viewer DB connection is provided, ground the dominant city to actual photos
+    if conn_viewer and date_str:
+        try:
+            photo_cities = conn_viewer.execute("""
+                SELECT city, COUNT(*) as c
+                FROM photos
+                WHERE local_date = ? AND city IS NOT NULL AND city != ''
+                GROUP BY city
+                ORDER BY c DESC;
+            """, (date_str,)).fetchall()
+            if photo_cities:
+                top_city, top_cnt = photo_cities[0][0], photo_cities[0][1]
+                cleaned_top = clean_location_candidate(top_city)
+                if cleaned_top:
+                    # If any candidate matches the dominant photo city, use it
+                    for candidate in locations:
+                        cleaned_cand = clean_location_candidate(candidate)
+                        if cleaned_cand and cleaned_cand.lower() == cleaned_top.lower():
+                            return cleaned_cand
+                    # Otherwise, if the top city has the clear majority of photos, use it
+                    return cleaned_top
+        except Exception:
+            pass
+
     for candidate in locations:
         cleaned = clean_location_candidate(candidate)
         if cleaned:
@@ -46,9 +70,11 @@ def pick_best_location(locations: list[str]) -> str:
     return ""
 
 
-def simplify_themes(themes: list[str]) -> list[str]:
-    has_dinner = "Dinner Gathering" in themes
-    has_dining = "Dining & Food" in themes
+def simplify_themes(themes: list[str], max_hour: float | None = None, min_hour: float | None = None) -> list[str]:
+    has_dinner = ("Dinner Gathering" in themes or "Dinner" in themes)
+    has_lunch = ("Lunch Gathering" in themes or "Lunch" in themes)
+    has_breakfast = ("Breakfast & Coffee" in themes or "Breakfast" in themes)
+    has_dining = ("Dining & Food" in themes or "Dining Gathering" in themes or "Dining" in themes)
     has_museum = "Museum Exhibits" in themes
     has_art = "Sculptures & Art" in themes
     has_murals = "Street Art Murals" in themes
@@ -63,11 +89,24 @@ def simplify_themes(themes: list[str]) -> list[str]:
     has_books = "Books & Bookstore" in themes
     has_coffee = "Coffee & Cafes" in themes
 
+    # Temporal sanity bound: If claimed as Dinner, but photos were strictly daytime, correct to Lunch/Breakfast
+    if has_dinner and max_hour is not None and max_hour < 16.5:
+        has_dinner = False
+        if max_hour < 11.0:
+            has_breakfast = True
+        else:
+            has_lunch = True
+
     out = []
     if has_dinner:
         out.append("Dinner")
+    elif has_lunch:
+        out.append("Lunch")
+    elif has_breakfast:
+        out.append("Breakfast")
     elif has_dining:
         out.append("Dining")
+
     if has_museum and (has_art or has_murals):
         out.append("Museum & Art")
     elif has_art and has_murals:
@@ -101,10 +140,38 @@ def simplify_themes(themes: list[str]) -> list[str]:
     return out[:2]
 
 
-def synthesize_clean_note(date_str, people, themes, locations):
+def synthesize_clean_note(date_str, people, themes, locations, conn_viewer: sqlite3.Connection | None = None):
     """
     Quality gate & clean synthesis. Returns (title, text) or None if low quality.
     """
+    # Inspect actual photo hours in viewer db to prevent temporal hallucination
+    min_hr, max_hr = None, None
+    if conn_viewer:
+        try:
+            rows = conn_viewer.execute("""
+                SELECT timestamp_utc, timezone_offset
+                FROM photos
+                WHERE local_date = ? AND timestamp_utc IS NOT NULL;
+            """, (date_str,)).fetchall()
+            hours = []
+            for r in rows:
+                ts, tz = r[0], r[1]
+                offset_sec = 0
+                if tz:
+                    tz_clean = tz.strip('\x00').strip()
+                    try:
+                        sign = -1 if tz_clean[0] == '-' else 1
+                        parts = tz_clean[1:].split(':')
+                        offset_sec = sign * (int(parts[0]) * 3600 + int(parts[1]) * 60)
+                    except Exception:
+                        pass
+                dt = datetime.fromtimestamp(ts + offset_sec, timezone.utc)
+                hours.append(dt.hour + dt.minute / 60.0)
+            if hours:
+                min_hr, max_hr = min(hours), max(hours)
+        except Exception:
+            pass
+
     clean_p = [p for p in people if p != "Gregor J. Rothfuss"]
 
     # 1. Quality gate: Must have either a valid visual theme or identified companions
@@ -119,8 +186,8 @@ def synthesize_clean_note(date_str, people, themes, locations):
     if not valid_themes and not clean_p:
         return None
 
-    simplified = simplify_themes(valid_themes)
-    loc = pick_best_location(locations)
+    simplified = simplify_themes(valid_themes, max_hour=max_hr, min_hour=min_hr)
+    loc = pick_best_location(locations, conn_viewer=conn_viewer, date_str=date_str)
 
     if len(clean_p) == 1:
         p_str = f"with {clean_p[0]}"
@@ -202,7 +269,7 @@ def run_import():
         people = json.loads(r["people"] or "[]")
         locations = json.loads(r["locations"] or "[]")
 
-        clean_result = synthesize_clean_note(d_str, people, themes, locations)
+        clean_result = synthesize_clean_note(d_str, people, themes, locations, conn_viewer=conn_viewer)
         if not clean_result:
             rejected += 1
             continue
