@@ -1,33 +1,37 @@
 {
-  "goal": "Enforce colocation validation to discard non-colocated partner photos and protect memories/timeline everywhere",
-  "active_step_id": 4,
+  "goal": "Ground day summaries in both photos and timeline visits to eliminate false location and venue hallucinations (e.g. false Weehawken and unvisited Museum/Art claims)",
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
-      "description": "Implement colocation filter in scripts/reindex_photos_clean.py to discard non-colocated partner photos (>50km from Gregor's ground truth)",
+      "description": "Audit visit-grounding requirements for day summaries: dominant visit city resolution and visit-corroborated themes (museum, art gallery, dining, etc.)",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Implement colocation filter in /Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py and regenerate affected summaries",
+      "description": "Update enrichment/import_high_quality_notes.py to strictly ground locations in actual timeline visits and cross-validate venue themes (disqualifying unvisited museums, unvisited art galleries, and conflicting photo cities like Weehawken)",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Enforce timeline location ground-truth validation in enrichment/import_high_quality_notes.py and re-ingest clean notes into timeline_viewer.db",
+      "description": "Update /Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py to incorporate visit ground-truth from timeline_viewer.db (aligning session cities with visits and pruning uncorroborated museum/art themes)",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Verify end-to-end API, regression test suite, and verify 2026-07-18 has zero Lincolnwood memories/photos",
+      "description": "Regenerate daily summaries and re-import high quality notes into timeline_viewer.db, verifying 2026-06-30, 2015-02-28, 2016-03-05, etc.",
+      "status": "completed"
+    },
+    {
+      "id": 5,
+      "description": "Run full contract audit, server tests, and verify zero false Weehawken and zero unvisited Museum claims in timeline_viewer.db",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/reindex_photos_clean.py",
-      "/Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py",
       "enrichment/import_high_quality_notes.py",
+      "/Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py",
       "api/routes/timeline.py"
     ],
     "test_files": [
@@ -37,7 +41,9 @@
     ],
     "scratch_logs": [
       ".agent/scratch/contracts.log",
-      ".agent/scratch/test.log"
+      ".agent/scratch/clean_api.log",
+      ".agent/scratch/e2e.log",
+      ".agent/scratch/import_notes.log"
     ]
   }
 }
