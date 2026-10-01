@@ -39,7 +39,7 @@ def clean_location_candidate(loc: str) -> str | None:
 
 
 def pick_best_location(locations: list[str], conn_viewer: sqlite3.Connection | None = None, date_str: str | None = None) -> str:
-    # If viewer DB connection is provided, ground the dominant city to actual photos
+    # If viewer DB connection is provided, ground the dominant city to actual photos and segments
     if conn_viewer and date_str:
         try:
             photo_cities = conn_viewer.execute("""
@@ -53,12 +53,19 @@ def pick_best_location(locations: list[str], conn_viewer: sqlite3.Connection | N
                 top_city, top_cnt = photo_cities[0][0], photo_cities[0][1]
                 cleaned_top = clean_location_candidate(top_city)
                 if cleaned_top:
-                    # If any candidate matches the dominant photo city, use it
-                    for candidate in locations:
-                        cleaned_cand = clean_location_candidate(candidate)
-                        if cleaned_cand and cleaned_cand.lower() == cleaned_top.lower():
-                            return cleaned_cand
-                    # Otherwise, if the top city has the clear majority of photos, use it
+                    return cleaned_top
+
+            seg_cities = conn_viewer.execute("""
+                SELECT city, COUNT(*) as c
+                FROM segments
+                WHERE date = ? AND city IS NOT NULL AND city != ''
+                GROUP BY city
+                ORDER BY c DESC;
+            """, (date_str,)).fetchall()
+            if seg_cities:
+                top_city, top_cnt = seg_cities[0][0], seg_cities[0][1]
+                cleaned_top = clean_location_candidate(top_city)
+                if cleaned_top:
                     return cleaned_top
         except Exception:
             pass
@@ -173,6 +180,25 @@ def synthesize_clean_note(date_str, people, themes, locations, conn_viewer: sqli
             pass
 
     clean_p = [p for p in people if p != "Gregor J. Rothfuss"]
+
+    # Verify companions against actual photos in viewer db to eliminate hallucinations from non-colocated partner media
+    if conn_viewer and date_str:
+        try:
+            verified_people_rows = conn_viewer.execute("""
+                SELECT people FROM photos WHERE local_date = ? AND people IS NOT NULL;
+            """, (date_str,)).fetchall()
+            verified_people_set = set()
+            for (p_str,) in verified_people_rows:
+                for person in p_str.split(","):
+                    p_clean = person.strip()
+                    if p_clean and p_clean != "Gregor J. Rothfuss":
+                        verified_people_set.add(p_clean)
+            if verified_people_set:
+                clean_p = [p for p in clean_p if p in verified_people_set]
+            elif clean_p:
+                clean_p = []
+        except Exception:
+            pass
 
     # 1. Quality gate: Must have either a valid visual theme or identified companions
     if not themes and not clean_p:

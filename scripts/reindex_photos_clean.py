@@ -5,6 +5,7 @@ with strict timestamp verification and exact camera local-to-UTC conversion.
 """
 
 import datetime
+import math
 import os
 import re
 import sqlite3
@@ -39,22 +40,56 @@ def main():
         r"^(?:IMG-)?(19[7-9]\d|20[0-2]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[-_]WA"
     )
 
+    def haversine_km(lat1, lon1, lat2, lon2):
+        if None in (lat1, lon1, lat2, lon2):
+            return 999999.0
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        return 6371.0 * 2 * math.asin(math.sqrt(math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2))
+
+    # Preload Gregor's ground truth daily locations from segments in timeline_viewer.db
+    gregor_locs_by_date = {}
+    if os.path.exists(TV_DB_PATH):
+        con_tv_read = sqlite3.connect(TV_DB_PATH)
+        cur_tv_read = con_tv_read.cursor()
+        for d, s_lat, s_lon in cur_tv_read.execute("SELECT date, latitude, longitude FROM segments WHERE latitude IS NOT NULL AND longitude IS NOT NULL"):
+            if d not in gregor_locs_by_date:
+                gregor_locs_by_date[d] = []
+            gregor_locs_by_date[d].append((s_lat, s_lon))
+        con_tv_read.close()
+
     print("Reading photos from photos_vault.db...")
     rows = cur_cos.execute("""
         SELECT sha256, filename, preview_path, timestamp_utc, timezone_offset, formatted_date,
                latitude, longitude, place_id, place_name, address, city, country, people, face_count,
-               location_source
+               location_source, is_partner, camera_model
         FROM media_items
         WHERE preview_path IS NOT NULL
     """).fetchall()
     print(f"Total media items with previews: {len(rows)}")
 
+    # Pre-pass: also gather Gregor's own camera photo locations (Gregor's photos trump)
+    for r in rows:
+        sha, fn, prev, ts, tz, fd, lat, lon, pid, pname, addr, city, country, people, fcnt, loc_source, is_p, cam = r
+        if is_p == 0 and cam != "Pixel 6" and lat is not None and lon is not None:
+            ld_candidate = None
+            if fn:
+                m_cam = camera_pat.match(fn)
+                if m_cam:
+                    y, mo, d = map(int, m_cam.groups()[:3])
+                    ld_candidate = f"{y:04d}-{mo:02d}-{d:02d}"
+            if ld_candidate:
+                if ld_candidate not in gregor_locs_by_date:
+                    gregor_locs_by_date[ld_candidate] = []
+                gregor_locs_by_date[ld_candidate].append((lat, lon))
+
     batch = []
     camera_ts_count = 0
     vault_ts_count = 0
+    partner_discarded_count = 0
+    partner_kept_count = 0
 
     for r in rows:
-        sha, fn, prev, ts, tz, fd, lat, lon, pid, pname, addr, city, country, people, fcnt, loc_source = r
+        sha, fn, prev, ts, tz, fd, lat, lon, pid, pname, addr, city, country, people, fcnt, loc_source, is_p, cam = r
         offset = parse_tz(tz)
         true_ts = None
         ld = None
@@ -98,8 +133,28 @@ def main():
             ld = None
             true_ts = None
 
+        # Identify partner photos (partner sharing flag or Jessica's Pixel 6 from 2023 onwards)
+        is_partner_photo = bool((is_p == 1) or (cam == "Pixel 6" and (ld or "") >= "2023-01-01"))
+
+        # Enforce partner colocation: discard partner photos when Jessica was far away from Gregor
+        if is_partner_photo and ld and ld in gregor_locs_by_date:
+            g_locs = gregor_locs_by_date[ld]
+            if lat is not None and lon is not None:
+                min_d = min(haversine_km(lat, lon, g_lat, g_lon) for g_lat, g_lon in g_locs)
+                if min_d > 50.0:
+                    # Non-colocated: partner was in a different city or continent; discard!
+                    partner_discarded_count += 1
+                    continue
+                else:
+                    partner_kept_count += 1
+            else:
+                # Non-GPS partner photo on a day Gregor has verified GPS elsewhere: discard to prevent false co-presence
+                partner_discarded_count += 1
+                continue
+
         batch.append((
-            sha, fn, prev, true_ts, tz, ld, lat, lon, pid, pname, addr, city, country, people, fcnt or 0
+            sha, fn, prev, true_ts, tz, ld, lat, lon, pid, pname, addr, city, country, people, fcnt or 0,
+            1 if is_partner_photo else 0
         ))
 
     con_tv = sqlite3.connect(TV_DB_PATH)
@@ -123,7 +178,8 @@ def main():
             city TEXT,
             country TEXT,
             people TEXT,
-            face_count INTEGER DEFAULT 0
+            face_count INTEGER DEFAULT 0,
+            is_partner INTEGER DEFAULT 0
         );
     """)
 
@@ -131,8 +187,9 @@ def main():
     cur_tv.executemany("""
         INSERT INTO photos (
             sha256, filename, preview_path, timestamp_utc, timezone_offset, local_date,
-            latitude, longitude, place_id, place_name, address, city, country, people, face_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            latitude, longitude, place_id, place_name, address, city, country, people, face_count,
+            is_partner
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     """, batch)
 
     print("Building indexes on photos table...")
@@ -140,6 +197,7 @@ def main():
     cur_tv.execute("CREATE INDEX IF NOT EXISTS idx_photos_timestamp_utc ON photos(timestamp_utc);")
     cur_tv.execute("CREATE INDEX IF NOT EXISTS idx_photos_place_id ON photos(place_id);")
     cur_tv.execute("CREATE INDEX IF NOT EXISTS idx_photos_coords ON photos(latitude, longitude);")
+    cur_tv.execute("CREATE INDEX IF NOT EXISTS idx_photos_partner ON photos(is_partner);")
     con_tv.commit()
     t1 = time.time()
 
@@ -147,7 +205,7 @@ def main():
     print(f"  Inserted: {len(batch)} photos")
     print(f"  Exact camera timestamps: {camera_ts_count}")
     print(f"  Vault timestamps: {vault_ts_count}")
-
+    print(f"  Partner photos discarded (non-colocated > 50km): {partner_discarded_count}")
     # Check stats
     res = cur_tv.execute("""
         SELECT COUNT(*), COUNT(timestamp_utc), COUNT(local_date),

@@ -1,27 +1,34 @@
 {
-  "goal": "Enforce strict spatial proximity cutoff for visit photo attachments and eliminate synthetic circular timeline coordinates",
-  "active_step_id": 2,
+  "goal": "Enforce colocation validation to discard non-colocated partner photos and protect memories/timeline everywhere",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Enforce physical proximity check (dist <= 300m or same place_id) in api/routes/timeline.py",
+      "description": "Implement colocation filter in scripts/reindex_photos_clean.py to discard non-colocated partner photos (>50km from Gregor's ground truth)",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Purge circular synthetic timeline_visit coordinates and parse WhatsApp filename dates in scripts/reindex_photos_clean.py",
+      "description": "Implement colocation filter in /Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py and regenerate affected summaries",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Verify API contracts, regression tests, and restart service",
+      "description": "Enforce timeline location ground-truth validation in enrichment/import_high_quality_notes.py and re-ingest clean notes into timeline_viewer.db",
+      "status": "completed"
+    },
+    {
+      "id": 4,
+      "description": "Verify end-to-end API, regression test suite, and verify 2026-07-18 has zero Lincolnwood memories/photos",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "api/routes/timeline.py",
-      "scripts/reindex_photos_clean.py"
+      "scripts/reindex_photos_clean.py",
+      "/Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py",
+      "enrichment/import_high_quality_notes.py",
+      "api/routes/timeline.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",

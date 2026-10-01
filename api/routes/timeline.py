@@ -327,6 +327,20 @@ def get_day(req: Request) -> Response:
         elif not isinstance(raw_p, list):
             p["people"] = []
 
+    # Enforce colocation guard: discard non-colocated photos if day has verified segments
+    if segments:
+        seg_coords = [(s["latitude"], s["longitude"]) for s in segments if s.get("latitude") is not None and s.get("longitude") is not None]
+        if seg_coords:
+            clean_day_photos = []
+            for p in day_photos:
+                if p.get("latitude") is not None and p.get("longitude") is not None:
+                    min_d_km = min(haversine_distance(p["latitude"], p["longitude"], s_lat, s_lng) / 1000.0 for s_lat, s_lng in seg_coords)
+                    if min_d_km > 50.0:
+                        # Non-colocated photo (e.g. partner on another continent): discard
+                        continue
+                clean_day_photos.append(p)
+            day_photos = clean_day_photos
+
     # Also collect candidate photos for overnight segments spanning across midnight
     candidate_photos = list(day_photos)
     if segments:
