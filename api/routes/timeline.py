@@ -375,6 +375,14 @@ def get_day(req: Request) -> Response:
             score = 100.0
 
             if s["segment_type"] == "visit":
+                # Spatial consistency check: if both visit and photo have coordinates, enforce physical proximity
+                if s.get("latitude") is not None and p.get("latitude") is not None:
+                    dist = haversine_distance(s["latitude"], s["longitude"], p["latitude"], p["longitude"])
+                    same_place = bool(s.get("place_id") and p.get("place_id") and s["place_id"] == p["place_id"])
+                    if dist > 300.0 and not same_place:
+                        # Photo was taken outside this visit's physical boundary (> 300m away)
+                        continue
+
                 score += 10.0  # Preference for visit destinations over transit activities at boundary
                 if s.get("place_id") and p.get("place_id") and s["place_id"] == p["place_id"]:
                     score += 50.0

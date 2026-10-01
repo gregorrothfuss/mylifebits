@@ -35,11 +35,15 @@ def main():
     camera_pat = re.compile(
         r"^(?:PXL_|IMG_|MVIMG_|VID_|Screenshot_|WP[-_])(19[7-9]\d|20[0-2]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[-_]([01]\d|2[0-3])([0-5]\d)([0-5]\d)"
     )
+    wa_pat = re.compile(
+        r"^(?:IMG-)?(19[7-9]\d|20[0-2]\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[-_]WA"
+    )
 
     print("Reading photos from photos_vault.db...")
     rows = cur_cos.execute("""
         SELECT sha256, filename, preview_path, timestamp_utc, timezone_offset, formatted_date,
-               latitude, longitude, place_id, place_name, address, city, country, people, face_count
+               latitude, longitude, place_id, place_name, address, city, country, people, face_count,
+               location_source
         FROM media_items
         WHERE preview_path IS NOT NULL
     """).fetchall()
@@ -50,10 +54,14 @@ def main():
     vault_ts_count = 0
 
     for r in rows:
-        sha, fn, prev, ts, tz, fd, lat, lon, pid, pname, addr, city, country, people, fcnt = r
+        sha, fn, prev, ts, tz, fd, lat, lon, pid, pname, addr, city, country, people, fcnt, loc_source = r
         offset = parse_tz(tz)
         true_ts = None
         ld = None
+
+        # Purge synthetic circular locations derived from timeline visits/activities
+        if loc_source in ("timeline_visit", "timeline_activity"):
+            lat, lon, pid, pname, addr = None, None, None, None, None
 
         # 1. Exact camera filename match (deterministic local time)
         if fn:
@@ -67,9 +75,16 @@ def main():
                     camera_ts_count += 1
                 except Exception:
                     pass
+            else:
+                m_wa = wa_pat.match(fn)
+                if m_wa:
+                    y, mo, d = map(int, m_wa.groups())
+                    ld = f"{y:04d}-{mo:02d}-{d:02d}"
+                    # WhatsApp media has no second-level capture time; keep true_ts None so it is not falsely placed into a visit
+                    true_ts = None
 
-        # 2. Authentic vault timestamp_utc fallback
-        if true_ts is None and ts is not None and 0 <= ts <= 2500000000:
+        # 2. Authentic vault timestamp_utc fallback (only if date not already extracted)
+        if true_ts is None and ld is None and ts is not None and 0 <= ts <= 2500000000:
             true_ts = int(ts)
             try:
                 local_dt = datetime.datetime.fromtimestamp(true_ts + offset, datetime.timezone.utc)

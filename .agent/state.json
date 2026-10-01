@@ -1,28 +1,27 @@
 {
-  "goal": "Structurally eliminate spatial-temporal cross-contamination and time-blind meal hallucination across photo session summaries and timeline memory notes",
-  "active_step_id": 3,
+  "goal": "Enforce strict spatial proximity cutoff for visit photo attachments and eliminate synthetic circular timeline coordinates",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Implement session-aware spatiotemporal clustering and time-of-day meal resolution in photo summary generation (/Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py) to bind themes strictly to their true session locations",
+      "description": "Enforce physical proximity check (dist <= 300m or same place_id) in api/routes/timeline.py",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Enforce session-grounded validation and meal temporal bounds in enrichment/import_high_quality_notes.py, re-ingesting clean notes into timeline_viewer.db",
+      "description": "Purge circular synthetic timeline_visit coordinates and parse WhatsApp filename dates in scripts/reindex_photos_clean.py",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Verify end-to-end API contracts, regression test suite, and verify July 28, 2026 renders verified Konstanz lunch without Winterthur dinner hallucination",
+      "description": "Verify API contracts, regression tests, and restart service",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "/Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py",
-      "enrichment/import_high_quality_notes.py",
-      "timeline_viewer.db"
+      "api/routes/timeline.py",
+      "scripts/reindex_photos_clean.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py",
@@ -30,8 +29,8 @@
       "tests/test_e2e_server.py"
     ],
     "scratch_logs": [
-      ".agent/scratch/audit_res.log",
-      ".agent/scratch/unittests.log"
+      ".agent/scratch/contracts.log",
+      ".agent/scratch/test.log"
     ]
   }
 }
