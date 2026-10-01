@@ -2619,191 +2619,153 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   let currentFixesFilter = "PENDING";
+  let currentFixesList = [];
+  let currentSelectedFixId = null;
+  let fixDetailMap = null;
 
-  // Load Fix Proposals
+  // Global Keyboard Navigation for Fixes Split-Pane
+  document.addEventListener("keydown", (e) => {
+    const fixesTab = document.getElementById("tab-fixes");
+    if (!fixesTab || !fixesTab.classList.contains("active")) return;
+    // Skip if typing in an input or textarea
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+
+    if (!currentFixesList || currentFixesList.length === 0) return;
+    const curIdx = currentFixesList.findIndex(f => f.id === currentSelectedFixId);
+
+    if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
+      e.preventDefault();
+      const nextIdx = curIdx < currentFixesList.length - 1 ? curIdx + 1 : 0;
+      selectFixItem(currentFixesList[nextIdx].id);
+      scrollFixItemIntoView(currentFixesList[nextIdx].id);
+    } else if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
+      e.preventDefault();
+      const prevIdx = curIdx > 0 ? curIdx - 1 : currentFixesList.length - 1;
+      selectFixItem(currentFixesList[prevIdx].id);
+      scrollFixItemIntoView(currentFixesList[prevIdx].id);
+    } else if (e.key === "a" || e.key === "A") {
+      e.preventDefault();
+      document.getElementById("btn-fix-accept")?.click();
+    } else if (e.key === "r" || e.key === "R" || e.key === "x" || e.key === "X") {
+      e.preventDefault();
+      document.getElementById("btn-fix-reject")?.click();
+    } else if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      document.getElementById("btn-fix-quick-edit")?.click();
+    }
+  });
+
+  function scrollFixItemIntoView(fixId) {
+    const el = document.getElementById(`fix-queue-item-${fixId}`);
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+
+  // Load Fix Proposals into Split-Pane
   async function loadFixProposals() {
     const list = document.getElementById("fixes-list-container");
-    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading fix proposals...</div>';
+    const toolbar = document.getElementById("fixes-toolbar-container");
+    const countBadge = document.getElementById("fixes-queue-count");
+    const detailPane = document.getElementById("fixes-detail-pane");
+
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading queue...</div>';
 
     try {
       const res = await fetch(`/api/fixes?status=${encodeURIComponent(currentFixesFilter)}`);
       const data = await res.json();
       if (data.status === "SUCCESS") {
-        const fixes = data.fixes || [];
+        currentFixesList = data.fixes || [];
         const counts = data.counts || { pending: 0, accepted: 0, rejected: 0, total: 0 };
-        const badge = document.getElementById("badge-fixes");
-        if (badge) badge.textContent = (counts.pending || 0).toLocaleString();
 
-        const pendingCount = counts.pending || 0;
-        const airportCount = fixes.filter(f => f.status === "PENDING" && (f.proposed_action === "INSERT_ORIGIN_AIRPORT" || f.proposed_action === "INSERT_DESTINATION_AIRPORT")).length;
-        const fitCount = fixes.filter(f => f.status === "PENDING" && f.proposed_action === "SYNTHESIZE_FIT_ACTIVITY").length;
-        const dwellCount = fixes.filter(f => f.status === "PENDING" && f.proposed_action === "EXTEND_STATIONARY_DWELL").length;
-        const breadcrumbCount = fixes.filter(f => f.status === "PENDING" && f.proposed_action === "RECONSTRUCT_FROM_BREADCRUMBS").length;
-        const hiatusCount = fixes.filter(f => f.status === "PENDING" && f.proposed_action === "DOCUMENTED_HIATUS").length;
+        const globalBadge = document.getElementById("badge-fixes");
+        if (globalBadge) globalBadge.textContent = (counts.pending || 0).toLocaleString();
+        if (countBadge) countBadge.textContent = `${currentFixesList.length} items`;
 
-        list.innerHTML = `
-          <!-- Status Filter Tabs & Purge Button Toolbar -->
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
-            <div class="filter-pills" style="display:flex;gap:6px;">
-              <button class="pill-btn ${currentFixesFilter === 'PENDING' ? 'active' : ''}" data-filter="PENDING" style="padding:6px 14px;font-size:12px;border-radius:16px;border:1px solid var(--border-color);background:${currentFixesFilter === 'PENDING' ? 'var(--accent-blue)' : 'var(--bg-card)'};color:${currentFixesFilter === 'PENDING' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                <i class="fa-solid fa-clock"></i> Pending (${counts.pending})
-              </button>
-              <button class="pill-btn ${currentFixesFilter === 'ALL' ? 'active' : ''}" data-filter="ALL" style="padding:6px 14px;font-size:12px;border-radius:16px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ALL' ? 'var(--accent-blue)' : 'var(--bg-card)'};color:${currentFixesFilter === 'ALL' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                All History (${counts.total})
-              </button>
-              <button class="pill-btn ${currentFixesFilter === 'ACCEPTED' ? 'active' : ''}" data-filter="ACCEPTED" style="padding:6px 14px;font-size:12px;border-radius:16px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ACCEPTED' ? 'var(--accent-green)' : 'var(--bg-card)'};color:${currentFixesFilter === 'ACCEPTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                <i class="fa-solid fa-check"></i> Accepted (${counts.accepted})
-              </button>
-              <button class="pill-btn ${currentFixesFilter === 'REJECTED' ? 'active' : ''}" data-filter="REJECTED" style="padding:6px 14px;font-size:12px;border-radius:16px;border:1px solid var(--border-color);background:${currentFixesFilter === 'REJECTED' ? 'var(--accent-red)' : 'var(--bg-card)'};color:${currentFixesFilter === 'REJECTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                <i class="fa-solid fa-xmark"></i> Rejected (${counts.rejected})
-              </button>
-            </div>
-            ${(counts.accepted > 0 || counts.rejected > 0) ? `
-              <button id="btn-purge-fixes" class="btn-secondary" style="padding:6px 12px;font-size:12px;color:var(--accent-red);border-radius:16px;cursor:pointer;" title="Permanently delete accepted and rejected proposal records from history">
-                <i class="fa-solid fa-trash-can"></i> Clear Resolved History (${counts.accepted + counts.rejected})
-              </button>
-            ` : ''}
-          </div>
-
-          ${(currentFixesFilter === 'PENDING' && pendingCount > 0) ? `
-            <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:16px 20px;margin-bottom:16px;box-shadow:var(--shadow-sm);">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <div>
-                  <strong style="font-size:14px;color:var(--text-main);"><i class="fa-solid fa-layer-group" style="color:var(--accent-blue);"></i> Batch Proposal Actions</strong>
-                  <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">(${pendingCount} pending proposals)</span>
-                </div>
+        // Render Toolbar Filter Pills
+        if (toolbar) {
+          toolbar.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <div class="filter-pills" style="display:flex;gap:4px;">
+                <button class="pill-btn ${currentFixesFilter === 'PENDING' ? 'active' : ''}" data-filter="PENDING" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'PENDING' ? 'var(--accent-blue)' : 'var(--bg-card)'};color:${currentFixesFilter === 'PENDING' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                  Pending (${counts.pending})
+                </button>
+                <button class="pill-btn ${currentFixesFilter === 'ALL' ? 'active' : ''}" data-filter="ALL" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ALL' ? 'var(--accent-blue)' : 'var(--bg-card)'};color:${currentFixesFilter === 'ALL' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                  All (${counts.total})
+                </button>
+                <button class="pill-btn ${currentFixesFilter === 'ACCEPTED' ? 'active' : ''}" data-filter="ACCEPTED" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ACCEPTED' ? 'var(--accent-green)' : 'var(--bg-card)'};color:${currentFixesFilter === 'ACCEPTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                  Accepted (${counts.accepted})
+                </button>
+                <button class="pill-btn ${currentFixesFilter === 'REJECTED' ? 'active' : ''}" data-filter="REJECTED" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'REJECTED' ? 'var(--accent-red)' : 'var(--bg-card)'};color:${currentFixesFilter === 'REJECTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                  Rejected (${counts.rejected})
+                </button>
               </div>
-              <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                ${airportCount > 0 ? `
-                  <button class="btn-primary batch-airport-btn" style="background:#1a73e8;font-size:12px;padding:7px 14px;cursor:pointer;">
-                    <i class="fa-solid fa-plane-arrival"></i> Accept All ${airportCount} Airport Continuity Patches
-                  </button>
-                ` : ''}
-                ${fitCount > 0 ? `
-                  <button class="btn-primary batch-fit-btn" style="background:#f59e0b;font-size:12px;padding:7px 14px;cursor:pointer;">
-                    <i class="fa-solid fa-person-running"></i> Accept All ${fitCount} Google Fit Workouts
-                  </button>
-                ` : ''}
-                ${dwellCount > 0 ? `
-                  <button class="btn-primary batch-dwell-btn" style="background:#10b981;font-size:12px;padding:7px 14px;cursor:pointer;">
-                    <i class="fa-solid fa-house-user"></i> Accept All ${dwellCount} Home/Dwell Extensions
-                  </button>
-                ` : ''}
-                ${breadcrumbCount > 0 ? `
-                  <button class="btn-primary batch-bc-btn" style="background:#8b5cf6;font-size:12px;padding:7px 14px;cursor:pointer;">
-                    <i class="fa-solid fa-satellite-dish"></i> Accept All ${breadcrumbCount} Breadcrumb Recoveries
-                  </button>
-                ` : ''}
-                ${hiatusCount > 0 ? `
-                  <button class="btn-primary batch-hiatus-btn" style="background:#64748b;font-size:12px;padding:7px 14px;cursor:pointer;">
-                    <i class="fa-solid fa-power-off"></i> Accept All ${hiatusCount} Hiatus Records
-                  </button>
-                ` : ''}
-              </div>
-            </div>
-          ` : ''}
-
-          <div id="fixes-cards-wrapper"></div>
-        `;
-
-        // Bind filter pill buttons
-        list.querySelectorAll(".filter-pills .pill-btn").forEach(btn => {
-          btn.addEventListener("click", () => {
-            currentFixesFilter = btn.dataset.filter;
-            loadFixProposals();
-          });
-        });
-
-        // Bind Purge button
-        list.querySelector("#btn-purge-fixes")?.addEventListener("click", async () => {
-          if (confirm("Permanently clear all applied and rejected fix records from history? Pending proposals will remain untouched.")) {
-            try {
-              const pRes = await fetch("/api/fixes/purge", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ type: "RESOLVED" })
-              });
-              const pData = await pRes.json();
-              if (pData.status === "SUCCESS") {
-                loadFixProposals();
-              }
-            } catch (err) {
-              alert("Error clearing history: " + err.message);
-            }
-          }
-        });
-
-        // Batch Action handler
-        async function handleBatchAction(actionType, btnEl, originalHtml) {
-          btnEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Applying batch...';
-          btnEl.disabled = true;
-          try {
-            const bRes = await fetch("/api/fixes/batch-apply", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: actionType })
-            });
-            const bData = await bRes.json();
-            if (bData.status === "SUCCESS") {
-              alert(`Successfully applied ${bData.applied_count} fix proposals!`);
-              loadFixProposals();
-              loadOverview();
-            } else {
-              alert("Batch apply failed.");
-              btnEl.innerHTML = originalHtml;
-              btnEl.disabled = false;
-            }
-          } catch (e) {
-            alert("Error in batch apply: " + e.message);
-            btnEl.innerHTML = originalHtml;
-            btnEl.disabled = false;
-          }
-        }
-
-        const airportBtn = list.querySelector(".batch-airport-btn");
-        if (airportBtn) airportBtn.addEventListener("click", () => handleBatchAction("INSERT_AIRPORT", airportBtn, airportBtn.innerHTML));
-        const fitBtn = list.querySelector(".batch-fit-btn");
-        if (fitBtn) fitBtn.addEventListener("click", () => handleBatchAction("SYNTHESIZE_FIT_ACTIVITY", fitBtn, fitBtn.innerHTML));
-        const dwellBtn = list.querySelector(".batch-dwell-btn");
-        if (dwellBtn) dwellBtn.addEventListener("click", () => handleBatchAction("EXTEND_STATIONARY_DWELL", dwellBtn, dwellBtn.innerHTML));
-        const bcBtn = list.querySelector(".batch-bc-btn");
-        if (bcBtn) bcBtn.addEventListener("click", () => handleBatchAction("RECONSTRUCT_FROM_BREADCRUMBS", bcBtn, bcBtn.innerHTML));
-        const hiatusBtn = list.querySelector(".batch-hiatus-btn");
-        if (hiatusBtn) hiatusBtn.addEventListener("click", () => handleBatchAction("DOCUMENTED_HIATUS", hiatusBtn, hiatusBtn.innerHTML));
-
-        const cardsWrapper = list.querySelector("#fixes-cards-wrapper");
-        if (fixes.length === 0) {
-          cardsWrapper.innerHTML = `
-            <div style="text-align:center;padding:40px;color:var(--text-muted);background:var(--bg-card);border:1px dashed var(--border-color);border-radius:12px;">
-              <i class="fa-solid fa-circle-check" style="color:var(--accent-green);font-size:28px;margin-bottom:10px;display:block;"></i>
-              <strong style="font-size:14px;color:var(--text-main);">No ${currentFixesFilter.toLowerCase()} proposals.</strong>
-              <p style="font-size:12px;margin-top:4px;">Timeline is fully synchronized.</p>
+              ${(counts.accepted > 0 || counts.rejected > 0) ? `
+                <button id="btn-purge-fixes" class="btn-secondary" style="padding:4px 8px;font-size:10px;color:var(--accent-red);border-radius:12px;cursor:pointer;" title="Clear resolved records from history">
+                  <i class="fa-solid fa-trash-can"></i> Purge Resolved
+                </button>
+              ` : ''}
             </div>
           `;
+
+          toolbar.querySelectorAll(".filter-pills .pill-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+              currentFixesFilter = btn.dataset.filter;
+              loadFixProposals();
+            });
+          });
+
+          toolbar.querySelector("#btn-purge-fixes")?.addEventListener("click", async () => {
+            if (confirm("Permanently clear applied and rejected fix records from history?")) {
+              try {
+                const pRes = await fetch("/api/fixes/purge", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ type: "RESOLVED" })
+                });
+                const pData = await pRes.json();
+                if (pData.status === "SUCCESS") {
+                  loadFixProposals();
+                }
+              } catch (err) {
+                alert("Error clearing history: " + err.message);
+              }
+            }
+          });
+        }
+
+        // Render List Queue
+        if (currentFixesList.length === 0) {
+          list.innerHTML = `
+            <div style="text-align:center;padding:50px 20px;color:var(--text-muted);">
+              <i class="fa-solid fa-circle-check" style="color:var(--accent-green);font-size:32px;margin-bottom:12px;display:block;"></i>
+              <strong style="font-size:14px;color:var(--text-main);">Queue is empty</strong>
+              <p style="font-size:12px;margin-top:6px;color:var(--text-muted);">Zero ${currentFixesFilter.toLowerCase()} fix proposals.</p>
+            </div>
+          `;
+          if (detailPane) {
+            detailPane.innerHTML = `
+              <div class="fixes-detail-empty">
+                <i class="fa-solid fa-circle-check" style="font-size:40px;color:var(--accent-green);margin-bottom:14px;"></i>
+                <h3 style="color:var(--text-main);font-size:16px;">All Caught Up</h3>
+                <p style="color:var(--text-muted);font-size:13px;max-width:300px;">No pending proposals require review at this time.</p>
+              </div>
+            `;
+          }
           return;
         }
 
-        fixes.forEach(f => {
-          const isAccepted = f.status === "ACCEPTED";
-          const isRejected = f.status === "REJECTED";
-          const card = document.createElement("div");
-          card.id = `fix-card-${f.id}`;
-          card.className = `item-card card ${isAccepted ? 'fix-accepted' : ''}`;
-          card.style.display = "flex";
-          card.style.justifyContent = "space-between";
-          card.style.alignItems = "center";
-          card.style.padding = "14px 18px";
-          card.style.marginBottom = "10px";
-          card.style.transition = "all 0.25s ease";
+        list.innerHTML = "";
+        currentFixesList.forEach((f, idx) => {
+          const item = document.createElement("div");
+          item.id = `fix-queue-item-${f.id}`;
+          item.className = `fix-queue-item ${f.id === currentSelectedFixId ? 'active' : ''}`;
 
           let icon = "fa-wand-magic-sparkles";
           let iconBg = "#e8f0fe";
           let iconColor = "#1a73e8";
-          let isDupe = f.proposed_action === "MERGE_DUPLICATE_PLACES";
-          if (f.proposed_action === "INSERT_ORIGIN_AIRPORT") {
+          if (f.proposed_action === "INSERT_ORIGIN_AIRPORT" || f.proposed_action === "INSERT_DESTINATION_AIRPORT") {
             icon = "fa-plane-departure"; iconBg = "#e8f0fe"; iconColor = "#1a73e8";
-          } else if (f.proposed_action === "INSERT_DESTINATION_AIRPORT") {
-            icon = "fa-plane-arrival"; iconBg = "#e6f4ea"; iconColor = "#1e8e3e";
           } else if (f.proposed_action === "SYNTHESIZE_FIT_ACTIVITY") {
             icon = "fa-person-running"; iconBg = "#fef7e0"; iconColor = "#f59e0b";
           } else if (f.proposed_action === "RECONSTRUCT_FROM_BREADCRUMBS") {
@@ -2816,160 +2778,393 @@ document.addEventListener("DOMContentLoaded", () => {
             icon = "fa-power-off"; iconBg = "#f1f3f4"; iconColor = "#5f6368";
           } else if (f.proposed_action === "MERGE_DUPLICATE_PLACES") {
             icon = "fa-code-compare"; iconBg = "#ede9fe"; iconColor = "#7c3aed";
-          } else if (f.proposed_action === "RESOLVE_AUTHENTIC_PLACE_ID") {
-            icon = "fa-location-dot"; iconBg = "#fee2e2"; iconColor = "#ef4444";
-          } else if (f.proposed_action === "GEOCODE_MISSING_COORDINATES") {
-            icon = "fa-crosshairs"; iconBg = "#fef3c7"; iconColor = "#d97706";
           }
 
-          let isPlaceFix = f.proposed_action === "RESOLVE_AUTHENTIC_PLACE_ID" || f.proposed_action === "GEOCODE_MISSING_COORDINATES";
-          let isSavedPlace = f.date === "Saved Bookmark (No Visits)" || !f.date || f.date.includes("No visits");
+          const actionTitle = f.proposed_action ? f.proposed_action.replace(/_/g, ' ') : 'Fix Proposal';
+          const confPct = Math.round((f.confidence || 0.8) * 100);
 
-          card.innerHTML = `
-            <div style="display:flex;gap:14px;align-items:center;flex:1;">
-              <div class="item-icon" style="background:${iconBg};color:${iconColor};width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;">
-                <i class="fa-solid ${icon}" style="color:${iconColor} !important;"></i>
+          item.innerHTML = `
+            <div class="item-icon" style="background:${iconBg};color:${iconColor};">
+              <i class="fa-solid ${icon}"></i>
+            </div>
+            <div class="item-content">
+              <div class="item-header">
+                <span class="item-action-title" title="${escapeHtml(actionTitle)}">${actionTitle}</span>
+                <span class="tag-badge" style="font-size:9px;font-family:var(--font-mono);">${f.date || '--'}</span>
               </div>
-              <div class="item-body" style="flex:1;">
-                <div class="item-title-row" style="display:flex;align-items:center;gap:8px;">
-                  <span class="item-title" style="font-weight:700;font-size:14px;color:var(--text-main);">${f.proposed_action.replace(/_/g, ' ')}</span>
-                  <span class="tag-badge ${isSavedPlace ? 'warning' : ''}" style="font-size:10px;font-family:var(--font-mono);">${isSavedPlace ? '<i class="fa-solid fa-bookmark"></i> Saved Bookmark' : f.date}</span>
-                </div>
-                <div class="item-address" style="margin:4px 0;font-size:12px;color:var(--text-muted);">${escapeHtml(f.reasoning)}</div>
-                <div class="item-tags" style="display:flex;gap:6px;margin-top:4px;">
-                  <span class="tag-badge ${isAccepted ? 'snapped' : (isRejected ? 'danger' : '')}" id="status-badge-${f.id}" style="font-size:10px;font-weight:700;">Status: ${f.status}</span>
-                </div>
+              <div class="item-reasoning">${escapeHtml(f.reasoning || '')}</div>
+              <div class="item-meta">
+                <span class="tag-badge ${confPct >= 90 ? 'snapped' : (confPct >= 75 ? 'warning' : '')}" style="font-size:9px;font-weight:700;">${confPct}% Conf</span>
+                <span class="tag-badge" style="font-size:9px;color:var(--text-muted);">${f.source || 'diagnostics'}</span>
               </div>
             </div>
-            <div class="card-actions" style="display:flex;gap:8px;margin-left:16px;">
-              ${isDupe ? `
-                <button class="btn-primary compare-dupe-btn" data-id="${f.id}" style="background:#7c3aed;padding:6px 12px;font-size:12px;cursor:pointer;" title="View duplicate places side-by-side with map">
-                  <i class="fa-solid fa-code-compare"></i> Side-by-Side & Map
-                </button>
-              ` : (isPlaceFix && isSavedPlace) ? `
-                <button class="btn-primary edit-place-fix-btn" data-id="${f.id}" style="background:#d97706;padding:6px 12px;font-size:12px;cursor:pointer;" title="Manually assign Place ID, Address, and Coordinates">
-                  <i class="fa-solid fa-location-pen"></i> Assign Place ID & Coords
-                </button>
-              ` : `
-                <button class="btn-secondary jump-date-btn" style="padding:6px 12px;font-size:12px;cursor:pointer;" title="View day in timeline">
-                  <i class="fa-solid fa-eye"></i> View Day
-                </button>
-              `}
-              ${!isAccepted && !isRejected ? `
-                ${isPlaceFix ? `
-                  <button class="btn-secondary edit-place-fix-btn" data-id="${f.id}" style="padding:6px 12px;font-size:12px;cursor:pointer;" title="Manually edit Place ID and coordinates">
-                    <i class="fa-solid fa-pen-to-square"></i> Edit Place ID
-                  </button>
-                ` : `
-                  <button class="btn-secondary edit-fix-btn" data-id="${f.id}" style="padding:6px 12px;font-size:12px;cursor:pointer;" title="Edit and customize proposal parameters">
-                    <i class="fa-solid fa-pen-to-square"></i> Edit
-                  </button>
-                `}
-                <button class="btn-primary apply-fix-btn" data-id="${f.id}" style="padding:6px 12px;font-size:12px;cursor:pointer;background:var(--accent-green);" title="Accept and apply proposal">
-                  <i class="fa-solid fa-check"></i> Accept Fix
-                </button>
-                <button class="btn-secondary reject-fix-btn" data-id="${f.id}" style="padding:6px 10px;font-size:12px;cursor:pointer;color:var(--accent-red);" title="Dismiss proposal">
-                  <i class="fa-solid fa-xmark"></i>
-                </button>
-              ` : ''}
-            </div>
+            ${f.status === 'PENDING' ? `
+              <div class="quick-actions">
+                <button class="quick-btn accept" title="Accept (A)" data-id="${f.id}"><i class="fa-solid fa-check"></i></button>
+                <button class="quick-btn reject" title="Reject (R)" data-id="${f.id}"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+            ` : ''}
           `;
 
-          // Event Listeners
-          card.querySelector(".compare-dupe-btn")?.addEventListener("click", () => {
-            openDuplicateCompareModal(f);
+          item.addEventListener("click", (e) => {
+            if (e.target.closest(".quick-btn")) return;
+            selectFixItem(f.id);
           });
 
-          card.querySelectorAll(".edit-place-fix-btn")?.forEach(b => {
-            b.addEventListener("click", () => {
-              openEditPlaceModal(f);
-            });
+          item.querySelector(".quick-btn.accept")?.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            await applyFixDirect(f.id);
           });
 
-          card.querySelector(".jump-date-btn")?.addEventListener("click", () => {
-            if (!isSavedPlace) {
-              jumpToTimelineDay(f.date, true);
-            }
+          item.querySelector(".quick-btn.reject")?.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            await rejectFixDirect(f.id);
           });
 
-          card.querySelector(".edit-fix-btn")?.addEventListener("click", () => {
-            openEditProposalModal(null, f);
-          });
-
-          card.querySelector(".apply-fix-btn")?.addEventListener("click", async () => {
-            const btn = card.querySelector(".apply-fix-btn");
-            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
-            btn.disabled = true;
-            try {
-              const applyRes = await fetch("/api/fixes/apply", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ proposal_id: f.id })
-              });
-              const applyData = await applyRes.json();
-              if (applyData.status === "SUCCESS") {
-                if (currentFixesFilter === "PENDING") {
-                  card.style.opacity = "0";
-                  card.style.transform = "translateX(20px)";
-                  setTimeout(() => {
-                    card.remove();
-                    loadFixProposals();
-                  }, 200);
-                } else {
-                  const badge = document.getElementById(`status-badge-${f.id}`);
-                  if (badge) {
-                    badge.textContent = "Status: ACCEPTED";
-                    badge.className = "tag-badge snapped";
-                  }
-                  card.querySelector(".apply-fix-btn")?.remove();
-                  card.querySelector(".reject-fix-btn")?.remove();
-                }
-              } else {
-                alert("Failed to apply fix proposal.");
-                btn.innerHTML = '<i class="fa-solid fa-check"></i> Accept Fix';
-                btn.disabled = false;
-              }
-            } catch (e) {
-              alert("Error applying fix: " + e.message);
-              btn.innerHTML = '<i class="fa-solid fa-check"></i> Accept Fix';
-              btn.disabled = false;
-            }
-          });
-
-          card.querySelector(".reject-fix-btn")?.addEventListener("click", async () => {
-            const rejectRes = await fetch("/api/fixes/reject", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ proposal_id: f.id })
-            });
-            const rejectData = await rejectRes.json();
-            if (rejectData.status === "SUCCESS") {
-              if (currentFixesFilter === "PENDING") {
-                card.style.opacity = "0";
-                card.style.transform = "translateX(-20px)";
-                setTimeout(() => {
-                  card.remove();
-                  loadFixProposals();
-                }, 200);
-              } else {
-                card.style.opacity = "0.5";
-                const badge = document.getElementById(`status-badge-${f.id}`);
-                if (badge) {
-                  badge.textContent = "Status: REJECTED";
-                  badge.className = "tag-badge danger";
-                }
-                card.querySelector(".apply-fix-btn")?.remove();
-                card.querySelector(".reject-fix-btn")?.remove();
-              }
-            }
-          });
-
-          cardsWrapper.appendChild(card);
+          list.appendChild(item);
         });
+
+        // Auto-select first proposal or preserve selection
+        if (!currentSelectedFixId || !currentFixesList.some(f => f.id === currentSelectedFixId)) {
+          currentSelectedFixId = currentFixesList[0].id;
+        }
+        selectFixItem(currentSelectedFixId);
       }
     } catch (e) {
       console.error("Error loading fixes:", e);
-      list.innerHTML = `<div style="text-align:center;padding:40px;color:#ef4444;">Failed to load fix proposals: ${e.message}</div>`;
+      list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--accent-red);">Failed to load fixes: ${e.message}</div>`;
+    }
+  }
+
+  // Select Item and Render Instant Context in Right Pane
+  function selectFixItem(fixId) {
+    currentSelectedFixId = fixId;
+    document.querySelectorAll(".fix-queue-item").forEach(el => el.classList.remove("active"));
+    const activeEl = document.getElementById(`fix-queue-item-${fixId}`);
+    if (activeEl) activeEl.classList.add("active");
+
+    const fix = currentFixesList.find(f => f.id === fixId);
+    if (!fix) return;
+
+    renderFixDetailPane(fix);
+  }
+
+  // Render High-Speed Detail Context Pane
+  async function renderFixDetailPane(f) {
+    const pane = document.getElementById("fixes-detail-pane");
+    if (!pane) return;
+
+    let patchData = {};
+    try {
+      patchData = f.patch_data_json ? (typeof f.patch_data_json === "string" ? JSON.parse(f.patch_data_json) : f.patch_data_json) : {};
+    } catch (_) {
+      patchData = {};
+    }
+
+    const confPct = Math.round((f.confidence || 0.8) * 100);
+    const actionTitle = f.proposed_action ? f.proposed_action.replace(/_/g, ' ') : 'Fix Proposal';
+    const isPending = f.status === "PENDING";
+    const isAccepted = f.status === "ACCEPTED";
+    const isRejected = f.status === "REJECTED";
+
+    pane.innerHTML = `
+      <div class="fixes-detail-card">
+        <!-- Header & Action Buttons -->
+        <div class="fixes-detail-header">
+          <div class="fixes-detail-title-group">
+            <h2>
+              <span>${actionTitle}</span>
+              <span class="tag-badge ${isAccepted ? 'snapped' : (isRejected ? 'danger' : 'warning')}" style="font-size:11px;font-weight:700;">${f.status}</span>
+              <span class="tag-badge ${confPct >= 90 ? 'snapped' : ''}" style="font-size:11px;">${confPct}% Confidence</span>
+            </h2>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px;font-size:13px;color:var(--text-muted);">
+              <span><i class="fa-solid fa-calendar-day" style="color:var(--accent-blue);"></i> <strong>${f.date}</strong></span>
+              <span><i class="fa-solid fa-fingerprint"></i> ID: ${f.id}</span>
+              <span><i class="fa-solid fa-bullseye"></i> Target: ${f.target_type} #${f.target_id}</span>
+              <span><i class="fa-solid fa-robot"></i> Source: ${f.source}</span>
+            </div>
+          </div>
+
+          <div class="fixes-action-btn-group">
+            ${isPending ? `
+              <button id="btn-fix-accept" class="btn-primary" style="background:var(--accent-green);" title="Accept proposal and mutate database (Shortcut: A)">
+                <i class="fa-solid fa-check"></i> Accept Fix <kbd style="margin-left:4px;font-size:10px;background:rgba(255,255,255,0.25);border:none;color:#fff;">A</kbd>
+              </button>
+              <button id="btn-fix-reject" class="btn-secondary" style="color:var(--accent-red);" title="Dismiss proposal (Shortcut: R)">
+                <i class="fa-solid fa-xmark"></i> Reject <kbd style="margin-left:4px;font-size:10px;border-color:var(--border-color);">R</kbd>
+              </button>
+            ` : ''}
+            <button id="btn-fix-quick-edit" class="btn-secondary" title="Customize parameters in-place (Shortcut: E)">
+              <i class="fa-solid fa-pen-to-square"></i> Edit <kbd style="margin-left:4px;font-size:10px;border-color:var(--border-color);">E</kbd>
+            </button>
+            <button id="btn-fix-view-day" class="btn-secondary" title="Open full interactive day view in Timeline tab">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Day
+            </button>
+          </div>
+        </div>
+
+        <!-- In-Pane Quick Edit Drawer (Hidden by default) -->
+        <div id="fixes-in-pane-edit" style="display:none;background:var(--bg-main);border:1px solid var(--border-color);border-radius:8px;padding:14px;margin-bottom:16px;">
+          <h4 style="margin:0 0 10px;font-size:13px;color:var(--text-main);"><i class="fa-solid fa-sliders"></i> Quick Edit Proposal Parameters</h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Target Venue / Place Name</label>
+              <input type="text" id="quick-edit-place" class="form-input" style="width:100%;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border-color);" value="${escapeHtml(patchData.resolved_poi_name || patchData.target_place || '')}">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Category / Taxonomy</label>
+              <input type="text" id="quick-edit-cat" class="form-input" style="width:100%;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border-color);" value="${escapeHtml(patchData.category || 'Other / POI')}">
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+            <button id="btn-quick-edit-cancel" class="btn-secondary" style="padding:6px 12px;font-size:12px;">Cancel</button>
+            <button id="btn-quick-edit-save" class="btn-primary" style="padding:6px 14px;font-size:12px;background:var(--accent-blue);">Save & Apply</button>
+          </div>
+        </div>
+
+        <!-- Rationale & Patch Metadata -->
+        <div style="background:var(--bg-main);border:1px solid var(--border-subtle);border-radius:8px;padding:14px 16px;margin-bottom:16px;">
+          <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);display:block;margin-bottom:6px;">Automated Rationale & Evidence</strong>
+          <p style="font-size:13px;color:var(--text-main);line-height:1.5;margin:0;">${escapeHtml(f.reasoning || 'No automated rationale provided.')}</p>
+          ${patchData.breadcrumb_count ? `
+            <div style="margin-top:8px;font-size:12px;color:var(--accent-purple);font-weight:600;">
+              <i class="fa-solid fa-satellite-dish"></i> Corroborated by ${patchData.breadcrumb_count} raw GPS sensor fixes
+            </div>
+          ` : ''}
+          ${patchData.distance_km ? `
+            <div style="margin-top:8px;font-size:12px;color:var(--text-muted);">
+              <span>Distance: <strong>${patchData.distance_km.toFixed(1)} km</strong></span>
+              ${patchData.speed_kmh ? `<span style="margin-left:12px;">Implied Speed: <strong>${patchData.speed_kmh.toFixed(1)} km/h</strong></span>` : ''}
+              ${patchData.time_window ? `<span style="margin-left:12px;">Time Window: <strong>${patchData.time_window}</strong></span>` : ''}
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Mini Map & Coordinate Preview (if coords exist) -->
+        ${(patchData.centroid_lat || patchData.start_lat || patchData.latitude) ? `
+          <div style="margin-bottom:16px;">
+            <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);display:block;margin-bottom:6px;">Spatial Pinpoint</strong>
+            <div id="fixes-mini-map" style="width:100%;height:180px;border-radius:8px;border:1px solid var(--border-color);overflow:hidden;"></div>
+          </div>
+        ` : ''}
+
+        <!-- Day Timeline Context Preview -->
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);">Timeline Sequence Context (${f.date})</strong>
+            <span style="font-size:11px;color:var(--text-muted);">Green dashed card indicates proposed insertion</span>
+          </div>
+          <div id="fixes-day-preview-container">
+            <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;">
+              <i class="fa-solid fa-circle-notch fa-spin"></i> Fetching day sequence...
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Bind In-Pane Buttons
+    pane.querySelector("#btn-fix-accept")?.addEventListener("click", async () => {
+      await applyFixDirect(f.id);
+    });
+
+    pane.querySelector("#btn-fix-reject")?.addEventListener("click", async () => {
+      await rejectFixDirect(f.id);
+    });
+
+    pane.querySelector("#btn-fix-view-day")?.addEventListener("click", () => {
+      window.jumpToTimelineDay(f.date, true, "fixes");
+    });
+
+    const editDrawer = pane.querySelector("#fixes-in-pane-edit");
+    pane.querySelector("#btn-fix-quick-edit")?.addEventListener("click", () => {
+      if (editDrawer) {
+        editDrawer.style.display = editDrawer.style.display === "none" ? "block" : "none";
+      }
+    });
+
+    pane.querySelector("#btn-quick-edit-cancel")?.addEventListener("click", () => {
+      if (editDrawer) editDrawer.style.display = "none";
+    });
+
+    pane.querySelector("#btn-quick-edit-save")?.addEventListener("click", async () => {
+      const placeVal = pane.querySelector("#quick-edit-place")?.value.trim();
+      const catVal = pane.querySelector("#quick-edit-cat")?.value.trim();
+      try {
+        const res = await fetch("/api/fixes/edit-and-apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposal_id: f.id,
+            place_name: placeVal,
+            category: catVal
+          })
+        });
+        const d = await res.json();
+        if (d.status === "SUCCESS") {
+          loadFixProposals();
+        } else {
+          alert("Error applying custom fix: " + (d.error || "Unknown"));
+        }
+      } catch (err) {
+        alert("Request failed: " + err.message);
+      }
+    });
+
+    // Render Mini Map if coordinates are available
+    const lat = patchData.centroid_lat || patchData.start_lat || patchData.latitude;
+    const lng = patchData.centroid_lng || patchData.start_lng || patchData.longitude;
+    if (lat && lng && typeof L !== "undefined") {
+      setTimeout(() => {
+        const mapEl = document.getElementById("fixes-mini-map");
+        if (mapEl) {
+          if (fixDetailMap) {
+            fixDetailMap.remove();
+            fixDetailMap = null;
+          }
+          fixDetailMap = L.map("fixes-mini-map", {
+            center: [lat, lng],
+            zoom: 14,
+            zoomControl: false,
+            attributionControl: false
+          });
+          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(fixDetailMap);
+          L.marker([lat, lng]).addTo(fixDetailMap);
+
+          // If travel leg has end coords, draw line
+          const elat = patchData.end_lat;
+          const elng = patchData.end_lng;
+          if (elat && elng) {
+            L.marker([elat, elng]).addTo(fixDetailMap);
+            L.polyline([[lat, lng], [elat, elng]], { color: "var(--accent-blue)", dashArray: "4, 6" }).addTo(fixDetailMap);
+            fixDetailMap.fitBounds([[lat, lng], [elat, elng]], { padding: [20, 20] });
+          }
+        }
+      }, 50);
+    }
+
+    // Fetch Day Preview Timeline Sequence
+    try {
+      const dRes = await fetch(`/api/day?date=${encodeURIComponent(f.date)}`);
+      const dayData = await dRes.json();
+      const previewContainer = document.getElementById("fixes-day-preview-container");
+      if (previewContainer && dayData.status === "SUCCESS") {
+        const items = dayData.items || [];
+        if (items.length === 0) {
+          previewContainer.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">No existing segments on this day (entire day is currently untracked).</div>';
+        } else {
+          let timelineHtml = '<div class="fixes-mini-timeline">';
+          let insertedProposal = false;
+
+          items.forEach(it => {
+            const isVisit = it.segment_type === "visit";
+            const stTime = it.start_time ? it.start_time.substring(11, 16) : '--:--';
+            const etTime = it.end_time ? it.end_time.substring(11, 16) : '--:--';
+            const icon = isVisit ? "fa-location-dot" : "fa-person-walking";
+            const label = isVisit ? (it.place_name || "Visit") : (it.activity_type || "Activity");
+
+            // Check if proposal should be rendered before this item
+            const propSt = patchData.start_ts || (f.start_time ? new Date(f.start_time).getTime()/1000 : null);
+            if (!insertedProposal && propSt && it.start_ts && propSt < it.start_ts) {
+              timelineHtml += `
+                <div class="fixes-mini-step proposed">
+                  <div class="step-time"><i class="fa-solid fa-sparkles"></i> Proposed</div>
+                  <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(patchData.resolved_poi_name || patchData.target_place || actionTitle)}</div>
+                  <span class="tag-badge snapped" style="font-size:10px;">New Segment</span>
+                </div>
+              `;
+              insertedProposal = true;
+            }
+
+            timelineHtml += `
+              <div class="fixes-mini-step">
+                <div class="step-time">${stTime} – ${etTime}</div>
+                <div class="step-name"><i class="fa-solid ${icon}" style="color:var(--text-muted);margin-right:6px;"></i> ${escapeHtml(label)}</div>
+                <span class="tag-badge" style="font-size:10px;">${it.duration_minutes ? Math.round(it.duration_minutes) + 'm' : ''}</span>
+              </div>
+            `;
+          });
+
+          if (!insertedProposal) {
+            timelineHtml += `
+              <div class="fixes-mini-step proposed">
+                <div class="step-time"><i class="fa-solid fa-sparkles"></i> Proposed</div>
+                <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(patchData.resolved_poi_name || patchData.target_place || actionTitle)}</div>
+                <span class="tag-badge snapped" style="font-size:10px;">New Segment</span>
+              </div>
+            `;
+          }
+
+          timelineHtml += '</div>';
+          previewContainer.innerHTML = timelineHtml;
+        }
+      }
+    } catch (_) {
+      const pc = document.getElementById("fixes-day-preview-container");
+      if (pc) pc.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Preview unavailable.</div>';
+    }
+  }
+
+  // Fast Direct Action Handlers (Optimistic UI Update)
+  async function applyFixDirect(fixId) {
+    const curIdx = currentFixesList.findIndex(f => f.id === fixId);
+    try {
+      const res = await fetch("/api/fixes/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposal_id: fixId })
+      });
+      const data = await res.json();
+      if (data.status === "SUCCESS") {
+        if (currentFixesFilter === "PENDING") {
+          currentFixesList = currentFixesList.filter(f => f.id !== fixId);
+          document.getElementById(`fix-queue-item-${fixId}`)?.remove();
+          const nextFix = currentFixesList[curIdx] || currentFixesList[curIdx - 1] || currentFixesList[0];
+          if (nextFix) {
+            selectFixItem(nextFix.id);
+            scrollFixItemIntoView(nextFix.id);
+          } else {
+            loadFixProposals();
+          }
+        } else {
+          loadFixProposals();
+        }
+      } else {
+        alert("Failed to apply fix proposal.");
+      }
+    } catch (e) {
+      alert("Error applying fix: " + e.message);
+    }
+  }
+
+  async function rejectFixDirect(fixId) {
+    const curIdx = currentFixesList.findIndex(f => f.id === fixId);
+    try {
+      const res = await fetch("/api/fixes/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposal_id: fixId })
+      });
+      const data = await res.json();
+      if (data.status === "SUCCESS") {
+        if (currentFixesFilter === "PENDING") {
+          currentFixesList = currentFixesList.filter(f => f.id !== fixId);
+          document.getElementById(`fix-queue-item-${fixId}`)?.remove();
+          const nextFix = currentFixesList[curIdx] || currentFixesList[curIdx - 1] || currentFixesList[0];
+          if (nextFix) {
+            selectFixItem(nextFix.id);
+            scrollFixItemIntoView(nextFix.id);
+          } else {
+            loadFixProposals();
+          }
+        } else {
+          loadFixProposals();
+        }
+      } else {
+        alert("Failed to reject fix proposal.");
+      }
+    } catch (e) {
+      alert("Error rejecting fix: " + e.message);
     }
   }
 
