@@ -24,8 +24,31 @@ if not DB_PATH.exists():
     DB_PATH = WORKSPACE / "scratch" / "odlh_master_pure.db"
 ADB = WORKSPACE / "platform-tools" / "adb"
 
-def run_adb(args, serial="emulator-5554"):
-    res = subprocess.run([str(ADB), "-s", serial] + args, capture_output=True, text=True)
+def get_target_serial():
+    if "TARGET_SERIAL" in os.environ:
+        return os.environ["TARGET_SERIAL"]
+    res = subprocess.run([str(ADB), "devices", "-l"], capture_output=True, text=True)
+    for line in res.stdout.strip().split("\n")[1:]:
+        if not ("\tdevice" in line or " device " in line):
+            continue
+        parts = line.split()
+        if not parts:
+            continue
+        dev_id = parts[0]
+        if "akita" in line or "10.80.1.36" in line or "43151" in line:
+            return dev_id
+    for line in res.stdout.strip().split("\n")[1:]:
+        if "\tdevice" in line or " device " in line:
+            parts = line.split()
+            if parts and "emulator" not in parts[0]:
+                return parts[0]
+    return "10.80.1.36:41415"
+
+TARGET_SERIAL = get_target_serial()
+
+def run_adb(args, serial=None):
+    s = serial or TARGET_SERIAL
+    res = subprocess.run([str(ADB), "-s", s] + args, capture_output=True, text=True)
     return res.stdout.strip()
 
 def benchmark_sqlite_reads():
@@ -224,7 +247,7 @@ def benchmark_device_live():
     # 2D: Live Screen Capture Proof
     proof_path = WORKSPACE / "scratch" / "live_benchmark_proof.png"
     run_adb(["shell", "screencap", "-p", "/sdcard/benchmark_proof.png"])
-    subprocess.run([str(ADB), "-s", "emulator-5554", "pull", "/sdcard/benchmark_proof.png", str(proof_path)], capture_output=True)
+    subprocess.run([str(ADB), "-s", TARGET_SERIAL, "pull", "/sdcard/benchmark_proof.png", str(proof_path)], capture_output=True)
     if proof_path.exists():
         print(f"\n[✓] Live UI Proof captured: {proof_path} ({proof_path.stat().st_size / 1024:.1f} KB)")
 
