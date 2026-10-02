@@ -6160,6 +6160,12 @@ function initCalendarMatrixEvents() {
     }
   }
 
+  if (initialParams.get("device") === "true" || initialParams.get("vm") === "true") {
+    setTimeout(() => {
+      openGMMComparator(initialDate);
+    }, 400);
+  }
+
   // Defer non-critical background statistics to idle
   setTimeout(() => {
     loadOverview();
