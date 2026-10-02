@@ -1,49 +1,59 @@
 {
-  "goal": "Ground day summaries in both photos and timeline visits to eliminate false location and venue hallucinations (e.g. false Weehawken and unvisited Museum/Art claims)",
-  "active_step_id": 5,
+  "goal": "Deploy optimized timeline database to Android hardware/VM, run performance evaluations, setup live demo, and produce Zurich Read Performance specification",
+  "active_step_id": 7,
   "steps": [
     {
       "id": 1,
-      "description": "Audit visit-grounding requirements for day summaries: dominant visit city resolution and visit-corroborated themes (museum, art gallery, dining, etc.)",
+      "description": "Apply SQLite read performance optimizations (covering indices, pragmas) to master DB and deploy with correct Android UID/GID permissions",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Update enrichment/import_high_quality_notes.py to strictly ground locations in actual timeline visits and cross-validate venue themes (disqualifying unvisited museums, unvisited art galleries, and conflicting photo cities like Weehawken)",
+      "description": "Implement and execute comprehensive performance evaluation suite (Binder latency, SQLite query scans, memory/GC, frame pacing)",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Update /Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py to incorporate visit ground-truth from timeline_viewer.db (aligning session cities with visits and pruning uncorroborated museum/art themes)",
+      "description": "Establish live demo interface and verification proofs (Timeline screen capture, Places tab, day navigation)",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Regenerate daily summaries and re-import high quality notes into timeline_viewer.db, verifying 2026-06-30, 2015-02-28, 2016-03-05, etc.",
+      "description": "Author GMS Core Read Performance Technical Specification and Proposal document for Zurich team",
       "status": "completed"
     },
     {
       "id": 5,
-      "description": "Run full contract audit, server tests, and verify zero false Weehawken and zero unvisited Museum claims in timeline_viewer.db",
+      "description": "Run contract audits and verify repository integrity",
       "status": "completed"
+    },
+    {
+      "id": 6,
+      "description": "Build flawless master v55 database with corrected fprint alignment (full 14,171 catalog places), compliant GMS protobuf wire structures, and gapless temporal coverage through late September 2026",
+      "status": "completed"
+    },
+    {
+      "id": 7,
+      "description": "Deploy v55 databases to device/emulator, reset package states, and restart GMS Core and Google Maps",
+      "status": "in_progress"
+    },
+    {
+      "id": 8,
+      "description": "Verify live on-device rendering (navigate past days in timeline, verify bottom sheet cards appear, verify places tab shows full count), capture visual verification proof",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "enrichment/import_high_quality_notes.py",
-      "/Users/rothfuss/projects/gregor_cos/generate_daily_summaries.py",
-      "api/routes/timeline.py"
+      "scripts/deploy_to_emulator_pure.py",
+      "scripts/deploy_to_pixel.py",
+      "docs/gms_odlh_read_performance_spec.md"
     ],
     "test_files": [
-      "scripts/audit_api_contracts.py",
-      "tests/test_clean_api.py",
-      "tests/test_e2e_server.py"
+      "scripts/audit_api_contracts.py"
     ],
     "scratch_logs": [
-      ".agent/scratch/contracts.log",
-      ".agent/scratch/clean_api.log",
-      ".agent/scratch/e2e.log",
-      ".agent/scratch/import_notes.log"
+      ".agent/scratch/perf_eval.log"
     ]
   }
 }
