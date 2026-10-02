@@ -24,7 +24,7 @@ def get_device_screen(req: Request) -> Response:
         return Response(
             body=img_bytes,
             status_code=200,
-            content_type="image/png",
+            content_type="image/jpeg",
             headers={
                 "Cache-Control": "no-cache, no-store, must-revalidate",
             },
@@ -96,6 +96,49 @@ def send_device_touch(req: Request) -> Response:
         return json_response({"status": "SUCCESS" if success else "ERROR"})
     except Exception as e:
         return error_response(f"Touch command failed: {e}", status_code=500)
+
+
+@router.post("/api/device/keyboard")
+def send_device_keyboard(req: Request) -> Response:
+    """Sends text or special key to connected Android device."""
+    data = req.json()
+    key = data.get("key")
+    text = data.get("text")
+    key_code = data.get("keyCode")
+
+    try:
+        from gmm_device_bridge import GMMDeviceBridge
+
+        bridge = GMMDeviceBridge()
+        if key_code is not None:
+            success = bridge.send_key(int(key_code))
+        elif text:
+            success = bridge.send_text(str(text))
+        elif key:
+            key_map = {
+                "Backspace": 67,
+                "Enter": 66,
+                "Tab": 61,
+                "Escape": 4,
+                "ArrowUp": 19,
+                "ArrowDown": 20,
+                "ArrowLeft": 21,
+                "ArrowRight": 22,
+                "Home": 3,
+                "Delete": 112,
+                " ": 62,
+            }
+            if key in key_map:
+                success = bridge.send_key(key_map[key])
+            elif len(key) == 1:
+                success = bridge.send_text(key)
+            else:
+                success = False
+        else:
+            success = False
+        return json_response({"status": "SUCCESS" if success else "ERROR"})
+    except Exception as e:
+        return error_response(f"Keyboard command failed: {e}", status_code=500)
 
 
 @router.post("/api/device/intent-day")

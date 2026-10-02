@@ -233,8 +233,8 @@
     const container = document.getElementById("screen-container");
     const fpsBadge = document.getElementById("fps-counter");
 
-    const ANDROID_WIDTH = 1080;
-    const ANDROID_HEIGHT = 2400;
+    const ANDROID_WIDTH = 540;
+    const ANDROID_HEIGHT = 1200;
 
     let isStreaming = true;
     let frameCount = 0;
@@ -250,7 +250,7 @@
         frameCount++;
         const now = Date.now();
         if (now - lastFpsTime >= 1000) {
-          fpsBadge.textContent = `${frameCount} FPS (${now - t0}ms)`;
+          fpsBadge.textContent = `${frameCount} FPS (${now - t0}ms) ⌨️`;
           frameCount = 0;
           lastFpsTime = now;
         }
@@ -258,11 +258,33 @@
         requestAnimationFrame(loadNextFrame);
       };
       nextImg.onerror = () => {
-        setTimeout(loadNextFrame, 400);
+        setTimeout(loadNextFrame, 200);
       };
       nextImg.src = `/api/device/screen?t=${Date.now()}`;
     }
     loadNextFrame();
+
+    // Physical Keyboard Listener
+    window.addEventListener("keydown", async (e) => {
+      // Don't intercept if typing in jump-date-input
+      if (document.activeElement === document.getElementById("jump-date-input")) {
+        return;
+      }
+
+      if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+      e.preventDefault();
+
+      try {
+        await fetch("/api/device/keyboard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: e.key })
+        });
+        setTimeout(loadNextFrame, 80);
+      } catch (err) {
+        console.error("Keyboard error:", err);
+      }
+    });
 
     // Touch Event Forwarding (drag / swipe / click)
     let pointerDown = false;
