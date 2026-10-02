@@ -141,6 +141,19 @@ def send_device_keyboard(req: Request) -> Response:
         return error_response(f"Keyboard command failed: {e}", status_code=500)
 
 
+@router.post("/api/device/open-timeline")
+def send_device_open_timeline(req: Request) -> Response:
+    """Directly opens Google Maps Timeline UI."""
+    try:
+        from gmm_device_bridge import GMMDeviceBridge
+
+        bridge = GMMDeviceBridge()
+        res = bridge.open_timeline()
+        return json_response(res)
+    except Exception as e:
+        return error_response(f"Opening timeline failed: {e}", status_code=500)
+
+
 @router.post("/api/device/intent-day")
 def send_device_intent_day(req: Request) -> Response:
     """Navigates connected Google Maps Timeline UI to target date via deep intent."""

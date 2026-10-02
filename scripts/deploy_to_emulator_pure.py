@@ -2,11 +2,9 @@ import os, sys, time, subprocess
 
 WORKSPACE_DIR = os.getcwd()
 ADB = os.path.join(WORKSPACE_DIR, 'platform-tools', 'adb')
-subprocess.run([ADB, "connect", "127.0.0.1:5555"], capture_output=True)
-SERIAL = "127.0.0.1:5555"
+SERIAL = "emulator-5554"
 
 def adb_cmd(args, **kwargs):
-    subprocess.run([ADB, "connect", SERIAL], capture_output=True)
     return subprocess.run([ADB, "-s", SERIAL] + args, **kwargs)
 
 OUT_ODLH_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'odlh_master_pure.db')
@@ -28,7 +26,6 @@ adb_cmd(["push", OUT_MYPLACES_DB, "/sdcard/gmm_myplaces.db"], check=True)
 # 2. Deploy script inside VM
 deploy_cmd = """
 am force-stop com.google.android.apps.maps
-am force-stop com.google.android.gms
 
 mkdir -p /data/data/com.google.android.apps.maps/databases
 mkdir -p /data/data/com.google.android.apps.maps/files/places
