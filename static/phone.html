@@ -99,18 +99,23 @@
       padding: 12px;
       border-radius: 46px;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 2px #2d3748, inset 0 0 0 2px #0f172a;
-      max-height: calc(100vh - 80px);
+      max-height: calc(100vh - 60px);
+      width: fit-content;
     }
     .phone-screen-container {
       position: relative;
-      width: 360px;
-      height: 800px;
-      max-height: calc(100vh - 150px);
+      height: min(800px, calc(100vh - 165px));
+      aspect-ratio: 9 / 20;
+      width: auto;
+      max-width: calc(100vw - 60px);
       background: #000;
       border-radius: 36px;
       overflow: hidden;
       cursor: crosshair;
       box-shadow: inset 0 0 4px rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .camera-punch {
       position: absolute;
@@ -128,6 +133,7 @@
     #phone-canvas {
       width: 100%;
       height: 100%;
+      object-fit: contain;
       display: block;
       touch-action: none;
     }
@@ -191,6 +197,7 @@
       <span id="device-label">Pixel 8 VM (Online)</span>
     </div>
     <div class="date-jump-box">
+      <button id="btn-open-timeline" style="background:#059669; color:#fff; border:none; padding:4px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;" title="Open Google Maps Timeline"><i class="fa-solid fa-clock-rotate-left"></i> Timeline</button>
       <input type="date" id="jump-date-input" value="2024-05-18">
       <button id="btn-jump-date"><i class="fa-solid fa-bolt"></i> Jump</button>
       <button id="btn-restart-maps" title="Restart Google Maps" style="background:#475569;"><i class="fa-solid fa-rotate-right"></i></button>
@@ -199,11 +206,8 @@
 
   <!-- Centered Mobile Device -->
   <div class="phone-wrapper">
-    <div class="camera-punch"></div>
-    <div class="spinner-overlay" id="fps-badge">
-      <i class="fa-solid fa-wifi" style="color:#10b981;"></i> <span id="fps-counter">Connected</span>
-    </div>
     <div class="phone-screen-container" id="screen-container">
+      <div class="camera-punch"></div>
       <canvas id="phone-canvas" width="540" height="1200"></canvas>
     </div>
 
@@ -218,26 +222,25 @@
   <script>
     const canvas = document.getElementById("phone-canvas");
     const ctx = canvas.getContext("2d");
-    const fpsBadge = document.getElementById("fps-counter");
 
     let isStreaming = true;
-    let frameCount = 0;
-    let lastFpsTime = Date.now();
 
     // High-speed low-latency stream loop via Canvas
     function loadNextFrame() {
       if (!isStreaming) return;
       const nextImg = new Image();
-      const t0 = Date.now();
       nextImg.onload = () => {
-        ctx.drawImage(nextImg, 0, 0, canvas.width, canvas.height);
-        frameCount++;
-        const now = Date.now();
-        if (now - lastFpsTime >= 1000) {
-          fpsBadge.textContent = `${frameCount} FPS (${now - t0}ms) ⌨️`;
-          frameCount = 0;
-          lastFpsTime = now;
+        if (nextImg.naturalWidth && nextImg.naturalHeight) {
+          if (canvas.width !== nextImg.naturalWidth || canvas.height !== nextImg.naturalHeight) {
+            canvas.width = nextImg.naturalWidth;
+            canvas.height = nextImg.naturalHeight;
+            const container = document.getElementById("screen-container");
+            if (container) {
+              container.style.aspectRatio = `${nextImg.naturalWidth} / ${nextImg.naturalHeight}`;
+            }
+          }
         }
+        ctx.drawImage(nextImg, 0, 0, canvas.width, canvas.height);
         setTimeout(loadNextFrame, 35);
       };
       nextImg.onerror = () => {
@@ -353,6 +356,17 @@
     });
     document.getElementById("nav-recents").addEventListener("click", async () => {
       await sendTouch("key", 187);
+    });
+
+    // Direct Timeline Launch
+    document.getElementById("btn-open-timeline").addEventListener("click", async () => {
+      try {
+        await fetch("/api/device/open-timeline", { method: "POST" });
+        setTimeout(loadNextFrame, 400);
+        setTimeout(loadNextFrame, 1000);
+      } catch (e) {
+        console.error("Open timeline error:", e);
+      }
     });
 
     // Jump to Date Intent

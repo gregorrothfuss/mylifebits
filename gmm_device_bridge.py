@@ -6,6 +6,9 @@ and side-by-side Studio vs GMM comparison.
 """
 
 import os
+os.environ["ADB_USB"] = "0"
+os.environ["ADB_MDNS"] = "0"
+os.environ["ADB_MDNS_AUTO_CONNECT"] = "0"
 import time
 import json
 import sqlite3
@@ -19,10 +22,15 @@ from PIL import Image
 
 ADB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "platform-tools", "adb")
 DEFAULT_SERIAL = "emulator-5554"
+_EMPTY_JPEG = (
+    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
+)
+
 
 class GMMDeviceBridge:
     _cached_jpeg: bytes = b""
     _last_capture: float = 0.0
+    _last_request_time: float = 0.0
     _thread_running: bool = False
     _worker_thread = None
     _lock = threading.Lock()
@@ -35,6 +43,7 @@ class GMMDeviceBridge:
     def _ensure_worker_running(self) -> None:
         if not GMMDeviceBridge._thread_running and self.is_connected():
             GMMDeviceBridge._thread_running = True
+            GMMDeviceBridge._last_request_time = time.time()
             GMMDeviceBridge._worker_thread = threading.Thread(
                 target=self._capture_worker_loop,
                 daemon=True
@@ -44,6 +53,11 @@ class GMMDeviceBridge:
     def _capture_worker_loop(self) -> None:
         while GMMDeviceBridge._thread_running:
             try:
+                now = time.time()
+                # Idle backoff if no HTTP screen request received in last 10 seconds
+                if now - GMMDeviceBridge._last_request_time > 10.0:
+                    time.sleep(0.5)
+                    continue
                 res = subprocess.run([self.adb, "-s", self.serial, "exec-out", "screencap", "-p"], capture_output=True, timeout=2)
                 if res.stdout and res.stdout[:4] == b"\x89PNG":
                     img = Image.open(io.BytesIO(res.stdout)).convert("RGB")
@@ -52,7 +66,7 @@ class GMMDeviceBridge:
                     with GMMDeviceBridge._lock:
                         GMMDeviceBridge._cached_jpeg = buf.getvalue()
                         GMMDeviceBridge._last_capture = time.time()
-                time.sleep(0.05)
+                time.sleep(0.08)
             except Exception:
                 time.sleep(0.3)
 
@@ -81,24 +95,11 @@ class GMMDeviceBridge:
 
     def capture_screen_bytes(self) -> bytes:
         """Captures live screen bytes in JPEG format with background caching."""
+        GMMDeviceBridge._last_request_time = time.time()
         with GMMDeviceBridge._lock:
             if GMMDeviceBridge._cached_jpeg:
                 return GMMDeviceBridge._cached_jpeg
-
-        try:
-            res = subprocess.run([self.adb, "-s", self.serial, "exec-out", "screencap", "-p"], capture_output=True, timeout=3)
-            if res.stdout and res.stdout[:4] == b"\x89PNG":
-                img = Image.open(io.BytesIO(res.stdout)).convert("RGB")
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=65)
-                val = buf.getvalue()
-                with GMMDeviceBridge._lock:
-                    GMMDeviceBridge._cached_jpeg = val
-                    GMMDeviceBridge._last_capture = time.time()
-                return val
-            return res.stdout
-        except Exception:
-            return b""
+        return _EMPTY_JPEG
 
     def send_touch(self, action: str, x: int, y: Optional[int] = None, x2: Optional[int] = None, y2: Optional[int] = None, duration_ms: int = 200) -> bool:
         """Sends tap or swipe event to Android device."""
@@ -128,6 +129,26 @@ class GMMDeviceBridge:
         """Sends Android keyevent by keycode."""
         return self.send_touch("key", keycode)
 
+
+    def open_timeline(self) -> Dict[str, Any]:
+        """
+        Reliably brings Google Maps Timeline to foreground without triggering AR/Google Lens.
+        """
+        try:
+            # Ensure Maps is in foreground
+            subprocess.run([
+                self.adb, "-s", self.serial, "shell", "am", "start",
+                "-n", "com.google.android.apps.maps/com.google.android.maps.MapsActivity"
+            ], check=True, timeout=5)
+            time.sleep(0.5)
+            # Tap profile avatar at top-right (505, 65)
+            subprocess.run([self.adb, "-s", self.serial, "shell", "input", "tap", "505", "65"], check=True, timeout=3)
+            time.sleep(0.6)
+            # Tap 'Your Timeline' button at (270, 524)
+            subprocess.run([self.adb, "-s", self.serial, "shell", "input", "tap", "270", "524"], check=True, timeout=3)
+            return {"status": "SUCCESS"}
+        except Exception as e:
+            return {"status": "ERROR", "error": str(e)}
 
     def intent_to_day(self, date_str: str) -> Dict[str, Any]:
         """
