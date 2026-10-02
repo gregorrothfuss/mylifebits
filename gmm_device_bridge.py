@@ -60,16 +60,12 @@ class GMMDeviceBridge:
         try:
             res = subprocess.run([self.adb, "devices"], capture_output=True, text=True, timeout=2)
             lines = [l.split("\t")[0] for l in res.stdout.strip().split("\n")[1:] if "\tdevice" in l]
-            if "43151JEKB10775" in lines:
-                return "43151JEKB10775"
+            # Prioritize Android VM / Emulator
             for dev in lines:
-                if not dev.startswith("emulator-"):
+                if "emulator" in dev or dev.startswith("127.0.0.1:"):
                     return dev
             if fallback and fallback in lines:
                 return fallback
-            for dev in lines:
-                if "emulator" in dev:
-                    return dev
             if lines:
                 return lines[0]
         except Exception:

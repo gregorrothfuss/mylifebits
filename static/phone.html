@@ -125,21 +125,10 @@
       z-index: 10;
       pointer-events: none;
     }
-    #phone-screen-img {
+    #phone-canvas {
       width: 100%;
       height: 100%;
-      object-fit: contain;
       display: block;
-      pointer-events: none;
-      touch-action: none;
-    }
-    .screen-touch-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 5;
       touch-action: none;
     }
 
@@ -176,7 +165,7 @@
       color: #fff;
     }
 
-    /* Loading Spinner */
+    /* Status Badge */
     .spinner-overlay {
       position: absolute;
       top: 12px;
@@ -199,7 +188,7 @@
   <div class="top-bar">
     <div class="status-indicator">
       <span class="pulse-dot"></span>
-      <span>Pixel 8 VM (Google Maps Timeline)</span>
+      <span id="device-label">Pixel 8 VM (Online)</span>
     </div>
     <div class="date-jump-box">
       <input type="date" id="jump-date-input" value="2024-05-18">
@@ -212,11 +201,10 @@
   <div class="phone-wrapper">
     <div class="camera-punch"></div>
     <div class="spinner-overlay" id="fps-badge">
-      <i class="fa-solid fa-wifi" style="color:#10b981;"></i> <span id="fps-counter">Streaming</span>
+      <i class="fa-solid fa-wifi" style="color:#10b981;"></i> <span id="fps-counter">Connected</span>
     </div>
     <div class="phone-screen-container" id="screen-container">
-      <img id="phone-screen-img" src="/api/device/screen" alt="Android VM Screen">
-      <div class="screen-touch-overlay" id="touch-overlay"></div>
+      <canvas id="phone-canvas" width="540" height="1200"></canvas>
     </div>
 
     <!-- Android Hardware Navigation Keys -->
@@ -228,25 +216,21 @@
   </div>
 
   <script>
-    const imgEl = document.getElementById("phone-screen-img");
-    const overlay = document.getElementById("touch-overlay");
-    const container = document.getElementById("screen-container");
+    const canvas = document.getElementById("phone-canvas");
+    const ctx = canvas.getContext("2d");
     const fpsBadge = document.getElementById("fps-counter");
-
-    const ANDROID_WIDTH = 540;
-    const ANDROID_HEIGHT = 1200;
 
     let isStreaming = true;
     let frameCount = 0;
     let lastFpsTime = Date.now();
 
-    // High-speed low-latency stream loop
+    // High-speed low-latency stream loop via Canvas
     function loadNextFrame() {
       if (!isStreaming) return;
       const nextImg = new Image();
       const t0 = Date.now();
       nextImg.onload = () => {
-        imgEl.src = nextImg.src;
+        ctx.drawImage(nextImg, 0, 0, canvas.width, canvas.height);
         frameCount++;
         const now = Date.now();
         if (now - lastFpsTime >= 1000) {
@@ -254,8 +238,7 @@
           frameCount = 0;
           lastFpsTime = now;
         }
-        // Immediately fetch next frame without arbitrary sleep
-        requestAnimationFrame(loadNextFrame);
+        setTimeout(loadNextFrame, 35);
       };
       nextImg.onerror = () => {
         setTimeout(loadNextFrame, 200);
@@ -264,42 +247,17 @@
     }
     loadNextFrame();
 
-    // Physical Keyboard Listener
-    window.addEventListener("keydown", async (e) => {
-      // Don't intercept if typing in jump-date-input
-      if (document.activeElement === document.getElementById("jump-date-input")) {
-        return;
-      }
-
-      if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
-      e.preventDefault();
-
-      try {
-        await fetch("/api/device/keyboard", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: e.key })
-        });
-        setTimeout(loadNextFrame, 80);
-      } catch (err) {
-        console.error("Keyboard error:", err);
-      }
-    });
-
-    // Touch Event Forwarding (drag / swipe / click)
-    let pointerDown = false;
-    let startX = 0, startY = 0;
-    let startTime = 0;
-
-    function getAndroidCoords(e) {
-      const rect = overlay.getBoundingClientRect();
+    // Coordinate conversion
+    function getCoords(e) {
+      const rect = canvas.getBoundingClientRect();
       const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
       const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-      const scaleX = ANDROID_WIDTH / rect.width;
-      const scaleY = ANDROID_HEIGHT / rect.height;
-      const x = Math.max(0, Math.min(ANDROID_WIDTH, Math.round((clientX - rect.left) * scaleX)));
-      const y = Math.max(0, Math.min(ANDROID_HEIGHT, Math.round((clientY - rect.top) * scaleY)));
-      return { x, y };
+      const x = Math.round((clientX - rect.left) * (canvas.width / rect.width));
+      const y = Math.round((clientY - rect.top) * (canvas.height / rect.height));
+      return {
+        x: Math.max(0, Math.min(canvas.width, x)),
+        y: Math.max(0, Math.min(canvas.height, y))
+      };
     }
 
     async function sendTouch(action, x, y, x2 = null, y2 = null, duration = 200) {
@@ -309,42 +267,93 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action, x, y, x2, y2, duration_ms: duration })
         });
+        setTimeout(loadNextFrame, 50);
       } catch (err) {
         console.error("Touch error:", err);
       }
     }
 
-    overlay.addEventListener("pointerdown", (e) => {
-      pointerDown = true;
-      const coords = getAndroidCoords(e);
-      startX = coords.x;
-      startY = coords.y;
+    // Mouse events
+    let isDown = false;
+    let startX = 0, startY = 0, startTime = 0;
+
+    canvas.addEventListener("mousedown", (e) => {
+      isDown = true;
+      const c = getCoords(e);
+      startX = c.x;
+      startY = c.y;
       startTime = Date.now();
-      overlay.setPointerCapture(e.pointerId);
     });
 
-    overlay.addEventListener("pointerup", (e) => {
-      if (!pointerDown) return;
-      pointerDown = false;
-      const coords = getAndroidCoords(e);
-      const endX = coords.x;
-      const endY = coords.y;
-      const duration = Math.min(600, Math.max(80, Date.now() - startTime));
-      const dist = Math.hypot(endX - startX, endY - startY);
-
-      if (dist < 25) {
-        // Tap
-        sendTouch("tap", startX, startY);
+    window.addEventListener("mouseup", async (e) => {
+      if (!isDown) return;
+      isDown = false;
+      const c = getCoords(e);
+      const dist = Math.hypot(c.x - startX, c.y - startY);
+      const duration = Math.min(600, Math.max(100, Date.now() - startTime));
+      if (dist < 15) {
+        await sendTouch("tap", startX, startY);
       } else {
-        // Swipe / Drag
-        sendTouch("swipe", startX, startY, endX, endY, duration);
+        await sendTouch("swipe", startX, startY, c.x, c.y, duration);
+      }
+    });
+
+    // Touch events for mobile/tablet clients
+    canvas.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 1) {
+        const c = getCoords(e.touches[0]);
+        startX = c.x;
+        startY = c.y;
+        startTime = Date.now();
+        isDown = true;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener("touchend", async (e) => {
+      if (!isDown) return;
+      isDown = false;
+      if (e.changedTouches.length > 0) {
+        const c = getCoords(e.changedTouches[0]);
+        const dist = Math.hypot(c.x - startX, c.y - startY);
+        const duration = Math.min(600, Math.max(100, Date.now() - startTime));
+        if (dist < 15) {
+          await sendTouch("tap", startX, startY);
+        } else {
+          await sendTouch("swipe", startX, startY, c.x, c.y, duration);
+        }
+      }
+    });
+
+    // Physical Keyboard Listener
+    window.addEventListener("keydown", async (e) => {
+      if (document.activeElement === document.getElementById("jump-date-input")) {
+        return;
+      }
+      if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+      e.preventDefault();
+
+      try {
+        await fetch("/api/device/keyboard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: e.key })
+        });
+        setTimeout(loadNextFrame, 50);
+      } catch (err) {
+        console.error("Keyboard error:", err);
       }
     });
 
     // Navigation Buttons
-    document.getElementById("nav-back").addEventListener("click", () => sendTouch("key", 4));
-    document.getElementById("nav-home").addEventListener("click", () => sendTouch("key", 3));
-    document.getElementById("nav-recents").addEventListener("click", () => sendTouch("key", 187));
+    document.getElementById("nav-back").addEventListener("click", async () => {
+      await sendTouch("key", 4);
+    });
+    document.getElementById("nav-home").addEventListener("click", async () => {
+      await sendTouch("key", 3);
+    });
+    document.getElementById("nav-recents").addEventListener("click", async () => {
+      await sendTouch("key", 187);
+    });
 
     // Jump to Date Intent
     async function jumpToDate() {
@@ -356,6 +365,8 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ date: dateVal })
         });
+        setTimeout(loadNextFrame, 300);
+        setTimeout(loadNextFrame, 800);
       } catch (e) {
         console.error("Intent error:", e);
       }
@@ -369,7 +380,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "key", x: 3 })
       });
-      setTimeout(jumpToDate, 500);
+      setTimeout(jumpToDate, 400);
     });
   </script>
 </body>
