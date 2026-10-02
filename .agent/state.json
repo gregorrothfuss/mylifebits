@@ -40,7 +40,7 @@
     {
       "id": 8,
       "description": "Verify live on-device rendering (navigate past days in timeline, verify bottom sheet cards appear, verify places tab shows full count), capture visual verification proof",
-      "status": "in_progress"
+      "status": "completed"
     }
   ],
   "context_cache": {

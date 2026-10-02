@@ -19,7 +19,9 @@ import subprocess
 from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parent.parent
-DB_PATH = WORKSPACE / "scratch" / "odlh_master_pure.db"
+DB_PATH = WORKSPACE / "scratch" / "odlh_v55_flawless.db"
+if not DB_PATH.exists():
+    DB_PATH = WORKSPACE / "scratch" / "odlh_master_pure.db"
 ADB = WORKSPACE / "platform-tools" / "adb"
 
 def run_adb(args, serial="emulator-5554"):
