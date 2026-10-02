@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pixel 8 VM — Google Maps Timeline</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      background: #090d16;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Top Control Bar */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 480px;
+      padding: 10px 16px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      background: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #10b981;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .date-jump-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #1e293b;
+      padding: 4px 8px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+    .date-jump-box input {
+      background: transparent;
+      border: none;
+      color: #f8fafc;
+      font-size: 12px;
+      font-family: inherit;
+      width: 95px;
+      outline: none;
+    }
+    .date-jump-box button {
+      background: #3b82f6;
+      border: none;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .date-jump-box button:hover {
+      background: #2563eb;
+    }
+
+    /* Phone Device Chassis */
+    .phone-wrapper {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #181d28;
+      padding: 12px;
+      border-radius: 46px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 2px #2d3748, inset 0 0 0 2px #0f172a;
+      max-height: calc(100vh - 80px);
+    }
+    .phone-screen-container {
+      position: relative;
+      width: 360px;
+      height: 800px;
+      max-height: calc(100vh - 150px);
+      background: #000;
+      border-radius: 36px;
+      overflow: hidden;
+      cursor: crosshair;
+      box-shadow: inset 0 0 4px rgba(0,0,0,0.8);
+    }
+    .camera-punch {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 14px;
+      height: 14px;
+      background: #000;
+      border: 2px solid #1a202c;
+      border-radius: 50%;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #phone-screen-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
+      touch-action: none;
+    }
+    .screen-touch-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 5;
+      touch-action: none;
+    }
+
+    /* Android System Navigation Bar */
+    .phone-nav-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      width: 100%;
+      padding-top: 10px;
+      padding-bottom: 2px;
+    }
+    .nav-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 16px;
+      width: 50px;
+      height: 36px;
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover {
+      background: #273142;
+      color: #f8fafc;
+    }
+    .nav-btn:active {
+      transform: scale(0.9);
+      background: #3b82f6;
+      color: #fff;
+    }
+
+    /* Loading Spinner */
+    .spinner-overlay {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 6px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 20;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Minimal Top Bar -->
+  <div class="top-bar">
+    <div class="status-indicator">
+      <span class="pulse-dot"></span>
+      <span>Pixel 8 VM (Google Maps Timeline)</span>
+    </div>
+    <div class="date-jump-box">
+      <input type="date" id="jump-date-input" value="2024-05-18">
+      <button id="btn-jump-date"><i class="fa-solid fa-bolt"></i> Jump</button>
+      <button id="btn-restart-maps" title="Restart Google Maps" style="background:#475569;"><i class="fa-solid fa-rotate-right"></i></button>
+    </div>
+  </div>
+
+  <!-- Centered Mobile Device -->
+  <div class="phone-wrapper">
+    <div class="camera-punch"></div>
+    <div class="spinner-overlay" id="fps-badge">
+      <i class="fa-solid fa-wifi" style="color:#10b981;"></i> <span id="fps-counter">Streaming</span>
+    </div>
+    <div class="phone-screen-container" id="screen-container">
+      <img id="phone-screen-img" src="/api/device/screen" alt="Android VM Screen">
+      <div class="screen-touch-overlay" id="touch-overlay"></div>
+    </div>
+
+    <!-- Android Hardware Navigation Keys -->
+    <div class="phone-nav-bar">
+      <button class="nav-btn" id="nav-back" title="Back (Key 4)"><i class="fa-solid fa-chevron-left"></i></button>
+      <button class="nav-btn" id="nav-home" title="Home (Key 3)"><i class="fa-regular fa-circle"></i></button>
+      <button class="nav-btn" id="nav-recents" title="Recents (Key 187)"><i class="fa-regular fa-square"></i></button>
+    </div>
+  </div>
+
+  <script>
+    const imgEl = document.getElementById("phone-screen-img");
+    const overlay = document.getElementById("touch-overlay");
+    const container = document.getElementById("screen-container");
+    const fpsBadge = document.getElementById("fps-counter");
+
+    const ANDROID_WIDTH = 1080;
+    const ANDROID_HEIGHT = 2400;
+
+    let isStreaming = true;
+    let frameCount = 0;
+    let lastFpsTime = Date.now();
+
+    // High-speed low-latency stream loop
+    function loadNextFrame() {
+      if (!isStreaming) return;
+      const nextImg = new Image();
+      const t0 = Date.now();
+      nextImg.onload = () => {
+        imgEl.src = nextImg.src;
+        frameCount++;
+        const now = Date.now();
+        if (now - lastFpsTime >= 1000) {
+          fpsBadge.textContent = `${frameCount} FPS (${now - t0}ms)`;
+          frameCount = 0;
+          lastFpsTime = now;
+        }
+        // Immediately fetch next frame without arbitrary sleep
+        requestAnimationFrame(loadNextFrame);
+      };
+      nextImg.onerror = () => {
+        setTimeout(loadNextFrame, 400);
+      };
+      nextImg.src = `/api/device/screen?t=${Date.now()}`;
+    }
+    loadNextFrame();
+
+    // Touch Event Forwarding (drag / swipe / click)
+    let pointerDown = false;
+    let startX = 0, startY = 0;
+    let startTime = 0;
+
+    function getAndroidCoords(e) {
+      const rect = overlay.getBoundingClientRect();
+      const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      const scaleX = ANDROID_WIDTH / rect.width;
+      const scaleY = ANDROID_HEIGHT / rect.height;
+      const x = Math.max(0, Math.min(ANDROID_WIDTH, Math.round((clientX - rect.left) * scaleX)));
+      const y = Math.max(0, Math.min(ANDROID_HEIGHT, Math.round((clientY - rect.top) * scaleY)));
+      return { x, y };
+    }
+
+    async function sendTouch(action, x, y, x2 = null, y2 = null, duration = 200) {
+      try {
+        await fetch("/api/device/touch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, x, y, x2, y2, duration_ms: duration })
+        });
+      } catch (err) {
+        console.error("Touch error:", err);
+      }
+    }
+
+    overlay.addEventListener("pointerdown", (e) => {
+      pointerDown = true;
+      const coords = getAndroidCoords(e);
+      startX = coords.x;
+      startY = coords.y;
+      startTime = Date.now();
+      overlay.setPointerCapture(e.pointerId);
+    });
+
+    overlay.addEventListener("pointerup", (e) => {
+      if (!pointerDown) return;
+      pointerDown = false;
+      const coords = getAndroidCoords(e);
+      const endX = coords.x;
+      const endY = coords.y;
+      const duration = Math.min(600, Math.max(80, Date.now() - startTime));
+      const dist = Math.hypot(endX - startX, endY - startY);
+
+      if (dist < 25) {
+        // Tap
+        sendTouch("tap", startX, startY);
+      } else {
+        // Swipe / Drag
+        sendTouch("swipe", startX, startY, endX, endY, duration);
+      }
+    });
+
+    // Navigation Buttons
+    document.getElementById("nav-back").addEventListener("click", () => sendTouch("key", 4));
+    document.getElementById("nav-home").addEventListener("click", () => sendTouch("key", 3));
+    document.getElementById("nav-recents").addEventListener("click", () => sendTouch("key", 187));
+
+    // Jump to Date Intent
+    async function jumpToDate() {
+      const dateVal = document.getElementById("jump-date-input").value;
+      if (!dateVal) return;
+      try {
+        await fetch("/api/device/intent-day", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: dateVal })
+        });
+      } catch (e) {
+        console.error("Intent error:", e);
+      }
+    }
+    document.getElementById("btn-jump-date").addEventListener("click", jumpToDate);
+
+    // Restart Maps Activity
+    document.getElementById("btn-restart-maps").addEventListener("click", async () => {
+      await fetch("/api/device/touch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "key", x: 3 })
+      });
+      setTimeout(jumpToDate, 500);
+    });
+  </script>
+</body>
+</html>

@@ -82,7 +82,11 @@ class TimelineViewerHandler(http.server.SimpleHTTPRequestHandler):
                 return
         else:
             if self.path in ("/", ""):
+                self.path = "/phone.html"
+            elif self.path in ("/studio", "/studio/", "/dashboard"):
                 self.path = "/index.html"
+            elif self.path in ("/phone", "/phone/", "/vm", "/vm/"):
+                self.path = "/phone.html"
             elif self.path.startswith("/static/"):
                 self.path = self.path[len("/static"):]
             super().do_GET()
