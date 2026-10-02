@@ -39,13 +39,13 @@
     },
     {
       "id": 8,
-      "description": "Verify live on-device rendering (navigate past days in timeline, verify bottom sheet cards appear, verify places tab shows full count), capture visual verification proof",
+      "description": "Fix Places tab 15s timeout / 'Maps is offline' error and verify live on-device rendering with actual place counts and categories",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/deploy_to_emulator_pure.py",
+      "scripts/build_master_v56_clean.py",
       "scripts/deploy_to_pixel.py",
       "docs/gms_odlh_read_performance_spec.md"
     ],
@@ -53,7 +53,9 @@
       "scripts/audit_api_contracts.py"
     ],
     "scratch_logs": [
-      ".agent/scratch/perf_eval.log"
+      "scratch/device_proofs/places_tab_live.png",
+      "scratch/device_proofs/food_and_drink.png",
+      "scratch/device_proofs/cities_view.png"
     ]
   }
 }
