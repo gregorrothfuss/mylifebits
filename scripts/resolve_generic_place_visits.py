@@ -7,6 +7,9 @@ S2 cell decodings, Takeout history, and temporal context.
 
 import sqlite3
 import s2sphere
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from enrichment.canonical_place_overrides import CANONICAL_PLACE_OVERRIDES
 
 DB_PATH = "timeline_viewer.db"
 
@@ -344,27 +347,16 @@ PLACE_RESOLUTIONS = {
     },
 }
 
-# 10 August 2026 Home IDs located at 40.7205, -73.9794
-AUGUST_HOME_PIDS = {
-    "ChIJz03QXJRbwokR7eKaWjPrxs8",
-    "ChIJwU2q80ZbwokR4ki3XALubUw",
-    "ChIJu0yL1oZZwokRSHR1VPgggqY",
-    "ChIJXcazZuFYwokRxP8vyzx8nKE",
-    "ChIJXcVNo4VbwokRKMN5_z67i9Y",
-    "ChIJJ2aW3PpdwokRh9wDSWwje84",
-    "ChIJ845GdOxbwokR0LCUSl0nG00",
-    "ChIJ5xkWwfdbwokR-W7O5xNBL9I",
-    "ChIJ3TeIvYZZwokRbOi6eKhTbXg",
-    "ChIJ1Zz8nZBbwokRVc7XCzMQDos",
-}
-
-for pid in AUGUST_HOME_PIDS:
+# Merge authoritative CANONICAL_PLACE_OVERRIDES
+for pid, cdata in CANONICAL_PLACE_OVERRIDES.items():
     PLACE_RESOLUTIONS[pid] = {
-        "name": "Home (298 E 2nd St)",
-        "address": "298 E 2nd St, New York, NY 10009, USA",
-        "category": "Home & Residence",
-        "lat": 40.7205015, "lng": -73.9793606,
-        "city": "New York", "country": "United States"
+        "name": cdata["name"],
+        "address": cdata["address"],
+        "category": cdata.get("category", "Other / POI"),
+        "lat": cdata["latitude"],
+        "lng": cdata["longitude"],
+        "city": "New York" if "New York" in cdata["address"] or "Brooklyn" in cdata["address"] else "Zürich",
+        "country": "United States" if "USA" in cdata["address"] or "New York" in cdata["address"] else "Switzerland"
     }
 
 
