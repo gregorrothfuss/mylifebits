@@ -1,6 +1,6 @@
 {
   "goal": "Deploy optimized timeline database to Android hardware/VM, run performance evaluations, setup live demo, and produce Zurich Read Performance specification",
-  "active_step_id": 9,
+  "active_step_id": 10,
   "steps": [
     {
       "id": 1,
@@ -46,19 +46,40 @@
       "id": 9,
       "description": "Resolve and integrate full 14,171 catalog places into device ODLH using Zurich perf optimizations and valid place index keys",
       "status": "completed"
+    },
+    {
+      "id": 10,
+      "description": "Reconcile Citi Bike stations and dock stops in timeline_viewer.db, eliminate synthetic _e2c suffixes, and ensure canonical ChIJ places across all rides",
+      "status": "completed"
+    },
+    {
+      "id": 11,
+      "description": "Compile clean ODLH master database and places/2 cache directly from timeline_viewer.db with zero synthetic injections, zero overlaps, and strict monotonic intervals",
+      "status": "completed"
+    },
+    {
+      "id": 12,
+      "description": "Deploy clean master databases to Pixel 8a device, reset caches, and restart GMS Core and Google Maps",
+      "status": "completed"
+    },
+    {
+      "id": 13,
+      "description": "Verify single-day rendering fidelity (July 14, 2024 and recent days) on device with XML UI dump and screenshots, confirming zero broken moving segments and clean place cards",
+      "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/build_full_14k_master.py",
-      "scratch/deploy.sh"
+      "scripts/reconcile_citibike.py",
+      "scripts/build_pure_odlh_from_viewer.py",
+      "scripts/deploy_to_pixel.py"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py"
     ],
     "scratch_logs": [
-      "scratch/device_proofs/places_all_14k_live_final.png",
-      "scratch/device_proofs/cities_tab_live.png"
+      "scratch/device_proofs/day_jul14_clean.png",
+      "scratch/device_proofs/places_live.png"
     ]
   }
 }

@@ -4,11 +4,11 @@ WORKSPACE_DIR = os.getcwd()
 ADB = os.path.join(WORKSPACE_DIR, 'platform-tools', 'adb')
 SERIAL = os.environ.get("TARGET_SERIAL", "43151JEKB10775")
 
-OUT_ODLH_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'odlh_v56_clean.db')
-OUT_AUX_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'aux_v56_clean.db')
-OUT_MYPLACES_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'gmm_myplaces_v56.db')
-OUT_SYNC_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'gmm_sync_v56.db')
-OUT_PLACES2_PATH = os.path.join(WORKSPACE_DIR, 'scratch', 'places_2_v56')
+OUT_ODLH_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'odlh-storage.db')
+OUT_AUX_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'aux-odlh-storage.db')
+OUT_MYPLACES_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'gmm_myplaces.db')
+OUT_SYNC_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'gmm_sync.db')
+OUT_PLACES2_PATH = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'places_2')
 
 def get_pixel_serial():
     res = subprocess.run([ADB, "devices", "-l"], capture_output=True, text=True)
@@ -42,29 +42,47 @@ subprocess.run([ADB, "-s", SERIAL, "push", OUT_MYPLACES_DB, "/sdcard/gmm_myplace
 deploy_cmd = """
 am force-stop com.google.android.apps.maps
 am force-stop com.google.android.gms
+kill -9 $(pidof com.google.android.apps.maps com.google.android.gms com.google.android.gms.persistent) 2>/dev/null || true
+sleep 1
 
 cp /sdcard/places_2 /data/data/com.google.android.apps.maps/files/places/2
 cp /sdcard/places_2 /data/data/com.google.android.apps.maps/app_places/places/2
 cp /sdcard/places_2 /data/data/com.google.android.apps.maps/app_place_cache/places/2
+mkdir -p /data/data/com.google.android.apps.maps/files/users/search/104819208193648646391/places/
+cp /sdcard/places_2 /data/data/com.google.android.apps.maps/files/users/search/104819208193648646391/places/1
+cp /sdcard/places_2 /data/data/com.google.android.apps.maps/files/users/search/104819208193648646391/places/2
 
 cp /sdcard/gmm_sync.db /data/data/com.google.android.apps.maps/databases/gmm_sync.db
 cp /sdcard/gmm_myplaces.db /data/data/com.google.android.apps.maps/databases/gmm_myplaces.db
-cp /sdcard/odlh-storage.db /data/data/com.google.android.apps.maps/databases/odlh-storage.db
-cp /sdcard/aux-odlh-storage.db /data/data/com.google.android.apps.maps/databases/aux-odlh-storage.db
+
+rm -f /data/data/com.google.android.gms/databases/odlh* /data/data/com.google.android.gms/databases/aux*
+rm -f /data/user/0/com.google.android.gms/databases/odlh* /data/user/0/com.google.android.gms/databases/aux*
+rm -f /data/data/com.google.android.apps.maps/databases/odlh* /data/data/com.google.android.apps.maps/databases/aux*
+
 cp /sdcard/odlh-storage.db /data/data/com.google.android.gms/databases/odlh-storage.db
 cp /sdcard/odlh-storage.db /data/user/0/com.google.android.gms/databases/odlh-storage.db
+cp /sdcard/aux-odlh-storage.db /data/data/com.google.android.gms/databases/aux-odlh-storage.db
+cp /sdcard/aux-odlh-storage.db /data/user/0/com.google.android.gms/databases/aux-odlh-storage.db
+
+cp /sdcard/odlh-storage.db /data/data/com.google.android.apps.maps/databases/odlh-storage.db
+cp /sdcard/aux-odlh-storage.db /data/data/com.google.android.apps.maps/databases/aux-odlh-storage.db
 
 GMM_UID=`stat -c '%U:%G' /data/data/com.google.android.apps.maps/files/places/2 2>/dev/null || echo 'u0_a207:u0_a207'`
 GMS_UID=`stat -c '%U:%G' /data/data/com.google.android.gms/databases/odlh-storage.db 2>/dev/null || echo 'u0_a180:u0_a180'`
 
-chown -R $GMM_UID /data/data/com.google.android.apps.maps/files/places/
+chown -R $GMM_UID /data/data/com.google.android.apps.maps/files/
 chown -R $GMM_UID /data/data/com.google.android.apps.maps/databases/
 chown -R $GMS_UID /data/data/com.google.android.gms/databases/
 
-chmod 660 /data/data/com.google.android.apps.maps/files/places/2
-chmod 660 /data/data/com.google.android.apps.maps/databases/*
-chmod 660 /data/data/com.google.android.gms/databases/odlh*
+chmod 660 /data/data/com.google.android.apps.maps/files/places/* 2>/dev/null || true
+chmod 660 /data/data/com.google.android.apps.maps/files/users/search/104819208193648646391/places/* 2>/dev/null || true
+chmod 660 /data/data/com.google.android.apps.maps/databases/* 2>/dev/null || true
+chmod 660 /data/data/com.google.android.gms/databases/odlh* 2>/dev/null || true
+chmod 660 /data/data/com.google.android.gms/databases/aux* 2>/dev/null || true
 
+rm -f /data/data/com.google.android.apps.maps/databases/gmm_storage.db*
+rm -rf /data/data/com.google.android.apps.maps/cache/*
+rm -rf /data/data/com.google.android.apps.maps/code_cache/*
 rm -f /data/data/com.google.android.apps.maps/databases/*-wal /data/data/com.google.android.apps.maps/databases/*-shm
 rm -f /data/data/com.google.android.gms/databases/*-wal /data/data/com.google.android.gms/databases/*-shm
 
