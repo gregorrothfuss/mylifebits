@@ -27,78 +27,133 @@ _EMPTY_JPEG = (
 )
 
 
+ADB_ENV = {
+    **os.environ,
+    "ADB_USB": "0",
+    "ADB_MDNS": "0",
+    "ADB_MDNS_AUTO_CONNECT": "0",
+    "ADB_MDNS_OPENSCREEN": "0",
+}
+
+
 class GMMDeviceBridge:
     _cached_jpeg: bytes = b""
     _last_capture: float = 0.0
     _last_request_time: float = 0.0
+    _last_serial_check: float = 0.0
+    _cached_serial: str = DEFAULT_SERIAL
+    _native_size: Tuple[int, int] = (1080, 2400)
+    _rendered_size: Tuple[int, int] = (540, 1200)
     _thread_running: bool = False
     _worker_thread = None
     _lock = threading.Lock()
 
-    def __init__(self, serial: str = DEFAULT_SERIAL):
+    def __init__(self, serial: Optional[str] = None):
         self.adb = ADB_PATH if os.path.exists(ADB_PATH) else "adb"
-        self.serial = self._detect_best_serial(serial)
+        self.serial = serial or self._detect_best_serial(DEFAULT_SERIAL)
         self._ensure_worker_running()
 
     def _ensure_worker_running(self) -> None:
-        if not GMMDeviceBridge._thread_running and self.is_connected():
-            GMMDeviceBridge._thread_running = True
-            GMMDeviceBridge._last_request_time = time.time()
-            GMMDeviceBridge._worker_thread = threading.Thread(
-                target=self._capture_worker_loop,
-                daemon=True
-            )
-            GMMDeviceBridge._worker_thread.start()
+        with GMMDeviceBridge._lock:
+            if not GMMDeviceBridge._thread_running:
+                GMMDeviceBridge._thread_running = True
+                GMMDeviceBridge._last_request_time = time.time()
+                GMMDeviceBridge._worker_thread = threading.Thread(
+                    target=self._capture_worker_loop,
+                    daemon=True
+                )
+                GMMDeviceBridge._worker_thread.start()
 
     def _capture_worker_loop(self) -> None:
         while GMMDeviceBridge._thread_running:
             try:
                 now = time.time()
-                # Idle backoff if no HTTP screen request received in last 10 seconds
-                if now - GMMDeviceBridge._last_request_time > 10.0:
-                    time.sleep(0.5)
+                # Idle backoff if no HTTP screen request received in last 8 seconds
+                if now - GMMDeviceBridge._last_request_time > 8.0:
+                    time.sleep(0.4)
                     continue
-                res = subprocess.run([self.adb, "-s", self.serial, "exec-out", "screencap", "-p"], capture_output=True, timeout=2)
+
+                active_serial = self._detect_best_serial(self.serial)
+                self.serial = active_serial
+
+                res = subprocess.run(
+                    [self.adb, "-s", self.serial, "exec-out", "screencap", "-p"],
+                    capture_output=True,
+                    timeout=1.2,
+                    env=ADB_ENV
+                )
                 if res.stdout and res.stdout[:4] == b"\x89PNG":
                     img = Image.open(io.BytesIO(res.stdout)).convert("RGB")
+                    w, h = img.size
+                    target_w = 540
+                    target_h = int(h * (target_w / w))
+                    img_small = img.resize((target_w, target_h), Image.Resampling.BILINEAR)
                     buf = io.BytesIO()
-                    img.save(buf, format="JPEG", quality=65)
+                    img_small.save(buf, format="JPEG", quality=68, optimize=True)
+                    data = buf.getvalue()
                     with GMMDeviceBridge._lock:
-                        GMMDeviceBridge._cached_jpeg = buf.getvalue()
+                        GMMDeviceBridge._cached_jpeg = data
+                        GMMDeviceBridge._native_size = (w, h)
+                        GMMDeviceBridge._rendered_size = (target_w, target_h)
                         GMMDeviceBridge._last_capture = time.time()
-                time.sleep(0.08)
+                time.sleep(0.06)
             except Exception:
-                time.sleep(0.3)
+                GMMDeviceBridge._last_serial_check = 0.0
+                time.sleep(0.2)
 
     def _detect_best_serial(self, fallback: str) -> str:
+        now = time.time()
+        if GMMDeviceBridge._cached_serial and (now - GMMDeviceBridge._last_serial_check < 4.0):
+            return GMMDeviceBridge._cached_serial
+
         try:
-            res = subprocess.run([self.adb, "devices"], capture_output=True, text=True, timeout=2)
+            res = subprocess.run(
+                [self.adb, "devices"],
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                env=ADB_ENV
+            )
             lines = [l.split("\t")[0] for l in res.stdout.strip().split("\n")[1:] if "\tdevice" in l]
-            # Prioritize physical Pixel 8a if available
+            # Prioritize live physical Pixel 8a if online
+            chosen = None
             for dev in lines:
                 if "10.80.1.36" in dev or "43151JEKB10775" in dev:
-                    return dev
-            # Next check Android VM / Emulator
-            for dev in lines:
-                if "emulator" in dev or dev.startswith("127.0.0.1:"):
-                    return dev
-            if fallback and fallback in lines:
-                return fallback
-            if lines:
-                return lines[0]
+                    chosen = dev
+                    break
+            if not chosen:
+                for dev in lines:
+                    if "emulator" in dev or dev.startswith("127.0.0.1:"):
+                        chosen = dev
+                        break
+            if not chosen and fallback in lines:
+                chosen = fallback
+            if not chosen and lines:
+                chosen = lines[0]
+            if chosen:
+                GMMDeviceBridge._cached_serial = chosen
+                GMMDeviceBridge._last_serial_check = now
+                return chosen
         except Exception:
             pass
+
         return fallback
 
     def is_connected(self) -> bool:
         try:
-            res = subprocess.run([self.adb, "-s", self.serial, "get-state"], capture_output=True, text=True, timeout=3)
+            res = subprocess.run(
+                [self.adb, "-s", self.serial, "get-state"],
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+                env=ADB_ENV
+            )
             return res.stdout.strip() == "device"
         except Exception:
             return False
 
     def capture_screen_bytes(self) -> bytes:
-        """Captures live screen bytes in JPEG format with background caching."""
+        """Captures live screen bytes in JPEG format directly from in-memory cache."""
         GMMDeviceBridge._last_request_time = time.time()
         with GMMDeviceBridge._lock:
             if GMMDeviceBridge._cached_jpeg:
@@ -106,24 +161,37 @@ class GMMDeviceBridge:
         return _EMPTY_JPEG
 
     def send_touch(self, action: str, x: int, y: Optional[int] = None, x2: Optional[int] = None, y2: Optional[int] = None, duration_ms: int = 200) -> bool:
-        """Sends tap or swipe event to Android device."""
+        """Sends tap or swipe event to Android device with automatic coordinate scaling."""
         try:
-            if action == "tap" and y is not None:
-                subprocess.run([self.adb, "-s", self.serial, "shell", "input", "tap", str(x), str(y)], check=True, timeout=3)
-            elif action == "swipe" and y is not None and x2 is not None and y2 is not None:
-                subprocess.run([self.adb, "-s", self.serial, "shell", "input", "swipe", str(x), str(y), str(x2), str(y2), str(duration_ms)], check=True, timeout=3)
+            with GMMDeviceBridge._lock:
+                nw, nh = GMMDeviceBridge._native_size
+                rw, rh = GMMDeviceBridge._rendered_size
+
+            scale_x = (nw / rw) if rw else 1.0
+            scale_y = (nh / rh) if rh else 1.0
+
+            sx = int(round(x * scale_x))
+            sy = int(round(y * scale_y)) if y is not None else None
+            sx2 = int(round(x2 * scale_x)) if x2 is not None else None
+            sy2 = int(round(y2 * scale_y)) if y2 is not None else None
+
+            if action == "tap" and sy is not None:
+                subprocess.run([self.adb, "-s", self.serial, "shell", "input", "tap", str(sx), str(sy)], check=True, timeout=1.5, env=ADB_ENV)
+            elif action == "swipe" and sy is not None and sx2 is not None and sy2 is not None:
+                subprocess.run([self.adb, "-s", self.serial, "shell", "input", "swipe", str(sx), str(sy), str(sx2), str(sy2), str(duration_ms)], check=True, timeout=1.5, env=ADB_ENV)
             elif action == "key":
-                subprocess.run([self.adb, "-s", self.serial, "shell", "input", "keyevent", str(x)], check=True, timeout=3)
+                subprocess.run([self.adb, "-s", self.serial, "shell", "input", "keyevent", str(x)], check=True, timeout=1.5, env=ADB_ENV)
             return True
         except Exception as e:
             print(f"[!] Touch error: {e}")
+            GMMDeviceBridge._last_serial_check = 0.0
             return False
 
     def send_text(self, text: str) -> bool:
         """Sends typed text string to Android device."""
         try:
             escaped = text.replace(" ", "%s").replace("&", "\\&").replace("<", "\\<").replace(">", "\\>").replace("\"", "\\\"").replace("'", "\\'")
-            subprocess.run([self.adb, "-s", self.serial, "shell", "input", "text", escaped], check=True, timeout=3)
+            subprocess.run([self.adb, "-s", self.serial, "shell", "input", "text", escaped], check=True, timeout=1.5, env=ADB_ENV)
             return True
         except Exception as e:
             print(f"[!] Text error: {e}")
@@ -132,7 +200,6 @@ class GMMDeviceBridge:
     def send_key(self, keycode: int) -> bool:
         """Sends Android keyevent by keycode."""
         return self.send_touch("key", keycode)
-
 
     def open_timeline(self) -> Dict[str, Any]:
         """
@@ -308,3 +375,16 @@ class GMMDeviceBridge:
             "discrepancy_count": discrepancies,
             "comparisons": comparisons
         }
+
+
+_GLOBAL_BRIDGE: Optional[GMMDeviceBridge] = None
+_GLOBAL_BRIDGE_LOCK = threading.Lock()
+
+
+def get_bridge() -> GMMDeviceBridge:
+    global _GLOBAL_BRIDGE
+    with _GLOBAL_BRIDGE_LOCK:
+        if _GLOBAL_BRIDGE is None:
+            _GLOBAL_BRIDGE = GMMDeviceBridge()
+        return _GLOBAL_BRIDGE
+

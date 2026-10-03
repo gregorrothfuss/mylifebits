@@ -224,12 +224,20 @@
     const ctx = canvas.getContext("2d");
 
     let isStreaming = true;
+    let isFetching = false;
+    let frameTimer = null;
 
-    // High-speed low-latency stream loop via Canvas
-    function loadNextFrame() {
-      if (!isStreaming) return;
+    function scheduleFrame(delayMs = 60) {
+      if (frameTimer) clearTimeout(frameTimer);
+      frameTimer = setTimeout(fetchFrame, delayMs);
+    }
+
+    function fetchFrame() {
+      if (!isStreaming || isFetching) return;
+      isFetching = true;
       const nextImg = new Image();
       nextImg.onload = () => {
+        isFetching = false;
         if (nextImg.naturalWidth && nextImg.naturalHeight) {
           if (canvas.width !== nextImg.naturalWidth || canvas.height !== nextImg.naturalHeight) {
             canvas.width = nextImg.naturalWidth;
@@ -241,14 +249,15 @@
           }
         }
         ctx.drawImage(nextImg, 0, 0, canvas.width, canvas.height);
-        setTimeout(loadNextFrame, 35);
+        scheduleFrame(60);
       };
       nextImg.onerror = () => {
-        setTimeout(loadNextFrame, 200);
+        isFetching = false;
+        scheduleFrame(250);
       };
       nextImg.src = `/api/device/screen?t=${Date.now()}`;
     }
-    loadNextFrame();
+    fetchFrame();
 
     // Coordinate conversion
     function getCoords(e) {
@@ -270,7 +279,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action, x, y, x2, y2, duration_ms: duration })
         });
-        setTimeout(loadNextFrame, 50);
+        scheduleFrame(50);
       } catch (err) {
         console.error("Touch error:", err);
       }
@@ -362,8 +371,7 @@
     document.getElementById("btn-open-timeline").addEventListener("click", async () => {
       try {
         await fetch("/api/device/open-timeline", { method: "POST" });
-        setTimeout(loadNextFrame, 400);
-        setTimeout(loadNextFrame, 1000);
+        scheduleFrame(400);
       } catch (e) {
         console.error("Open timeline error:", e);
       }
@@ -379,8 +387,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ date: dateVal })
         });
-        setTimeout(loadNextFrame, 300);
-        setTimeout(loadNextFrame, 800);
+        scheduleFrame(300);
       } catch (e) {
         console.error("Intent error:", e);
       }

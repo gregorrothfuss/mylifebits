@@ -17,9 +17,9 @@ from api.router import Request, router
 def get_device_screen(req: Request) -> Response:
     """Captures live screen from connected Android device via ADB."""
     try:
-        from gmm_device_bridge import GMMDeviceBridge
+        from gmm_device_bridge import get_bridge
 
-        bridge = GMMDeviceBridge()
+        bridge = get_bridge()
         img_bytes = bridge.capture_screen_bytes()
         return Response(
             body=img_bytes,
@@ -37,9 +37,9 @@ def get_device_screen(req: Request) -> Response:
 def get_device_status(req: Request) -> Response:
     """Returns connected status and ADB serial of target device."""
     try:
-        from gmm_device_bridge import GMMDeviceBridge
+        from gmm_device_bridge import get_bridge
 
-        bridge = GMMDeviceBridge()
+        bridge = get_bridge()
         return json_response({
             "status": "SUCCESS",
             "connected": bridge.is_connected(),
@@ -61,9 +61,9 @@ def get_device_compare_day(req: Request) -> Response:
         return error_response("Missing date parameter", status_code=400)
 
     try:
-        from gmm_device_bridge import GMMDeviceBridge
+        from gmm_device_bridge import get_bridge
 
-        bridge = GMMDeviceBridge()
+        bridge = get_bridge()
         scratch_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scratch")
         db_candidates = (
             sorted([os.path.join(scratch_dir, f) for f in os.listdir(scratch_dir) if f.startswith("odlh_v") and f.endswith(".db")])
@@ -89,9 +89,9 @@ def send_device_touch(req: Request) -> Response:
     dur = int(data.get("duration_ms", 200))
 
     try:
-        from gmm_device_bridge import GMMDeviceBridge
+        from gmm_device_bridge import get_bridge
 
-        bridge = GMMDeviceBridge()
+        bridge = get_bridge()
         success = bridge.send_touch(action, x, y, int(x2) if x2 is not None else None, int(y2) if y2 is not None else None, dur)
         return json_response({"status": "SUCCESS" if success else "ERROR"})
     except Exception as e:
@@ -107,9 +107,9 @@ def send_device_keyboard(req: Request) -> Response:
     key_code = data.get("keyCode")
 
     try:
-        from gmm_device_bridge import GMMDeviceBridge
+        from gmm_device_bridge import get_bridge
 
-        bridge = GMMDeviceBridge()
+        bridge = get_bridge()
         if key_code is not None:
             success = bridge.send_key(int(key_code))
         elif text:
@@ -145,9 +145,9 @@ def send_device_keyboard(req: Request) -> Response:
 def send_device_open_timeline(req: Request) -> Response:
     """Directly opens Google Maps Timeline UI."""
     try:
-        from gmm_device_bridge import GMMDeviceBridge
+        from gmm_device_bridge import get_bridge
 
-        bridge = GMMDeviceBridge()
+        bridge = get_bridge()
         res = bridge.open_timeline()
         return json_response(res)
     except Exception as e:
@@ -163,9 +163,9 @@ def send_device_intent_day(req: Request) -> Response:
         return error_response("Missing date parameter", status_code=400)
 
     try:
-        from gmm_device_bridge import GMMDeviceBridge
+        from gmm_device_bridge import get_bridge
 
-        bridge = GMMDeviceBridge()
+        bridge = get_bridge()
         res = bridge.intent_to_day(date_str)
         return json_response(res)
     except Exception as e:
