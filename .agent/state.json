@@ -1,6 +1,6 @@
 {
   "goal": "Assign unique canonical ChIJ Place IDs for each Citi Bike dock station, materialize all dock visits across ride history, and deploy clean database to device",
-  "active_step_id": 4,
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
@@ -20,12 +20,12 @@
     {
       "id": 4,
       "description": "Build clean master odlh-storage.db and places/2 cache with 100% unique dock Place IDs, zero synthetic entries, and zero overlaps",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 5,
       "description": "Deploy clean master databases to Pixel 8a, restart GMS/Maps, and capture live on-device verification proofs of Places tab and timeline navigation",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "context_cache": {
@@ -33,6 +33,7 @@
       "scripts/resolve_unique_dock_place_ids.py",
       "scratch/citibike_unique_stations_catalog.json",
       "scripts/reconcile_citibike_physics_master.py",
+      "scripts/build_clean_master_v60.py",
       "timeline_viewer.db"
     ],
     "test_files": [
