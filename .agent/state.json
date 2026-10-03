@@ -1,38 +1,30 @@
 {
-  "goal": "Assign unique canonical ChIJ Place IDs for each Citi Bike dock station, materialize all dock visits across ride history, and deploy clean database to device",
-  "active_step_id": 5,
+  "goal": "Track down and eliminate moving segments regressions: fix ActivityType protobuf enum mapping and restore missing overnight home dwells",
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
-      "description": "Audit, disambiguate, and establish a 100% unique, canonical Google Maps ChIJ Place ID for every physical Citi Bike dock station used in ride history",
+      "description": "Track down root causes of 'Moving' regressions: audit ActivityType protobuf wire enums and unrecorded overnight telemetry gaps",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Reconcile and flank 100% of authentic Citi Bike rides in timeline_viewer.db with 15-second origin and destination dock visits using unique canonical Place IDs, enforcing stay protection",
+      "description": "Fix ActivityType protobuf mapping in build script (IN_PASSENGER_VEHICLE: 29, DRIVING: 29, IN_TAXI: 36) and restore missing overnight Home stay on Sep 20, 2026",
       "status": "completed"
     },
     {
       "id": 3,
-      "description": "Recompute exact visit counts, first/last timestamps in places table, verifying ~1,200+ visited Citi Bike stations and ~9,000+ total visited places with zero zero-count visited stations",
+      "description": "Recompile master database suite (odlh-storage.db, aux, places/2) with verified wire enums and full integrity check",
       "status": "completed"
     },
     {
       "id": 4,
-      "description": "Build clean master odlh-storage.db and places/2 cache with 100% unique dock Place IDs, zero synthetic entries, and zero overlaps",
-      "status": "completed"
-    },
-    {
-      "id": 5,
-      "description": "Deploy clean master databases to Pixel 8a, restart GMS/Maps, and capture live on-device verification proofs of Places tab and timeline navigation",
+      "description": "Deploy to Pixel 8a, restart GMS/Maps, and capture live on-device proof of Sep 20, 2026 showing Car/Driving icon and zero generic Moving cards",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/resolve_unique_dock_place_ids.py",
-      "scratch/citibike_unique_stations_catalog.json",
-      "scripts/reconcile_citibike_physics_master.py",
       "scripts/build_clean_master_v60.py",
       "timeline_viewer.db"
     ],

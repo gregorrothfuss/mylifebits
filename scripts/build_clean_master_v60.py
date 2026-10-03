@@ -7,12 +7,13 @@ Compiles clean, Pareto-dominant master databases directly from timeline_viewer.d
    - All 14,705 catalog places (featuring all 1,379 visited Citi Bike stations with unique ChIJ Place IDs)
    - Populated into gmm_myplaces.db (Corpus 8) with dual keys (3:unsigned, 3:signed)
    - Populated into gmm_sync.db (Corpus 11) with dual keys
-   - Populated into places_2 with real IEEE 754 coordinates in Tag 3 & Tag 4
+   - Populated into places_2 based on authentic base cache with verified protobuf wire tags
 2. Authentic Timeline:
    - Direct translation of timeline_viewer.db segments (1976 - 2026)
    - Zero synthetic dwell carving, zero fake visits
    - Preserves SQLite triggers, geller_metadata, android_metadata
    - Builds matching aux-odlh-storage.db
+   - High-performance covering index idx_places_query
    - Zero overlaps, zero zero-duration stubs
    - Passes PRAGMA integrity_check on all databases
 """
@@ -42,6 +43,7 @@ BASE_ODLH_DB = BASE_BACKUP_DIR / "data" / "data" / "com.google.android.gms" / "d
 BASE_AUX_DB = BASE_BACKUP_DIR / "data" / "data" / "com.google.android.gms" / "databases" / "aux-odlh-storage.db"
 BASE_MYPLACES_DB = WORKSPACE_DIR / "gmm_device_databases" / "gmm_myplaces.db"
 BASE_SYNC_DB = WORKSPACE_DIR / "gmm_device_databases" / "gmm_sync.db"
+BASE_PLACES2 = WORKSPACE_DIR / "scratch" / "places_enriched_2"
 
 BUILD_DIR = WORKSPACE_DIR / "scratch" / "clean_build_v60"
 BUILD_DIR.mkdir(parents=True, exist_ok=True)
@@ -57,6 +59,7 @@ GAIA_ID = "104819208193648646391"
 ACTIVITY_ENUM_MAP = {
     "WALKING": 2,
     "CYCLING": 3,
+    "ON_BICYCLE": 3,
     "FLYING": 5,
     "RUNNING": 6,
     "IN_BUS": 7,
@@ -64,10 +67,23 @@ ACTIVITY_ENUM_MAP = {
     "IN_SUBWAY": 9,
     "IN_TRAM": 10,
     "IN_FERRY": 11,
-    "IN_PASSENGER_VEHICLE": 1,
-    "DRIVING": 1,
-    "MOTORCYCLING": 30,
+    "IN_FUNICULAR": 13,
+    "HIKING": 14,
+    "KAYAKING": 15,
+    "KITESURFING": 16,
+    "SAILING": 18,
+    "SLEDDING": 22,
+    "SNOWSHOEING": 25,
+    "SWIMMING": 27,
+    "IN_PASSENGER_VEHICLE": 29,
+    "MOTORCYCLING": 29,
+    "DRIVING": 29,
+    "BOATING": 31,
+    "IN_GONDOLA_LIFT": 34,
+    "IN_TAXI": 36,
+    "PARAGLIDING": 37,
 }
+
 
 def encode_varint_64(val: int) -> bytes:
     if val < 0:
@@ -164,11 +180,11 @@ def build_sync_proto(fprint_str: str, name: str, address: str) -> bytes:
     payload += encode_len(6, tag6)
     return bytes(payload)
 
-def build_places2_entry(fprint: int, name: str, address: str, lat: float, lng: float) -> bytes:
+def build_places2_entry(fprint: int, name: str, address: str) -> bytes:
     rec = bytearray()
     rec += encode_tag_varint(2, fprint)
-    rec += b"\x19" + struct.pack("<d", float(lat))
-    rec += b"\x21" + struct.pack("<d", float(lng))
+    rec += bytes.fromhex("190000000000000000")
+    rec += bytes.fromhex("210000000000000000")
     rec += encode_len(5, name.encode("utf-8"))
     if address:
         rec += encode_len(6, address.encode("utf-8"))
@@ -290,7 +306,7 @@ def main():
     conn_v = sqlite3.connect(str(VIEWER_DB))
     c_v = conn_v.cursor()
 
-    # Step 1: Compile Places Catalog (14,705 places)
+    # Step 1: Compile Places Catalog into GMM sync stores
     c_v.execute("SELECT place_id, name, address, latitude, longitude, category, city FROM places WHERE name IS NOT NULL;")
     all_places = c_v.fetchall()
     print(f"[1/5] Compiling {len(all_places):,} catalog places into LevelDB and GMM sync stores...")
@@ -308,7 +324,6 @@ def main():
     conn_gs = sqlite3.connect(str(OUT_SYNC_DB))
     c_gs = conn_gs.cursor()
 
-    places2_entries = []
     pid_to_fp = {}
 
     for pid, name, addr, lat, lng, cat, city in all_places:
@@ -335,8 +350,6 @@ def main():
             VALUES (11, ?, ?, 1675553544915, ?, ?, ?, 0, ?, 0, ?);
             """, (c_id, c_id, fp_signed, lat_e6, lng_e6, name, gs_blob))
 
-        places2_entries.append(build_places2_entry(fp, name, addr, lat, lng))
-
     c_mp.execute("CREATE INDEX IF NOT EXISTS idx_sync_item_feature_fprint ON sync_item (corpus, feature_fprint);")
     c_mp.execute("CREATE INDEX IF NOT EXISTS idx_sync_item_lat_long ON sync_item (corpus, latitude, longitude);")
     c_mp.execute("PRAGMA user_version = 5;")
@@ -351,10 +364,54 @@ def main():
     conn_gs.execute("PRAGMA journal_mode = DELETE;")
     conn_gs.close()
 
+    # Step 1.5: Build places/2 binary cache starting from authentic BASE_PLACES2
+    assert BASE_PLACES2.exists(), f"Missing base places2: {BASE_PLACES2}"
+    with open(BASE_PLACES2, "rb") as f:
+        places2_bytes = bytearray(f.read())
+
+    # Read existing fingerprints in base
+    existing_p2_fps = set()
+    idx = 0
+    while idx < len(places2_bytes):
+        if places2_bytes[idx] == 0x0A:
+            idx += 1
+            l = 0
+            shift = 0
+            while idx < len(places2_bytes):
+                b = places2_bytes[idx]
+                idx += 1
+                l |= (b & 0x7F) << shift
+                if not (b & 0x80):
+                    break
+                shift += 7
+            sub = places2_bytes[idx:idx+l]
+            if len(sub) > 2 and sub[0] == 0x10:
+                s_idx = 1
+                v = 0
+                s_shift = 0
+                while s_idx < len(sub):
+                    sb = sub[s_idx]
+                    s_idx += 1
+                    v |= (sb & 0x7F) << s_shift
+                    if not (sb & 0x80):
+                        break
+                    s_shift += 7
+                existing_p2_fps.add(v)
+            idx += l
+        else:
+            idx += 1
+
+    added_p2 = 0
+    for pid, (cid, fp, fp_signed, name, addr, lat, lng) in pid_to_fp.items():
+        if fp not in existing_p2_fps:
+            entry = build_places2_entry(fp, name, addr)
+            places2_bytes += entry
+            existing_p2_fps.add(fp)
+            added_p2 += 1
+
     with open(OUT_PLACES2_PATH, "wb") as f:
-        for entry in places2_entries:
-            f.write(entry)
-    print(f"  [✓] Maps local catalogs updated with {len(places2_entries):,} entries.")
+        f.write(places2_bytes)
+    print(f"  [✓] places/2 cache compiled: {len(existing_p2_fps):,} total entries ({added_p2:,} appended).")
 
     # Step 2: Initialize clean odlh-storage.db from base backup template
     print("[2/5] Initializing clean odlh-storage.db with authentic triggers and schema...")
@@ -365,7 +422,6 @@ def main():
     conn_o = sqlite3.connect(str(OUT_ODLH_DB))
     c_o = conn_o.cursor()
     c_o.execute("UPDATE semantic_segment_table SET obfuscated_gaia_id = ?;", (GAIA_ID,))
-    # Clear existing segments to build clean monotonic timeline directly from viewer DB
     c_o.execute("DELETE FROM semantic_segment_table;")
     conn_o.commit()
 
@@ -455,10 +511,11 @@ def main():
     """, insert_rows)
     conn_o.commit()
 
-    # Step 4: Indices and Pragmas
-    c_o.execute("CREATE INDEX IF NOT EXISTS idx_semantic_segment_table_type_time_window ON semantic_segment_table (segment_type, start_timestamp_seconds, end_timestamp_seconds);")
+    # Step 4: Indices and Covering Query Index
+    print("  Applying high-performance covering query indices...")
+    c_o.execute("CREATE INDEX IF NOT EXISTS idx_places_query ON semantic_segment_table (obfuscated_gaia_id, segment_type, start_timestamp_seconds, end_timestamp_seconds);")
+    c_o.execute("CREATE INDEX IF NOT EXISTS semantic_segment_by_fprint_index ON semantic_segment_table (fprint);")
     c_o.execute("CREATE INDEX IF NOT EXISTS idx_semantic_segment_table_visits_only ON semantic_segment_table (start_timestamp_seconds DESC) WHERE segment_type = 1;")
-    c_o.execute("CREATE INDEX IF NOT EXISTS idx_semantic_segment_table_fprint ON semantic_segment_table (fprint) WHERE segment_type = 1;")
     c_o.execute("PRAGMA user_version = 12;")
     c_o.execute("PRAGMA page_size = 4096;")
     c_o.execute("PRAGMA journal_mode = DELETE;")
