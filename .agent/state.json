@@ -1,6 +1,6 @@
 {
   "goal": "Assign unique canonical ChIJ Place IDs for each Citi Bike dock station, materialize all dock visits across ride history, and deploy clean database to device",
-  "active_step_id": 2,
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
@@ -10,17 +10,17 @@
     {
       "id": 2,
       "description": "Reconcile and flank 100% of authentic Citi Bike rides in timeline_viewer.db with 15-second origin and destination dock visits using unique canonical Place IDs, enforcing stay protection",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Recompute exact visit counts, first/last timestamps in places table, verifying ~1,200+ visited Citi Bike stations and ~9,000+ total visited places with zero zero-count visited stations",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Build clean master odlh-storage.db and places/2 cache with 100% unique dock Place IDs, zero synthetic entries, and zero overlaps",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 5,
@@ -32,7 +32,7 @@
     "target_files": [
       "scripts/resolve_unique_dock_place_ids.py",
       "scratch/citibike_unique_stations_catalog.json",
-      "scripts/integrate_citibike_physics.py",
+      "scripts/reconcile_citibike_physics_master.py",
       "timeline_viewer.db"
     ],
     "test_files": [
