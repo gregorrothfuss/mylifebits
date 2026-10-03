@@ -1,6 +1,6 @@
 {
   "goal": "Deploy optimized timeline database to Android hardware/VM, run performance evaluations, setup live demo, and produce Zurich Read Performance specification",
-  "active_step_id": 8,
+  "active_step_id": 9,
   "steps": [
     {
       "id": 1,
@@ -41,21 +41,24 @@
       "id": 8,
       "description": "Fix Places tab 15s timeout / 'Maps is offline' error and verify live on-device rendering with actual place counts and categories",
       "status": "completed"
+    },
+    {
+      "id": 9,
+      "description": "Resolve and integrate full 14,171 catalog places into device ODLH using Zurich perf optimizations and valid place index keys",
+      "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/build_master_v56_clean.py",
-      "scripts/deploy_to_pixel.py",
-      "docs/gms_odlh_read_performance_spec.md"
+      "scripts/build_full_14k_master.py",
+      "scratch/deploy.sh"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py"
     ],
     "scratch_logs": [
-      "scratch/device_proofs/places_tab_live.png",
-      "scratch/device_proofs/food_and_drink.png",
-      "scratch/device_proofs/cities_view.png"
+      "scratch/device_proofs/places_all_14k_live_final.png",
+      "scratch/device_proofs/cities_tab_live.png"
     ]
   }
 }
