@@ -1,85 +1,43 @@
 {
-  "goal": "Deploy optimized timeline database to Android hardware/VM, run performance evaluations, setup live demo, and produce Zurich Read Performance specification",
-  "active_step_id": 10,
+  "goal": "Assign unique canonical ChIJ Place IDs for each Citi Bike dock station, materialize all dock visits across ride history, and deploy clean database to device",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Apply SQLite read performance optimizations (covering indices, pragmas) to master DB and deploy with correct Android UID/GID permissions",
+      "description": "Audit, disambiguate, and establish a 100% unique, canonical Google Maps ChIJ Place ID for every physical Citi Bike dock station used in ride history",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Implement and execute comprehensive performance evaluation suite (Binder latency, SQLite query scans, memory/GC, frame pacing)",
-      "status": "completed"
+      "description": "Reconcile and flank 100% of authentic Citi Bike rides in timeline_viewer.db with 15-second origin and destination dock visits using unique canonical Place IDs, enforcing stay protection",
+      "status": "in_progress"
     },
     {
       "id": 3,
-      "description": "Establish live demo interface and verification proofs (Timeline screen capture, Places tab, day navigation)",
-      "status": "completed"
+      "description": "Recompute exact visit counts, first/last timestamps in places table, verifying ~1,200+ visited Citi Bike stations and ~9,000+ total visited places with zero zero-count visited stations",
+      "status": "pending"
     },
     {
       "id": 4,
-      "description": "Author GMS Core Read Performance Technical Specification and Proposal document for Zurich team",
-      "status": "completed"
+      "description": "Build clean master odlh-storage.db and places/2 cache with 100% unique dock Place IDs, zero synthetic entries, and zero overlaps",
+      "status": "pending"
     },
     {
       "id": 5,
-      "description": "Run contract audits and verify repository integrity",
-      "status": "completed"
-    },
-    {
-      "id": 6,
-      "description": "Build flawless master v55 database with corrected fprint alignment (full 14,171 catalog places), compliant GMS protobuf wire structures, and gapless temporal coverage through late September 2026",
-      "status": "completed"
-    },
-    {
-      "id": 7,
-      "description": "Deploy v55 databases to device/emulator, reset package states, and restart GMS Core and Google Maps",
-      "status": "completed"
-    },
-    {
-      "id": 8,
-      "description": "Fix Places tab 15s timeout / 'Maps is offline' error and verify live on-device rendering with actual place counts and categories",
-      "status": "completed"
-    },
-    {
-      "id": 9,
-      "description": "Resolve and integrate full 14,171 catalog places into device ODLH using Zurich perf optimizations and valid place index keys",
-      "status": "completed"
-    },
-    {
-      "id": 10,
-      "description": "Reconcile Citi Bike stations and dock stops in timeline_viewer.db, eliminate synthetic _e2c suffixes, and ensure canonical ChIJ places across all rides",
-      "status": "completed"
-    },
-    {
-      "id": 11,
-      "description": "Compile clean ODLH master database and places/2 cache directly from timeline_viewer.db with zero synthetic injections, zero overlaps, and strict monotonic intervals",
-      "status": "completed"
-    },
-    {
-      "id": 12,
-      "description": "Deploy clean master databases to Pixel 8a device, reset caches, and restart GMS Core and Google Maps",
-      "status": "completed"
-    },
-    {
-      "id": 13,
-      "description": "Verify single-day rendering fidelity (July 14, 2024 and recent days) on device with XML UI dump and screenshots, confirming zero broken moving segments and clean place cards",
-      "status": "completed"
+      "description": "Deploy clean master databases to Pixel 8a, restart GMS/Maps, and capture live on-device verification proofs of Places tab and timeline navigation",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/reconcile_citibike.py",
-      "scripts/build_pure_odlh_from_viewer.py",
-      "scripts/deploy_to_pixel.py"
+      "scripts/resolve_unique_dock_place_ids.py",
+      "scratch/citibike_unique_stations_catalog.json",
+      "scripts/integrate_citibike_physics.py",
+      "timeline_viewer.db"
     ],
     "test_files": [
       "scripts/audit_api_contracts.py"
     ],
-    "scratch_logs": [
-      "scratch/device_proofs/day_jul14_clean.png",
-      "scratch/device_proofs/places_live.png"
-    ]
+    "scratch_logs": []
   }
 }
