@@ -74,7 +74,11 @@ class GMMDeviceBridge:
         try:
             res = subprocess.run([self.adb, "devices"], capture_output=True, text=True, timeout=2)
             lines = [l.split("\t")[0] for l in res.stdout.strip().split("\n")[1:] if "\tdevice" in l]
-            # Prioritize Android VM / Emulator
+            # Prioritize physical Pixel 8a if available
+            for dev in lines:
+                if "10.80.1.36" in dev or "43151JEKB10775" in dev:
+                    return dev
+            # Next check Android VM / Emulator
             for dev in lines:
                 if "emulator" in dev or dev.startswith("127.0.0.1:"):
                     return dev
