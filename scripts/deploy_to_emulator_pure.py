@@ -7,11 +7,11 @@ SERIAL = "emulator-5554"
 def adb_cmd(args, **kwargs):
     return subprocess.run([ADB, "-s", SERIAL] + args, **kwargs)
 
-OUT_ODLH_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'odlh_master_pure.db')
-OUT_AUX_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'aux-odlh-storage.db')
-OUT_MYPLACES_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'gmm_myplaces_pure.db')
-OUT_SYNC_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'gmm_sync_pure.db')
-OUT_PLACES2_PATH = os.path.join(WORKSPACE_DIR, 'scratch', 'places_2_pure')
+OUT_ODLH_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'odlh-storage.db')
+OUT_AUX_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'aux-odlh-storage.db')
+OUT_MYPLACES_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'gmm_myplaces.db')
+OUT_SYNC_DB = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'gmm_sync.db')
+OUT_PLACES2_PATH = os.path.join(WORKSPACE_DIR, 'scratch', 'clean_build_v60', 'places_2')
 
 print(f"[*] Deploying to Android VM Emulator: {SERIAL}...")
 
