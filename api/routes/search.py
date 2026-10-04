@@ -225,26 +225,22 @@ def search(req: Request) -> Response:
     if is_person_query:
         # For person queries, only match if the place name itself contains the query
         place_rows = query_all("""
-            SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
-                   max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
-                   p.review_text, p.review_rating, 1 as match_priority
-            FROM segments s
-            LEFT JOIN places p ON s.place_id = p.place_id
-            WHERE s.segment_type = 'visit' AND s.place_name LIKE ?
-            GROUP BY s.place_name, s.place_address
+            SELECT place_id, name as place_name, address as place_address, category, latitude, longitude,
+                   substr(last_visit_time, 1, 10) as last_date, visit_count, substr(first_visit_time, 1, 10) as first_date,
+                   review_text, review_rating, 1 as match_priority
+            FROM places
+            WHERE visit_count > 0 AND name LIKE ?
             ORDER BY visit_count DESC
             LIMIT ?;
         """, (wildcard, place_limit))
     else:
         place_rows = query_all("""
-            SELECT max(s.place_id) as place_id, s.place_name, s.place_address, s.category, s.latitude, s.longitude,
-                   max(s.date) as last_date, count(s.id) as visit_count, min(s.date) as first_date,
-                   p.review_text, p.review_rating,
-                   (CASE WHEN s.place_name LIKE ? THEN 1 WHEN s.place_address LIKE ? THEN 2 ELSE 3 END) as match_priority
-            FROM segments s
-            LEFT JOIN places p ON s.place_id = p.place_id
-            WHERE s.segment_type = 'visit' AND (s.place_name LIKE ? OR s.place_address LIKE ? OR p.review_text LIKE ?)
-            GROUP BY s.place_name, s.place_address
+            SELECT place_id, name as place_name, address as place_address, category, latitude, longitude,
+                   substr(last_visit_time, 1, 10) as last_date, visit_count, substr(first_visit_time, 1, 10) as first_date,
+                   review_text, review_rating,
+                   (CASE WHEN name LIKE ? THEN 1 WHEN address LIKE ? THEN 2 ELSE 3 END) as match_priority
+            FROM places
+            WHERE visit_count > 0 AND (name LIKE ? OR address LIKE ? OR review_text LIKE ?)
             ORDER BY match_priority ASC, visit_count DESC
             LIMIT ?;
         """, (wildcard, wildcard, wildcard, wildcard, wildcard, place_limit))
@@ -282,12 +278,11 @@ def search(req: Request) -> Response:
             """, (pid,))
         if not place_photo and pname:
             place_photo = query_one("""
-                SELECT p.sha256 FROM photos p
-                JOIN segments s ON p.timestamp_utc >= s.start_ts AND p.timestamp_utc <= s.end_ts
-                WHERE s.place_name = ? AND p.timestamp_utc IS NOT NULL
-                ORDER BY (CASE WHEN p.face_count > 0 THEN 0 ELSE 1 END),
-                         (CASE WHEN p.filename LIKE 'Screen%' OR p.filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
-                         p.timestamp_utc DESC
+                SELECT sha256 FROM photos
+                WHERE place_name = ? AND timestamp_utc IS NOT NULL
+                ORDER BY (CASE WHEN face_count > 0 THEN 0 ELSE 1 END),
+                         (CASE WHEN filename LIKE 'Screen%' OR filename LIKE 'Screenshot%' THEN 1 ELSE 0 END),
+                         timestamp_utc DESC
                 LIMIT 1;
             """, (pname,))
         if not place_photo and plat is not None and plng is not None:
@@ -338,7 +333,7 @@ def search(req: Request) -> Response:
                 "icon": "fa-tag"
             })
 
-    all_results = results + person_results + person_visit_results + photo_visits_results + place_results + category_results
+    all_results = results + person_results + person_visit_results + place_results + photo_visits_results + category_results
     return json_response({"status": "SUCCESS", "count": len(all_results), "results": all_results[:limit]})
 
 
