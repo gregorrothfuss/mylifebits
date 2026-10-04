@@ -233,10 +233,18 @@
     }
 
     function fetchFrame() {
-      if (!isStreaming || isFetching) return;
+      if (!isStreaming) return;
+      if (isFetching) return;
       isFetching = true;
+
+      const watchdog = setTimeout(() => {
+        isFetching = false;
+        scheduleFrame(100);
+      }, 1200);
+
       const nextImg = new Image();
       nextImg.onload = () => {
+        clearTimeout(watchdog);
         isFetching = false;
         if (nextImg.naturalWidth && nextImg.naturalHeight) {
           if (canvas.width !== nextImg.naturalWidth || canvas.height !== nextImg.naturalHeight) {
@@ -249,9 +257,10 @@
           }
         }
         ctx.drawImage(nextImg, 0, 0, canvas.width, canvas.height);
-        scheduleFrame(60);
+        scheduleFrame(50);
       };
       nextImg.onerror = () => {
+        clearTimeout(watchdog);
         isFetching = false;
         scheduleFrame(250);
       };
@@ -279,7 +288,8 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action, x, y, x2, y2, duration_ms: duration })
         });
-        scheduleFrame(50);
+        isFetching = false;
+        scheduleFrame(40);
       } catch (err) {
         console.error("Touch error:", err);
       }

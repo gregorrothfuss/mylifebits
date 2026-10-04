@@ -203,20 +203,15 @@ class GMMDeviceBridge:
 
     def open_timeline(self) -> Dict[str, Any]:
         """
-        Reliably brings Google Maps Timeline to foreground without triggering AR/Google Lens.
+        Reliably brings Google Maps Timeline to foreground via direct intent.
         """
         try:
-            # Ensure Maps is in foreground
             subprocess.run([
                 self.adb, "-s", self.serial, "shell", "am", "start",
-                "-n", "com.google.android.apps.maps/com.google.android.maps.MapsActivity"
-            ], check=True, timeout=5)
-            time.sleep(0.5)
-            # Tap profile avatar at top-right (505, 65)
-            subprocess.run([self.adb, "-s", self.serial, "shell", "input", "tap", "505", "65"], check=True, timeout=3)
-            time.sleep(0.6)
-            # Tap 'Your Timeline' button at (270, 524)
-            subprocess.run([self.adb, "-s", self.serial, "shell", "input", "tap", "270", "524"], check=True, timeout=3)
+                "-S", "-a", "android.intent.action.VIEW",
+                "-d", "https://www.google.com/maps/timeline",
+                "-p", "com.google.android.apps.maps"
+            ], check=True, timeout=5, env=ADB_ENV)
             return {"status": "SUCCESS"}
         except Exception as e:
             return {"status": "ERROR", "error": str(e)}
