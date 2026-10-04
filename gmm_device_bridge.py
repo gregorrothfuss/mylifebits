@@ -14,6 +14,7 @@ import json
 import sqlite3
 import datetime
 import subprocess
+import re
 from typing import Dict, Any, List, Optional, Tuple
 
 import io
@@ -41,6 +42,7 @@ class GMMDeviceBridge:
     _last_capture: float = 0.0
     _last_request_time: float = 0.0
     _last_serial_check: float = 0.0
+    _last_mdns_discovery: float = 0.0
     _cached_serial: str = DEFAULT_SERIAL
     _native_size: Tuple[int, int] = (1080, 2400)
     _rendered_size: Tuple[int, int] = (540, 1200)
@@ -79,7 +81,7 @@ class GMMDeviceBridge:
                 res = subprocess.run(
                     [self.adb, "-s", self.serial, "exec-out", "screencap", "-p"],
                     capture_output=True,
-                    timeout=1.2,
+                    timeout=4.5,
                     env=ADB_ENV
                 )
                 if res.stdout and res.stdout[:4] == b"\x89PNG":
@@ -98,8 +100,42 @@ class GMMDeviceBridge:
                         GMMDeviceBridge._last_capture = time.time()
                 time.sleep(0.06)
             except Exception:
-                GMMDeviceBridge._last_serial_check = 0.0
-                time.sleep(0.2)
+                time.sleep(0.4)
+
+    def _discover_and_connect_pixel(self) -> Optional[str]:
+        """Discovers Pixel 8a dynamic wireless debugging port via mDNS and connects ADB."""
+        now = time.time()
+        if now - GMMDeviceBridge._last_mdns_discovery < 5.0:
+            return None
+        GMMDeviceBridge._last_mdns_discovery = now
+
+        try:
+            proc = subprocess.Popen(
+                ["dns-sd", "-Z", "_adb-tls-connect._tcp", "local."],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            time.sleep(0.8)
+            proc.terminate()
+            out, _ = proc.communicate(timeout=0.5)
+            m = re.search(r"SRV\s+\d+\s+\d+\s+(\d+)\s+(\S+)", out)
+            if m:
+                port = int(m.group(1))
+                ip = "10.80.1.36"
+                target = f"{ip}:{port}"
+                conn = subprocess.run(
+                    [self.adb, "connect", target],
+                    capture_output=True,
+                    text=True,
+                    timeout=2.0,
+                    env=ADB_ENV,
+                )
+                if "connected" in conn.stdout.lower():
+                    return target
+        except Exception:
+            pass
+        return None
 
     def _detect_best_serial(self, fallback: str) -> str:
         now = time.time()
@@ -115,12 +151,21 @@ class GMMDeviceBridge:
                 env=ADB_ENV
             )
             lines = [l.split("\t")[0] for l in res.stdout.strip().split("\n")[1:] if "\tdevice" in l]
-            # Prioritize live physical Pixel 8a if online
+
+            # 1. Prioritize live physical Pixel 8a if already attached
             chosen = None
             for dev in lines:
                 if "10.80.1.36" in dev or "43151JEKB10775" in dev:
                     chosen = dev
                     break
+
+            # 2. If not currently attached, attempt dynamic mDNS discovery
+            if not chosen:
+                discovered = self._discover_and_connect_pixel()
+                if discovered:
+                    chosen = discovered
+
+            # 3. Fallback to emulator only if physical device is completely unreachable
             if not chosen:
                 for dev in lines:
                     if "emulator" in dev or dev.startswith("127.0.0.1:"):

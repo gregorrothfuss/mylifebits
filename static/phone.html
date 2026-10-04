@@ -413,6 +413,31 @@
       });
       setTimeout(jumpToDate, 400);
     });
+
+    // Check device status
+    async function updateDeviceStatus() {
+      try {
+        const res = await fetch("/api/device/status");
+        const data = await res.json();
+        const lbl = document.getElementById("device-label");
+        if (data.connected) {
+          if (data.serial && (data.serial.includes("10.80.1.36") || data.serial.includes("43151JEKB10775"))) {
+            lbl.textContent = `Pixel 8a (Physical • ${data.serial})`;
+            lbl.style.color = "#10b981";
+          } else {
+            lbl.textContent = `Pixel 8 VM (${data.serial || "Online"})`;
+            lbl.style.color = "#38bdf8";
+          }
+        } else {
+          lbl.textContent = "Device Offline";
+          lbl.style.color = "#ef4444";
+        }
+      } catch (e) {
+        console.error("Status error:", e);
+      }
+    }
+    updateDeviceStatus();
+    setInterval(updateDeviceStatus, 4000);
   </script>
 </body>
 </html>

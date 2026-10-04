@@ -1,25 +1,10 @@
 {
-  "goal": "Track down and eliminate moving segments regressions: fix ActivityType protobuf enum mapping and restore missing overnight home dwells",
-  "active_step_id": 4,
+  "goal": "Fix Places tab 81 vs 8547 desync: lock stream to physical Pixel 8a, add mDNS port discovery, and eliminate Wi-Fi screencap timeouts",
+  "active_step_id": 1,
   "steps": [
     {
       "id": 1,
-      "description": "Track down root causes of 'Moving' regressions: audit ActivityType protobuf wire enums and unrecorded overnight telemetry gaps",
-      "status": "completed"
-    },
-    {
-      "id": 2,
-      "description": "Fix ActivityType protobuf mapping in build script (IN_PASSENGER_VEHICLE: 29, DRIVING: 29, IN_TAXI: 36) and restore missing overnight Home stay on Sep 20, 2026",
-      "status": "completed"
-    },
-    {
-      "id": 3,
-      "description": "Recompile master database suite (odlh-storage.db, aux, places/2) with verified wire enums and full integrity check",
-      "status": "completed"
-    },
-    {
-      "id": 4,
-      "description": "Deploy to Pixel 8a, restart GMS/Maps, and capture live on-device proof of Sep 20, 2026 showing Car/Driving icon and zero generic Moving cards",
+      "description": "Diagnose root cause of 81 places vs 8547 places: Wi-Fi latency timeout (1.2s) causing false fallback to emulator; implement mDNS dynamic port discovery and increase timeout to 4.5s",
       "status": "completed"
     }
   ],
