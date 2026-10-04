@@ -1,21 +1,32 @@
 {
-  "goal": "Fix Places tab 81 vs 8547 desync: lock stream to physical Pixel 8a, add mDNS port discovery, and eliminate Wi-Fi screencap timeouts",
-  "active_step_id": 1,
+  "goal": "Uncover physical storage of 171 trips in prod GMM / GMS Core, extract schema and trip records, and deploy/verify on device",
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
-      "description": "Diagnose root cause of 81 places vs 8547 places: Wi-Fi latency timeout (1.2s) causing false fallback to emulator; implement mDNS dynamic port discovery and increase timeout to 4.5s",
+      "description": "Inspect 105MB GMS Geller DB and related databases to identify the trip storage schema, corpora, and trip counts",
+      "status": "completed"
+    },
+    {
+      "id": 2,
+      "description": "Inspect LevelDB and GMM-specific databases in the backup archive for trip caches or summaries",
+      "status": "completed"
+    },
+    {
+      "id": 3,
+      "description": "Deploy authentic Geller DB / trip stores to test device, verify Trips tab rendering, and capture proof artifact",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/build_clean_master_v60.py",
-      "timeline_viewer.db"
+      "scripts/inject_authentic_trips_into_v60.py",
+      "scripts/verify_trips_on_device.py"
     ],
-    "test_files": [
-      "scripts/audit_api_contracts.py"
-    ],
-    "scratch_logs": []
+    "test_files": [],
+    "scratch_logs": [
+      ".agent/scratch/trips_exact_count.log",
+      ".agent/scratch/all_171_trips.log"
+    ]
   }
 }
