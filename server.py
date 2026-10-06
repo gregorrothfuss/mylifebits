@@ -50,11 +50,15 @@ class TimelineViewerHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith("/previews/"):
             parsed_path = urllib.parse.urlparse(self.path).path
             fname = os.path.basename(parsed_path)
-            cand_dirs = [
-                "/Users/rothfuss/projects/gregor_cos/previews",
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gregor_cos", "previews"),
-                os.path.expanduser("~/projects/gregor_cos/previews"),
-            ]
+            cand_dirs = []
+            env_previews = os.environ.get("PREVIEWS_DIR")
+            if env_previews:
+                cand_dirs.append(env_previews)
+            cand_dirs.extend([
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "previews"),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "photos_vault", "previews"),
+                os.path.expanduser("~/photos/previews"),
+            ])
             file_path = None
             for cd in cand_dirs:
                 cp = os.path.join(cd, fname)

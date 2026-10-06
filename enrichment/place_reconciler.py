@@ -669,7 +669,8 @@ def reverse_geocode_osm(lat: float, lng: float, timeout_sec: float = 5.0) -> Opt
     # 1. Try Photon first (high availability, fast, no harsh rate limits)
     try:
         photon_url = f"https://photon.komoot.io/reverse?lat={lat:.6f}&lon={lng:.6f}"
-        req = urllib.request.Request(photon_url, headers={"User-Agent": "GregorMyLifeBits/2.0"})
+        ua = os.environ.get("HTTP_USER_AGENT", "MyLifeBits/2.0 (archival timeline system)")
+        req = urllib.request.Request(photon_url, headers={"User-Agent": ua})
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             features = data.get("features", [])
@@ -712,9 +713,9 @@ def reverse_geocode_osm(lat: float, lng: float, timeout_sec: float = 5.0) -> Opt
         pass
 
     # 2. Fallback to Nominatim
-    url = f"https://nominatim.openstreetmap.org/reverse?lat={lat:.6f}&lon={lng:.6f}&format=jsonv2&addressdetails=1"
+    ua = os.environ.get("HTTP_USER_AGENT", "MyLifeBits/2.0 (archival timeline system)")
     headers = {
-        "User-Agent": "GregorMyLifeBits/2.0 (personal archival timeline system)",
+        "User-Agent": ua,
         "Accept": "application/json",
     }
     for attempt in range(2):

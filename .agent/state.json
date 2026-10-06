@@ -1,6 +1,6 @@
 {
   "goal": "Clean up codebase to not be tied to user account, make it ready for GitHub, and provide comprehensive architecture and implementation documentation",
-  "active_step_id": 2,
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
@@ -10,12 +10,12 @@
     {
       "id": 2,
       "description": "Generalize configuration, server, APIs, and scripts using environment variables and generic defaults, eliminating hardcoded user paths and account identifiers",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Provide database schema initialization script and anonymized demo dataset generator for instant out-of-the-box local execution",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 4,
@@ -40,21 +40,22 @@
   ],
   "context_cache": {
     "target_files": [
-      ".gitignore",
-      "server.py",
       "api/db.py",
+      "db.py",
+      "server.py",
       "api/routes/photos.py",
       "api/url_resolver.py",
-      "pyproject.toml",
-      "README.md",
-      "docs/ARCHITECTURE.md"
+      "road_snapper.py",
+      "importer.py",
+      "enrichment/place_reconciler.py",
+      "enrichment/import_high_quality_notes.py",
+      "enrichment/takeout_integrator.py",
+      ".env.example"
     ],
     "test_files": [
       "tests/test_clean_api.py",
       "tests/test_e2e_server.py"
     ],
-    "scratch_logs": [
-      ".agent/scratch/unittest.log"
-    ]
+    "scratch_logs": []
   }
 }

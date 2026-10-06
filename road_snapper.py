@@ -33,8 +33,8 @@ def init_cache():
 def query_osrm_api(lat1: float, lon1: float, lat2: float, lon2: float, osrm_mode: str = 'driving') -> Tuple[Optional[List[List[float]]], Optional[float]]:
     """Queries public OSRM router for real OpenStreetMap geometry."""
     try:
-        url = f"http://router.project-osrm.org/route/v1/{osrm_mode}/{lon1:.6f},{lat1:.6f};{lon2:.6f},{lat2:.6f}?overview=full&geometries=geojson"
-        req = urllib.request.Request(url, headers={'User-Agent': 'GregorMyLifeBits/1.0'})
+        ua = os.environ.get("HTTP_USER_AGENT", "MyLifeBits/1.0")
+        req = urllib.request.Request(url, headers={'User-Agent': ua})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
             if data.get('code') == 'Ok' and data.get('routes'):

@@ -87,8 +87,8 @@ def resolve_google_maps_url(input_str: str) -> Dict[str, Any]:
     # 4. Reverse geocode address if lat/lng available
     if res["latitude"] and res["longitude"]:
         try:
-            r_url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={res['latitude']}&lon={res['longitude']}"
-            r_req = urllib.request.Request(r_url, headers={"User-Agent": "GregorMyLifeBits/1.0"})
+            ua = os.environ.get("HTTP_USER_AGENT", "MyLifeBits/1.0")
+            r_req = urllib.request.Request(r_url, headers={"User-Agent": ua})
             with urllib.request.urlopen(r_req, context=ctx, timeout=4) as r_resp:
                 r_data = json.loads(r_resp.read().decode("utf-8"))
                 res["address"] = r_data.get("display_name")

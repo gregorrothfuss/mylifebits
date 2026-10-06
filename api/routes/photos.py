@@ -19,16 +19,23 @@ from api.db import query_all, query_one
 from api.response import Response, binary_response, error_response, json_response
 from api.router import Request, router
 
-CACHE_DIR = Path.home() / ".gregor_mylifebits" / "photo_cache"
+CACHE_DIR = Path(os.environ.get("PHOTO_CACHE_DIR", str(Path.home() / ".mylifebits" / "photo_cache")))
 SSL_CTX = ssl._create_unverified_context()
 
-# Candidate directories where gregor_cos previews reside
-PREVIEWS_SEARCH_DIRS = [
-    Path("/Users/rothfuss/projects/gregor_cos/previews"),
-    Path(__file__).resolve().parent.parent.parent.parent / "gregor_cos" / "previews",
-    Path.home() / "projects" / "gregor_cos" / "previews",
-    Path.home() / "Documents" / "antigravity" / "gregor_cos" / "previews",
-]
+# Candidate directories where local photo previews reside
+def _get_previews_search_dirs() -> List[Path]:
+    dirs = []
+    env_dir = os.environ.get("PREVIEWS_DIR")
+    if env_dir:
+        dirs.append(Path(env_dir))
+    dirs.extend([
+        Path(__file__).resolve().parent.parent.parent / "previews",
+        Path.home() / "photos" / "previews",
+        Path.home() / "projects" / "photos_vault" / "previews",
+    ])
+    return dirs
+
+PREVIEWS_SEARCH_DIRS = _get_previews_search_dirs()
 
 
 def find_preview_file(identifier: str) -> Optional[Path]:

@@ -17,9 +17,12 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+import os
+
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent
-PHOTOS_DB = Path("/Users/rothfuss/projects/gregor_cos/photos_vault.db")
-VIEWER_DB = WORKSPACE_DIR / "timeline_viewer.db"
+PHOTOS_DB = Path(os.environ.get("PHOTOS_VAULT_DB", str(WORKSPACE_DIR / "photos_vault.db")))
+VIEWER_DB = Path(os.environ.get("TIMELINE_DB_PATH", str(WORKSPACE_DIR / "timeline_viewer.db" if (WORKSPACE_DIR / "timeline_viewer.db").exists() else WORKSPACE_DIR / "timeline.db")))
+SELF_NAME = os.environ.get("TIMELINE_USER_NAME", "")
 
 
 KNOWN_GALLERIES = {
@@ -354,7 +357,7 @@ def synthesize_clean_note(date_str, people, themes, locations, conn_viewer: sqli
         except Exception:
             pass
 
-    clean_p = [p for p in people if p != "Gregor J. Rothfuss"]
+    clean_p = [p for p in people if not SELF_NAME or p.lower() != SELF_NAME.lower()]
 
     # Verify companions against actual photos in viewer db to eliminate hallucinations from non-colocated partner media
     if conn_viewer and date_str:
@@ -366,7 +369,7 @@ def synthesize_clean_note(date_str, people, themes, locations, conn_viewer: sqli
             for (p_str,) in verified_people_rows:
                 for person in p_str.split(","):
                     p_clean = person.strip()
-                    if p_clean and p_clean != "Gregor J. Rothfuss":
+                    if p_clean and (not SELF_NAME or p_clean.lower() != SELF_NAME.lower()):
                         verified_people_set.add(p_clean)
             if verified_people_set:
                 clean_p = [p for p in clean_p if p in verified_people_set]
