@@ -35,14 +35,12 @@
     {
       "id": 7,
       "description": "Scrub large binary blobs from git history for GitHub 100MB limit compliance and perform full verification",
-      "status": "in_progress"
+      "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      "README.md",
-      "LICENSE",
-      "pyproject.toml"
+      ".agent/state.json"
     ],
     "test_files": [
       "tests/test_clean_api.py",
