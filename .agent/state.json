@@ -1,6 +1,6 @@
 {
   "goal": "Integrate multi-source Takeout ingestion for Google Photos (streaming sidecars/EXIF), Google Maps Reviews/Saved Places, and CLIP visual vector embeddings without external photos frontend, and update README without throat clearing",
-  "active_step_id": 12,
+  "active_step_id": 13,
   "steps": [
     {
       "id": 1,
@@ -60,6 +60,11 @@
     {
       "id": 12,
       "description": "Capture privacy-verified screenshots for documentation (Arches National Park, Yucatan flight, Universal Search) excluding all personal homes and people",
+      "status": "completed"
+    },
+    {
+      "id": 13,
+      "description": "Push sanitized codebase, documentation, and screenshots to GitHub remote origin main",
       "status": "completed"
     }
   ],
