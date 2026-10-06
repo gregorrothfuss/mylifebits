@@ -277,6 +277,145 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
     );
     """)
 
+    # 11. Life Periods Table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS life_periods (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        role_title TEXT,
+        address TEXT,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        is_current INTEGER DEFAULT 0,
+        description TEXT
+    );
+    """)
+
+    # 12. Memories Table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        memory_id TEXT UNIQUE,
+        date TEXT,
+        start_ts REAL,
+        end_ts REAL,
+        title TEXT,
+        raw_text TEXT,
+        raw_proto_hex TEXT
+    );
+    """)
+
+    # 13. Country Stats Table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS country_stats (
+        country TEXT PRIMARY KEY,
+        flag TEXT,
+        trips_count INTEGER DEFAULT 0,
+        total_days REAL DEFAULT 0,
+        total_visits INTEGER DEFAULT 0,
+        first_visit TEXT,
+        latest_visit TEXT
+    );
+    """)
+
+    # 14. Contacts Table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        organization TEXT,
+        street TEXT,
+        full_address TEXT,
+        email TEXT,
+        phone TEXT
+    );
+    """)
+
+    # 15. Calendar Events Table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS calendar_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        summary TEXT NOT NULL,
+        description TEXT,
+        location TEXT,
+        start_ts REAL NOT NULL,
+        end_ts REAL NOT NULL,
+        start_time TEXT,
+        end_time TEXT,
+        date TEXT,
+        with_people_json TEXT,
+        attendees_json TEXT,
+        calendar_source TEXT
+    );
+    """)
+
+    # 16. Custom Labeled Places
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS custom_labeled_places (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        address TEXT,
+        description TEXT,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        source_map TEXT,
+        source_type TEXT
+    );
+    """)
+
+    # 17. Place Aliases Table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS place_aliases (
+        alias_place_id TEXT PRIMARY KEY,
+        canonical_place_id TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 18. Google Place Cache
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS google_place_cache (
+        place_id TEXT PRIMARY KEY,
+        name TEXT,
+        address TEXT,
+        category TEXT,
+        city TEXT,
+        country TEXT,
+        latitude REAL,
+        longitude REAL,
+        primary_type TEXT,
+        types_json TEXT,
+        status TEXT NOT NULL,
+        raw_payload TEXT,
+        queried_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # 19. Photos Index Table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS photos (
+        sha256 TEXT PRIMARY KEY,
+        filename TEXT,
+        preview_path TEXT,
+        timestamp_utc INTEGER,
+        timezone_offset TEXT,
+        local_date TEXT,
+        latitude REAL,
+        longitude REAL,
+        place_id TEXT,
+        place_name TEXT,
+        address TEXT,
+        city TEXT,
+        country TEXT,
+        people TEXT,
+        face_count INTEGER DEFAULT 0,
+        is_partner INTEGER DEFAULT 0
+    );
+    """)
+
     # Create Performance Indices
     c.execute("CREATE INDEX IF NOT EXISTS idx_segments_date ON segments(date);")
     c.execute("CREATE INDEX IF NOT EXISTS idx_segments_year_month ON segments(year, month);")

@@ -1,6 +1,6 @@
 {
   "goal": "Clean up codebase to not be tied to user account, make it ready for GitHub, and provide comprehensive architecture and implementation documentation",
-  "active_step_id": 3,
+  "active_step_id": 4,
   "steps": [
     {
       "id": 1,
@@ -15,12 +15,12 @@
     {
       "id": 3,
       "description": "Provide database schema initialization script and anonymized demo dataset generator for instant out-of-the-box local execution",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Ensure hermetic test suite and API contract auditor pass cleanly with zero dependency on personal database",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 5,
@@ -40,17 +40,12 @@
   ],
   "context_cache": {
     "target_files": [
-      "api/db.py",
+      "scripts/init_db.py",
       "db.py",
-      "server.py",
-      "api/routes/photos.py",
-      "api/url_resolver.py",
-      "road_snapper.py",
+      "life_periods.py",
       "importer.py",
-      "enrichment/place_reconciler.py",
-      "enrichment/import_high_quality_notes.py",
-      "enrichment/takeout_integrator.py",
-      ".env.example"
+      "tests/test_clean_api.py",
+      "tests/test_e2e_server.py"
     ],
     "test_files": [
       "tests/test_clean_api.py",
