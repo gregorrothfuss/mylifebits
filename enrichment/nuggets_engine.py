@@ -49,9 +49,13 @@ def extract_archive_nuggets(db_path: str = DEFAULT_DB_PATH) -> Dict[str, Any]:
     west = dict(c.fetchone() or {})
 
     # 2. Cumulative Distances by Mode
-    c.execute("""
+    c.execute("PRAGMA table_info(segments);")
+    cols = {dict(r)["name"] for r in c.fetchall()}
+    dist_expr = "COALESCE(clean_distance_meters, distance_meters, 0)" if "clean_distance_meters" in cols else "COALESCE(distance_meters, 0)"
+
+    c.execute(f"""
     SELECT activity_type, COUNT(*) as count,
-           SUM(COALESCE(clean_distance_meters, distance_meters, 0))/1000.0 as total_km,
+           SUM({dist_expr})/1000.0 as total_km,
            SUM(duration_minutes)/60.0 as total_hours
     FROM segments
     WHERE segment_type = 'activity'
@@ -340,10 +344,14 @@ def get_activity_summaries(db_path: str = DEFAULT_DB_PATH, period: str = "all") 
     where_sql = " AND ".join(where_clauses)
 
     # 1. Mode Breakdown Query
+    c.execute("PRAGMA table_info(segments);")
+    cols = {dict(r)["name"] for r in c.fetchall()}
+    dist_expr = "COALESCE(clean_distance_meters, distance_meters, 0)" if "clean_distance_meters" in cols else "COALESCE(distance_meters, 0)"
+
     c.execute(f"""
         SELECT activity_type,
                COUNT(*) as count,
-               SUM(COALESCE(clean_distance_meters, distance_meters, 0))/1000.0 as total_km,
+               SUM({dist_expr})/1000.0 as total_km,
                SUM(duration_minutes)/60.0 as total_hours
         FROM segments
         WHERE {where_sql}

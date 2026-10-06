@@ -1,6 +1,6 @@
 {
   "goal": "Clean up codebase to not be tied to user account, make it ready for GitHub, and provide comprehensive architecture and implementation documentation",
-  "active_step_id": 4,
+  "active_step_id": 5,
   "steps": [
     {
       "id": 1,
@@ -20,12 +20,12 @@
     {
       "id": 4,
       "description": "Ensure hermetic test suite and API contract auditor pass cleanly with zero dependency on personal database",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 5,
       "description": "Author comprehensive system architecture specification, implementation guide, and data model documentation for other implementers",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 6,
@@ -40,16 +40,16 @@
   ],
   "context_cache": {
     "target_files": [
-      "scripts/init_db.py",
-      "db.py",
-      "life_periods.py",
-      "importer.py",
       "tests/test_clean_api.py",
-      "tests/test_e2e_server.py"
+      "tests/test_takeout_importer.py",
+      "enrichment/nuggets_engine.py",
+      "db.py",
+      "docs/ARCHITECTURE.md"
     ],
     "test_files": [
       "tests/test_clean_api.py",
-      "tests/test_e2e_server.py"
+      "tests/test_e2e_server.py",
+      "tests/test_takeout_importer.py"
     ],
     "scratch_logs": []
   }

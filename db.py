@@ -120,6 +120,7 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         city TEXT,
         activity_type TEXT,
         distance_meters REAL DEFAULT 0.0,
+        clean_distance_meters REAL,
         probability REAL DEFAULT 1.0,
         hierarchy_level INTEGER DEFAULT 0,   -- 0 = parent visit / normal activity, 1 = child visit
         parent_segment_id INTEGER,
@@ -137,6 +138,7 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
     # Migrations for segments
     _add_col_if_missing(c, "segments", "category TEXT")
     _add_col_if_missing(c, "segments", "city TEXT")
+    _add_col_if_missing(c, "segments", "clean_distance_meters REAL")
     _add_col_if_missing(c, "segments", "review_rating INTEGER")
     _add_col_if_missing(c, "segments", "review_photos TEXT")
 
