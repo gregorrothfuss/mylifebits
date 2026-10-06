@@ -1,6 +1,6 @@
 {
   "goal": "Clean up codebase to not be tied to user account, make it ready for GitHub, and provide comprehensive architecture and implementation documentation",
-  "active_step_id": 6,
+  "active_step_id": 7,
   "steps": [
     {
       "id": 1,
@@ -30,18 +30,18 @@
     {
       "id": 6,
       "description": "Author GitHub-ready README, Quickstart guide, and update pyproject.toml package metadata",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 7,
       "description": "Scrub large binary blobs from git history for GitHub 100MB limit compliance and perform full verification",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "context_cache": {
     "target_files": [
-      "docs/ARCHITECTURE.md",
       "README.md",
+      "LICENSE",
       "pyproject.toml"
     ],
     "test_files": [

@@ -73,6 +73,9 @@ server.py.bak
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
+dist/
+build/
 .venv/
 env/
 venv/
