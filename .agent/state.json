@@ -1,32 +1,60 @@
 {
-  "goal": "Uncover physical storage of 171 trips in prod GMM / GMS Core, extract schema and trip records, and deploy/verify on device",
-  "active_step_id": 3,
+  "goal": "Clean up codebase to not be tied to user account, make it ready for GitHub, and provide comprehensive architecture and implementation documentation",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Inspect 105MB GMS Geller DB and related databases to identify the trip storage schema, corpora, and trip counts",
+      "description": "Clean repository filesystem, add comprehensive .gitignore, and untrack large personal databases and private exports",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Inspect LevelDB and GMM-specific databases in the backup archive for trip caches or summaries",
-      "status": "completed"
+      "description": "Generalize configuration, server, APIs, and scripts using environment variables and generic defaults, eliminating hardcoded user paths and account identifiers",
+      "status": "in_progress"
     },
     {
       "id": 3,
-      "description": "Deploy authentic Geller DB / trip stores to test device, verify Trips tab rendering, and capture proof artifact",
-      "status": "completed"
+      "description": "Provide database schema initialization script and anonymized demo dataset generator for instant out-of-the-box local execution",
+      "status": "pending"
+    },
+    {
+      "id": 4,
+      "description": "Ensure hermetic test suite and API contract auditor pass cleanly with zero dependency on personal database",
+      "status": "pending"
+    },
+    {
+      "id": 5,
+      "description": "Author comprehensive system architecture specification, implementation guide, and data model documentation for other implementers",
+      "status": "pending"
+    },
+    {
+      "id": 6,
+      "description": "Author GitHub-ready README, Quickstart guide, and update pyproject.toml package metadata",
+      "status": "pending"
+    },
+    {
+      "id": 7,
+      "description": "Scrub large binary blobs from git history for GitHub 100MB limit compliance and perform full verification",
+      "status": "pending"
     }
   ],
   "context_cache": {
     "target_files": [
-      "scripts/inject_authentic_trips_into_v60.py",
-      "scripts/verify_trips_on_device.py"
+      ".gitignore",
+      "server.py",
+      "api/db.py",
+      "api/routes/photos.py",
+      "api/url_resolver.py",
+      "pyproject.toml",
+      "README.md",
+      "docs/ARCHITECTURE.md"
     ],
-    "test_files": [],
+    "test_files": [
+      "tests/test_clean_api.py",
+      "tests/test_e2e_server.py"
+    ],
     "scratch_logs": [
-      ".agent/scratch/trips_exact_count.log",
-      ".agent/scratch/all_171_trips.log"
+      ".agent/scratch/unittest.log"
     ]
   }
 }

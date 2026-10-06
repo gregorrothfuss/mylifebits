@@ -1,0 +1,111 @@
+# ==========================================
+# Timeline Studio & MyLifeBits .gitignore
+# ==========================================
+
+# Databases & SQLite Artifacts
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+*.db.bak*
+*.db.pre_*
+*.db.citibike_*
+timeline_viewer.db*
+test_fusion.db
+timeline.db
+schema.sql
+
+# Private Personal Takeouts, Dumps, Archives & Chronologies
+data/
+pixel10_export/
+scratch/
+citibike/
+scripts/citibike/
+synthesized_mail_visits.md
+synthetic_life_chronology.md
+PLAN.md
+TASKS.md
+TIMELINE_CONSTRAINTS.md
+
+# Android Extraction Dumps, Binaries, ROMs, Images & Tools
+gmm_fresh_extracted/
+gms_deep_check/
+gms_extracted/
+magisk_payload/
+magiskboot_darwin
+platform-tools/
+*.apk
+*.img
+*.zip
+*.tar
+*.tar.gz
+akita-factory.zip
+stock_init_boot.img
+Magisk-*.apk
+ocr_bin
+scripts/ocr_bin
+scripts/android_benchmark/
+
+# Temporary Screenshots & Media Dumps
+screenshot.png
+*.png
+*.jpg
+*.jpeg
+*.webp
+!static/**/*.png
+!static/**/*.jpg
+!static/**/*.svg
+!static/**/*.ico
+
+# Logs & Server Scratch
+*.log
+server.py.bak
+.agent/scratch/
+
+# Environment Variables & Local Secrets
+.env
+.env.*
+!.env.example
+
+# Python Environments & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS & Editor Artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# One-off Debugging & Device Experiment Scratch Scripts
+scripts/build_master_v*.py
+scripts/build_odlh_*.py
+scripts/capture_*.py
+scripts/deploy_*.py
+scripts/navigate_*.py
+scripts/swipe_*.py
+scripts/tap_*.py
+scripts/ocr*
+scripts/sequential_day_verifier_v*.py
+scripts/test_*.py
+scripts/jump_to_*.py
+scripts/open_and_tap_*.py
+scripts/run_*.py
+scripts/step_back_*.py
+scripts/*_v[0-9]*.py
+test_jun1_fix.py
+test_perfect_cb_sequencer.py
