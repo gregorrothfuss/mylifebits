@@ -177,6 +177,33 @@ The platform provides a universal importer (`importer.py`) capable of ingesting 
 - **Root Key**: `locations: [...]`
 - **Fields**: `timestamp` (or `timestampMs`), `latitudeE7`, `longitudeE7`, `accuracy`, `velocity`, `altitude`.
 
+### 3.5 Format 5: Google Maps Reviews (`Reviews.json` or `reviews.geojson`)
+- **File Structure**: `Takeout/Maps (your places)/Reviews.json` or `google_contributor_reviews.json`
+- **Entities**:
+  - `properties.Location`: `Business Name`, `Address`, `Country Code`, `Geo Coordinates.Latitude`, `Geo Coordinates.Longitude`.
+  - `properties.Review`: `Star Rating` (1–5), `Text`, `Time` (ISO 8601), `Review URL`.
+- **Linking Engine**: Resolves reviews against the visited `places` catalog using exact Place IDs or spatial proximity hash grid ($\le 250\text{ m}$ distance threshold), updating `places.review_rating`, `places.has_review = 1`, and `poi_reviews`.
+
+### 3.6 Format 6: Google Maps Saved Places (`Saved Places.json`)
+- **File Structure**: `Takeout/Maps (your places)/Saved Places.json`
+- **Entities**:
+  - `properties.Title`: Custom list category ("Want to go", "Starred places", "Favorites").
+  - `properties.Location`: `Business Name`, `Address`, `Geo Coordinates`.
+  - `properties.Comment`: Custom user note or description.
+- **Persistence**: Stored in `custom_labeled_places` and upserted into `places` with `user_confirmed = 1`.
+
+### 3.7 Format 7: Google Photos Takeout & JSON Sidecars
+- **File Structure**: `Takeout/Google Photos/` (or ZIP archive containing photos)
+- **Files**: Media assets (`.jpg`, `.heic`, `.png`, `.mp4`) and companion sidecars (`<filename>.json` or `<filename>.supplemental-metadata.json`).
+- **Sidecar Fields**:
+  - `photoTakenTime`: UTC Unix epoch timestamp and formatted string.
+  - `geoData` / `geoDataExif`: `latitude`, `longitude`, `altitude`.
+  - `people`: Tagged face recognition names (`[{"name": "Alice"}]`).
+  - `googlePhotosOrigin`: Detects partner sharing and mobile uploads.
+- **EXIF Fallback**: If sidecars are missing, parses EXIF `DateTimeOriginal` and GPS IFD tags directly from image binaries using Pillow.
+- **Preview Generation**: Generates 640px compressed WebP thumbnails stored in `data/previews/` (~20KB each).
+- **Timeline Linking**: Photos are matched by `local_date` and `timestamp_utc` to daily visits and activities, providing rich visual evidence in the timeline without requiring any external photos web UI.
+
 ---
 
 ## 4. Spatio-Temporal Invariants & Physics Engine

@@ -210,6 +210,156 @@ class TestTakeoutImporter(unittest.TestCase):
         res = self.importer.import_any(geojson_path)
         self.assertEqual(res.get("segments"), 1)
 
+    def test_05_reviews_takeout_ingestion(self):
+        """Tests importing standard Google Maps Takeout Reviews.json with spatial place matching."""
+        # First ensure a target place exists
+        conn = self.importer.conn
+        conn.execute("""
+        INSERT INTO places (place_id, name, address, latitude, longitude, category, visit_count)
+        VALUES ('ChIJ_tatte_bakery', 'Tatte Bakery', '318 Third St, Cambridge, MA', 42.3650, -71.0850, 'Food & Drink', 5);
+        """)
+        conn.commit()
+
+        reviews_path = os.path.join(self.temp_dir, "Reviews.json")
+        reviews_data = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-71.0850, 42.3650]
+                    },
+                    "properties": {
+                        "Location": {
+                            "Address": "318 Third St, Cambridge, MA 02142",
+                            "Business Name": "Tatte Bakery & Cafe",
+                            "Country Code": "US",
+                            "Geo Coordinates": {
+                                "Latitude": 42.3650,
+                                "Longitude": -71.0850
+                            }
+                        },
+                        "Review": {
+                            "Review URL": "https://maps.google.com/?cid=998877",
+                            "Star Rating": 5,
+                            "Text": "Fantastic shakshuka and pistachio croissants.",
+                            "Time": "2024-05-10T14:30:00Z"
+                        }
+                    }
+                }
+            ]
+        }
+        with open(reviews_path, "w", encoding="utf-8") as f:
+            json.dump(reviews_data, f)
+
+        res = self.importer.import_any(reviews_path)
+        self.assertEqual(res.get("total_reviews"), 1)
+        self.assertEqual(res.get("matched_pois"), 1)
+
+        c = conn.cursor()
+        c.execute("SELECT place_name, rating, review_text, matched_place_id FROM poi_reviews;")
+        rev_row = c.fetchone()
+        self.assertIsNotNone(rev_row)
+        self.assertEqual(rev_row["place_name"], "Tatte Bakery & Cafe")
+        self.assertEqual(rev_row["rating"], 5)
+        self.assertEqual(rev_row["matched_place_id"], "ChIJ_tatte_bakery")
+
+        # Verify place record was updated with review
+        c.execute("SELECT review_rating, has_review, review_text FROM places WHERE place_id = 'ChIJ_tatte_bakery';")
+        place_row = c.fetchone()
+        self.assertEqual(place_row["review_rating"], 5)
+        self.assertEqual(place_row["has_review"], 1)
+        self.assertIn("shakshuka", place_row["review_text"])
+
+    def test_06_saved_places_takeout_ingestion(self):
+        """Tests importing standard Google Maps Takeout Saved Places.json."""
+        saved_path = os.path.join(self.temp_dir, "Saved Places.json")
+        saved_data = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [-71.0550, 42.3520]
+                    },
+                    "properties": {
+                        "Google Maps URL": "https://maps.google.com/?cid=12345678",
+                        "Location": {
+                            "Address": "700 Atlantic Ave, Boston, MA",
+                            "Business Name": "South Station",
+                            "Country Code": "US",
+                            "Geo Coordinates": {
+                                "Latitude": 42.3520,
+                                "Longitude": -71.0550
+                            }
+                        },
+                        "Published": "2024-03-01T12:00:00Z",
+                        "Title": "Want to go",
+                        "Comment": "Catch the high-speed regional rail"
+                    }
+                }
+            ]
+        }
+        with open(saved_path, "w", encoding="utf-8") as f:
+            json.dump(saved_data, f)
+
+        res = self.importer.import_any(saved_path)
+        self.assertEqual(res.get("total_saved"), 1)
+
+        c = self.importer.conn.cursor()
+        c.execute("SELECT name, description, source_type FROM custom_labeled_places WHERE name = 'South Station';")
+        custom_row = c.fetchone()
+        self.assertIsNotNone(custom_row)
+        self.assertEqual(custom_row["source_type"], "Want to go")
+
+    def test_07_photos_takeout_ingestion(self):
+        """Tests ingesting photos with Google Photos companion JSON sidecars."""
+        from PIL import Image
+
+        photos_dir = os.path.join(self.temp_dir, "Google Photos", "Photos from 2024")
+        os.makedirs(photos_dir, exist_ok=True)
+
+        # Create dummy image
+        img_path = os.path.join(photos_dir, "IMG_20240501_120000.jpg")
+        img = Image.new("RGB", (100, 100), color=(73, 109, 137))
+        img.save(img_path, format="JPEG")
+
+        # Create Takeout sidecar
+        sidecar_path = os.path.join(photos_dir, "IMG_20240501_120000.jpg.json")
+        sidecar_data = {
+            "title": "IMG_20240501_120000.jpg",
+            "photoTakenTime": {
+                "timestamp": "1714564800",
+                "formatted": "May 1, 2024, 12:00:00 PM UTC"
+            },
+            "geoData": {
+                "latitude": 42.3601,
+                "longitude": -71.0589,
+                "altitude": 12.5
+            },
+            "people": [
+                {"name": "Alice"}
+            ]
+        }
+        with open(sidecar_path, "w", encoding="utf-8") as f:
+            json.dump(sidecar_data, f)
+
+        res = self.importer.import_any(photos_dir, is_photos=True)
+        self.assertEqual(res.get("ingested"), 1)
+
+        c = self.importer.conn.cursor()
+        c.execute("SELECT filename, timestamp_utc, local_date, latitude, longitude, people FROM photos;")
+        p_row = c.fetchone()
+        self.assertIsNotNone(p_row)
+        self.assertEqual(p_row["filename"], "IMG_20240501_120000.jpg")
+        self.assertEqual(p_row["timestamp_utc"], 1714564800)
+        self.assertEqual(p_row["local_date"], "2024-05-01")
+        self.assertAlmostEqual(p_row["latitude"], 42.3601, places=3)
+        self.assertIn("Alice", p_row["people"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

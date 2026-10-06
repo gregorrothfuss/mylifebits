@@ -717,15 +717,23 @@ class TimelineFusionImporter:
             props = feat.get('properties') or {}
             geom = feat.get('geometry') or {}
             coords = geom.get('coordinates') or []
-            r_lat = coords[1] if len(coords) >= 2 else None
-            r_lng = coords[0] if len(coords) >= 2 else None
+            loc = props.get('Location') or props.get('location') or {}
+            rev = props.get('Review') or props.get('review') or {}
+            geo_coords = loc.get('Geo Coordinates') or {}
 
-            p_name = props.get('place_name') or props.get('location', {}).get('name') or props.get('name') or ''
-            r_date = props.get('date') or ''
-            raw_rating = props.get('rating') if props.get('rating') is not None else props.get('five_star_rating_published')
-            r_rating = int(round(raw_rating)) if raw_rating is not None else None
-            r_text = (props.get('review_text') or props.get('review_text_published') or '').strip() or None
-            r_url = props.get('review_direct_url') or props.get('google_maps_url') or ''
+            r_lat = coords[1] if len(coords) >= 2 else (geo_coords.get('Latitude') or props.get('latitude'))
+            r_lng = coords[0] if len(coords) >= 2 else (geo_coords.get('Longitude') or props.get('longitude'))
+
+            p_name = props.get('place_name') or loc.get('Business Name') or loc.get('name') or props.get('name') or ''
+            r_date = props.get('date') or rev.get('Time') or rev.get('time') or props.get('Published') or ''
+            raw_rating = props.get('rating') if props.get('rating') is not None else (props.get('five_star_rating_published') or rev.get('Star Rating') or rev.get('star_rating'))
+            try:
+                r_rating = int(round(float(raw_rating))) if raw_rating is not None else None
+            except (ValueError, TypeError):
+                r_rating = None
+
+            r_text = (props.get('review_text') or props.get('review_text_published') or rev.get('Text') or rev.get('text') or '').strip() or None
+            r_url = props.get('review_direct_url') or props.get('google_maps_url') or rev.get('Review URL') or rev.get('review_url') or props.get('Google Maps URL') or ''
             r_pid = props.get('place_id')
 
             raw_photos = props.get('photo_urls') or []
@@ -742,18 +750,39 @@ class TimelineFusionImporter:
             matched_pid = None
             target_place = next((p for p in places if p['place_id'] == r_pid), None) if r_pid else None
             if target_place:
-                # Never assign reviews to residential homes
                 if target_place.get('category') != 'Home & Residence' and not (target_place.get('name') or '').startswith('Home'):
                     matched_pid = r_pid
-                    matched_count += 1
-                    matched_updates.append((
-                        r_rating,
-                        r_text,
-                        p_name,
-                        photo_urls_json,
-                        photo_count,
-                        matched_pid
-                    ))
+            elif r_lat is not None and r_lng is not None:
+                cell = (int(round(r_lat * 50)), int(round(r_lng * 50)))
+                candidates = list(grid_map.get(cell, []))
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if (dx, dy) != (0, 0):
+                            candidates.extend(grid_map.get((cell[0] + dx, cell[1] + dy), []))
+                best_cand = None
+                best_d = 0.25  # 250m max spatial distance
+                for cand in candidates:
+                    if cand.get('category') == 'Home & Residence' or (cand.get('name') or '').startswith('Home'):
+                        continue
+                    c_lat, c_lng = cand.get('latitude'), cand.get('longitude')
+                    if c_lat is not None and c_lng is not None:
+                        d = haversine_km(r_lat, r_lng, c_lat, c_lng)
+                        if d < best_d:
+                            best_d = d
+                            best_cand = cand
+                if best_cand:
+                    matched_pid = best_cand['place_id']
+
+            if matched_pid:
+                matched_count += 1
+                matched_updates.append((
+                    r_rating,
+                    r_text,
+                    p_name,
+                    photo_urls_json,
+                    photo_count,
+                    matched_pid
+                ))
 
             review_rows.append((
                 p_name, r_date, r_rating, r_text, r_url, r_lat, r_lng, matched_pid, photo_urls_json, photo_count
@@ -795,6 +824,102 @@ class TimelineFusionImporter:
             "matched_pois": matched_count,
             "elapsed_sec": elapsed
         }
+
+    def import_saved_places_json(self, json_path: str) -> Dict[str, Any]:
+        """
+        Ingests Google Maps Saved Places (Saved Places.json from Google Takeout).
+        Parses custom lists (Want to go, Starred places, Favorites, custom notes),
+        populating custom_labeled_places and places catalogs.
+        """
+        json_path = os.path.expanduser(json_path)
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(f"Saved Places JSON not found: {json_path}")
+
+        print(f"[*] Importing Google Maps Saved Places from: {json_path}...")
+        t0 = time.time()
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        features = data.get('features', [])
+        if not features and isinstance(data, list):
+            features = data
+
+        saved_rows = []
+        places_rows = []
+        for feat in features:
+            props = feat.get('properties') or {}
+            geom = feat.get('geometry') or {}
+            coords = geom.get('coordinates') or []
+            loc = props.get('Location') or props.get('location') or {}
+            geo_coords = loc.get('Geo Coordinates') or {}
+
+            lat = coords[1] if len(coords) >= 2 else (geo_coords.get('Latitude') or props.get('latitude'))
+            lng = coords[0] if len(coords) >= 2 else (geo_coords.get('Longitude') or props.get('longitude'))
+            if lat is None or lng is None:
+                continue
+
+            name = loc.get('Business Name') or props.get('Title') or props.get('name') or 'Saved Place'
+            addr = loc.get('Address') or props.get('address') or ''
+            list_title = props.get('Title') or 'Saved Places'
+            comment = props.get('Comment') or props.get('note') or ''
+            url = props.get('Google Maps URL') or props.get('URL') or ''
+
+            saved_rows.append((name, addr, comment or list_title, float(lat), float(lng), "TAKEOUT_SAVED", list_title))
+
+            cid_match = re.search(r'cid=(\d+)', url)
+            place_id = f"saved_{cid_match.group(1)}" if cid_match else f"saved_{abs(hash((name, round(float(lat), 4), round(float(lng), 4))))}"
+            places_rows.append((place_id, name, addr, float(lat), float(lng), "Saved Places", list_title, 1, "TAKEOUT_SAVED"))
+
+        c = self.conn.cursor()
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS custom_labeled_places (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            address TEXT,
+            description TEXT,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            source_map TEXT,
+            source_type TEXT
+        );
+        """)
+        if saved_rows:
+            c.executemany("""
+            INSERT INTO custom_labeled_places (name, address, description, latitude, longitude, source_map, source_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            """, saved_rows)
+
+        if places_rows:
+            c.executemany("""
+            INSERT INTO places (place_id, name, address, latitude, longitude, category, semantic_type, user_confirmed, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(place_id) DO UPDATE SET
+                name = COALESCE(places.name, excluded.name),
+                address = COALESCE(places.address, excluded.address);
+            """, places_rows)
+
+        self.conn.commit()
+        elapsed = time.time() - t0
+        print(f"[✓] Saved Places imported in {elapsed:.2f}s ({len(saved_rows)} places stored).")
+        return {"total_saved": len(saved_rows), "elapsed_sec": elapsed}
+
+    def import_photos(self, path: str, limit: Optional[int] = None, generate_previews: bool = True) -> Dict[str, Any]:
+        """
+        Ingests Google Photos Takeout (streaming ZIP archive or loose directory tree).
+        Extracts metadata from JSON sidecars and EXIF, generates WebP previews,
+        matches photos to visited timeline places, and indexes into SQLite.
+        """
+        from enrichment.photo_corpus import PhotoCorpusEngine
+        engine = PhotoCorpusEngine(self.conn)
+        path = os.path.expanduser(path)
+        if os.path.isdir(path):
+            return engine.ingest_directory(path, limit=limit, generate_previews=generate_previews)
+        elif zipfile.is_zipfile(path):
+            return engine.ingest_zip(path, limit=limit, generate_previews=generate_previews)
+        else:
+            raise ValueError(f"Expected photos directory or ZIP archive: {path}")
+
+
 
 
 
@@ -1203,39 +1328,104 @@ class TimelineFusionImporter:
             except Exception:
                 pass
 
+        # 4. Look for saved places
+        saved_files = glob.glob(os.path.join(dir_path, "**", "*saved*.json"), recursive=True) + \
+                      glob.glob(os.path.join(dir_path, "**", "*Saved*.json"), recursive=True)
+        for sf in saved_files:
+            try:
+                self.import_saved_places_json(sf)
+                results["files_processed"] += 1
+            except Exception:
+                pass
+
+        # 5. Look for Google Photos
+        photos_dirs = [
+            os.path.join(dir_path, "Google Photos"),
+            os.path.join(dir_path, "Photos"),
+        ]
+        for pdir in photos_dirs:
+            if os.path.isdir(pdir):
+                try:
+                    self.import_photos(pdir)
+                    results["files_processed"] += 1
+                except Exception as e:
+                    print(f"    [!] Error importing photos from {pdir}: {e}")
+
         print(f"[✓] Takeout directory import complete: {results['files_processed']} files, {results['segments']} segments.")
         return results
 
-    def import_any(self, path: str, include_records: bool = False, records_sample_stride: int = 1) -> Dict[str, Any]:
-        """Universal entrypoint that detects file type (ZIP, Directory, JSON, GeoJSON) and imports cleanly."""
+    def import_any(
+        self,
+        path: str,
+        include_records: bool = False,
+        records_sample_stride: int = 1,
+        is_photos: bool = False,
+        is_reviews: bool = False,
+        is_saved: bool = False,
+    ) -> Dict[str, Any]:
+        """Universal entrypoint that detects file type (ZIP, Directory, JSON, GeoJSON, Photos, Reviews) and imports cleanly."""
         path = os.path.expanduser(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"Path does not exist: {path}")
 
+        if is_photos:
+            return self.import_photos(path)
+        if is_reviews:
+            return self.import_reviews_geojson(path)
+        if is_saved:
+            return self.import_saved_places_json(path)
+
         if os.path.isdir(path):
+            folder_name = os.path.basename(path.rstrip("/\\")).lower()
+            if "photo" in folder_name:
+                return self.import_photos(path)
             return self.import_takeout_directory(path, include_records=include_records, records_sample_stride=records_sample_stride)
 
         if zipfile.is_zipfile(path):
-            return self.import_takeout_zip(path, import_segments=True, include_records=include_records, records_sample_stride=records_sample_stride)
+            # Check what's inside the ZIP
+            try:
+                with zipfile.ZipFile(path, "r") as z:
+                    names = z.namelist()
+                    has_semantic = any(
+                        "Semantic Location History" in n or "Location History" in n
+                        or re.search(r'\d{4}_\w+\.json', n) or "Timeline.json" in n
+                        for n in names
+                    )
+                    from enrichment.photo_corpus import IMAGE_EXTENSIONS
+                    has_photos = any(os.path.splitext(n)[1].lower() in IMAGE_EXTENSIONS for n in names)
+            except Exception:
+                has_semantic = True
+                has_photos = False
 
-        if path.lower().endswith(".geojson"):
-            return self.import_geojson(path)
+            if has_photos and not has_semantic:
+                return self.import_photos(path)
+            
+            res = self.import_takeout_zip(path, import_segments=True, include_records=include_records, records_sample_stride=records_sample_stride)
+            if has_photos:
+                try:
+                    res["photos"] = self.import_photos(path)
+                except Exception as e:
+                    print(f"    [!] Error importing photos from zip: {e}")
+            return res
 
-        if path.lower().endswith(".json"):
-            # Inspect first 2KB of file to identify format
+        fname = os.path.basename(path).lower()
+        if fname.endswith(".geojson") or fname.endswith(".json"):
             with open(path, "r", encoding="utf-8") as f:
-                header = f.read(2048)
+                header = f.read(4096)
             if "semanticSegments" in header:
                 return self.import_on_device_json(path)
             elif "timelineObjects" in header:
                 return self.import_semantic_json(path, import_segments=True)
+            elif "Star Rating" in header or "five_star_rating" in header or "review_text" in header or "review" in fname:
+                return self.import_reviews_geojson(path)
+            elif "Saved Places" in header or "saved" in fname:
+                return self.import_saved_places_json(path)
             elif "FeatureCollection" in header or '"type": "Feature"' in header:
                 return self.import_geojson(path)
             elif "locations" in header:
                 return {"records_imported": self._stream_records_json(path, stride=records_sample_stride)}
             else:
                 try:
-                    # Fallback try GeoJSON or on-device
                     with open(path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     if "features" in data:
@@ -1254,18 +1444,33 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Universal Google Takeout & Location History Importer into Timeline Studio."
+        description="Universal Google Takeout & Life Archive Importer (Location History, Google Photos, Maps Reviews, Saved Places)."
     )
     parser.add_argument(
         "inputs",
         nargs="+",
-        help="Path(s) to Takeout archive (.zip), extracted directory, Timeline JSON, or GeoJSON file(s)",
+        help="Path(s) to Takeout archive (.zip), directory, Timeline JSON, Google Photos, Reviews, or GeoJSON",
     )
     parser.add_argument(
         "--db",
         type=str,
         default=None,
         help="Target SQLite database path (default: TIMELINE_DB_PATH or ./timeline.db)",
+    )
+    parser.add_argument(
+        "--photos",
+        action="store_true",
+        help="Import input explicitly as Google Photos Takeout (directory or zip)",
+    )
+    parser.add_argument(
+        "--reviews",
+        action="store_true",
+        help="Import input explicitly as Google Maps Reviews (JSON or GeoJSON)",
+    )
+    parser.add_argument(
+        "--saved",
+        action="store_true",
+        help="Import input explicitly as Google Maps Saved Places (JSON)",
     )
     parser.add_argument(
         "--include-records",
@@ -1288,7 +1493,14 @@ def main() -> None:
         print(f"[*] Processing: {target}")
         print(f"=======================================================")
         try:
-            importer.import_any(target, include_records=args.include_records, records_sample_stride=args.stride)
+            importer.import_any(
+                target,
+                include_records=args.include_records,
+                records_sample_stride=args.stride,
+                is_photos=args.photos,
+                is_reviews=args.reviews,
+                is_saved=args.saved,
+            )
         except Exception as e:
             print(f"[!] Error importing {target}: {e}")
 
@@ -1297,3 +1509,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

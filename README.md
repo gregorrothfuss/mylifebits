@@ -3,24 +3,24 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-A privacy-first, zero-telemetry personal location history viewer, Google Takeout ingestion engine, and timeline repair studio.
+A privacy-first, zero-telemetry personal location history viewer, multi-source Google Takeout ingestion engine, and timeline studio.
 
-Store decades of your physical movements locally in a clean, queryable SQLite database. Browse and inspect every day of your life through a responsive web interface with map trajectories, activity breakdowns, trip clustering, and place catalogs.
+Store decades of your physical movements locally in a clean, queryable SQLite database. Browse and inspect every day of your life through a responsive web interface with map trajectories, activity breakdowns, trip clustering, photo evidence, and place catalogs.
 
 ---
 
 ## Highlights
 
 - **Universal Google Takeout Ingestion**:
-  - Classic Takeout Archives (`.zip` containing monthly `timelineObjects` JSON files from 2008–2024).
-  - Unzipped Takeout directories (`Semantic Location History/YYYY/YYYY_MONTH.json`).
-  - Modern on-device JSON (`Timeline.json` from Android/Pixel Takeout exports).
-  - Standard GeoJSON FeatureCollections (`Location History.json`).
-  - Raw GPS breadcrumbs (`Records.json`).
+  - **Location History**: Classic monthly archives (2008–2024 ZIPs/directories), modern on-device exports (`Timeline.json`), standard GeoJSON FeatureCollections, and raw GPS fixes (`Records.json`).
+  - **Google Photos Takeout**: Direct streaming ingestion from ZIP files or folders with `.json` sidecars (`photoTakenTime`, `geoData`, `people`), EXIF fallback, and auto-generated WebP preview thumbnails.
+  - **Google Maps Reviews**: Ingests `Reviews.json` or `reviews.geojson`, extracting star ratings and review text with spatial proximity linking to visited venues.
+  - **Google Maps Saved Places**: Ingests `Saved Places.json` (Starred places, Want to go, Favorites, and custom notes).
 - **Interactive Web Studio**:
   - Full-fidelity daily timeline view with interactive Leaflet map and bottom-sheet segment cards.
   - Multi-year calendar heatmap with instant date navigation and day-to-day scrubbing.
   - Places catalog with category filtering, canonical taxonomy normalization, and visit history.
+  - Integrated photo evidence and contributor reviews attached to visits and days.
   - Trip clustering and international travel statistics.
 - **Privacy-First & Self-Contained**:
   - 100% local SQLite storage (`timeline.db`). Zero external telemetry, zero tracking, and no cloud accounts required.
@@ -80,46 +80,64 @@ http://127.0.0.1:8000
 
 ## Ingesting Your Google Takeout
 
-You can import your personal Google Takeout data using `importer.py`. The importer automatically detects the file format:
+You can import any part of your Google Takeout archive using `importer.py`. The importer automatically detects the file or archive type:
 
-### Option A: Takeout ZIP Archive
-Import your downloaded Takeout `.zip` directly without manual unzipping:
+### 1. Location History Takeout
 ```bash
+# Ingest an entire Takeout ZIP archive
 uv run python importer.py /path/to/takeout-2024.zip
-```
 
-### Option B: Unzipped Takeout Directory
-If you have already extracted your Takeout folder:
-```bash
+# Ingest an extracted Semantic Location History directory
 uv run python importer.py /path/to/Takeout/"Location History (Timeline)"/
-```
 
-### Option C: Modern On-Device Timeline Export
-If you exported your timeline directly from Google Maps on Android / iOS:
-```bash
+# Ingest a modern on-device Timeline export (Android / iOS)
 uv run python importer.py /path/to/Timeline.json
-```
 
-### Option D: GeoJSON FeatureCollection
-```bash
+# Ingest a GeoJSON export
 uv run python importer.py /path/to/Location\ History.json
 ```
 
-### Command-Line Ingestion Flags
+### 2. Google Photos Takeout
+Import your Google Photos Takeout archives directly without needing to unzip 50GB archives to disk:
+```bash
+# Ingest Google Photos directly from a Takeout ZIP file
+uv run python importer.py --photos /path/to/takeout-photos.zip
+
+# Ingest an extracted Google Photos folder
+uv run python importer.py --photos /path/to/Takeout/"Google Photos"/
+```
+*Photos are automatically indexed by timestamp and GPS location, generating lightweight WebP previews and linking directly to visited places on your timeline as visual evidence.*
+
+### 3. Google Maps Reviews & Saved Places
+```bash
+# Ingest your Google Maps contributor reviews
+uv run python importer.py --reviews /path/to/Takeout/"Maps (your places)"/Reviews.json
+
+# Ingest your saved places (Want to go, Starred places, Favorites)
+uv run python importer.py --saved /path/to/Takeout/"Maps (your places)"/"Saved Places.json"
+```
+
+### Command-Line Ingestion Reference
 ```bash
 uv run python importer.py --help
 
-usage: importer.py [-h] [--db DB] [--source SOURCE] path
+usage: importer.py [-h] [--db DB] [--photos] [--reviews] [--saved]
+                   [--include-records] [--stride STRIDE]
+                   inputs [inputs ...]
 
-Import location history data (Google Takeout, on-device exports, GeoJSON) into SQLite.
+Universal Google Takeout & Life Archive Importer (Location History, Google Photos, Maps Reviews, Saved Places).
 
 positional arguments:
-  path             Path to Takeout zip, directory, or JSON/GeoJSON file.
+  inputs             Path(s) to Takeout archive (.zip), directory, Timeline JSON, Google Photos, Reviews, or GeoJSON
 
 options:
-  -h, --help       show this help message and exit
-  --db DB          Path to target SQLite database (default: timeline.db or TIMELINE_DB_PATH).
-  --source SOURCE  Label for data source provenance (e.g., 'takeout_2024').
+  -h, --help         show this help message and exit
+  --db DB            Target SQLite database path (default: TIMELINE_DB_PATH or ./timeline.db)
+  --photos           Import input explicitly as Google Photos Takeout (directory or zip)
+  --reviews          Import input explicitly as Google Maps Reviews (JSON or GeoJSON)
+  --saved            Import input explicitly as Google Maps Saved Places (JSON)
+  --include-records  Also stream and index raw GPS fixes from Records.json
+  --stride STRIDE    Sampling stride when importing raw Records.json (default 1 = every record)
 ```
 
 ---
@@ -136,9 +154,9 @@ cp .env.example .env
 | :--- | :--- | :--- |
 | `TIMELINE_DB_PATH` | `timeline.db` | Path to the SQLite timeline database |
 | `PORT` | `8000` | HTTP port for the web studio |
-| `PHOTOS_ENABLED` | `false` | Enable local photo thumbnail and EXIF integration |
-| `PHOTO_CACHE_DIR` | `data/cache/photos` | Directory for cached photo thumbnails |
-| `PREVIEWS_DIR` | `data/previews` | Directory for day map visual diffs and previews |
+| `PHOTOS_ENABLED` | `false` | Enable local photo thumbnail and EXIF integration in web UI |
+| `PHOTO_CACHE_DIR` | `data/cache/photos` | Directory for cached remote photo thumbnails |
+| `PREVIEWS_DIR` | `data/previews` | Directory for local photo WebP thumbnails and day map diffs |
 | `HTTP_USER_AGENT` | `MyLifeBits/1.0` | User-Agent string used for map tile and geocoding requests |
 
 ---
@@ -152,10 +170,13 @@ For deep-dive documentation on the data model, database schemas, reverse-enginee
 | Table | Description |
 | :--- | :--- |
 | `segments` | Continuous semantic timeline segments: visits (`segment_type=1`) and activities (`segment_type=2`). |
-| `places` | Canonical place catalog storing coordinates, names, categories, and Google Place IDs (`ChIJ...`). |
+| `places` | Canonical place catalog storing coordinates, names, categories, ratings, and Google Place IDs (`ChIJ...`). |
 | `days` | Aggregated daily rollups (date, total distance, segment counts, time zones). |
 | `breadcrumbs` | High-frequency raw sensor telemetry (GPS coordinates, timestamps, accuracy). |
 | `trips` | Multi-day travel groupings and destination clusters. |
+| `photos` | Indexed photo metadata linking SHA-256 hashes, timestamps, locations, and tagged people. |
+| `poi_reviews` | User's Google Maps contributor reviews with ratings, review text, and photo URLs. |
+| `custom_labeled_places` | Custom starred, favorites, and saved places from Google Takeout. |
 
 ---
 
@@ -164,7 +185,7 @@ For deep-dive documentation on the data model, database schemas, reverse-enginee
 The repository includes a comprehensive, hermetic test suite that runs without requiring any external or personal databases:
 
 ```bash
-# Run unit tests
+# Run unit tests (including Takeout, Photos, and Reviews ingestion)
 uv run python -m unittest tests/test_clean_api.py tests/test_e2e_server.py tests/test_takeout_importer.py
 
 # Run API contract auditor
