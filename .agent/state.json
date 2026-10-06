@@ -1,6 +1,6 @@
 {
   "goal": "Clean up codebase to not be tied to user account, make it ready for GitHub, and provide comprehensive architecture and implementation documentation",
-  "active_step_id": 5,
+  "active_step_id": 6,
   "steps": [
     {
       "id": 1,
@@ -25,12 +25,12 @@
     {
       "id": 5,
       "description": "Author comprehensive system architecture specification, implementation guide, and data model documentation for other implementers",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 6,
       "description": "Author GitHub-ready README, Quickstart guide, and update pyproject.toml package metadata",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 7,
@@ -40,11 +40,9 @@
   ],
   "context_cache": {
     "target_files": [
-      "tests/test_clean_api.py",
-      "tests/test_takeout_importer.py",
-      "enrichment/nuggets_engine.py",
-      "db.py",
-      "docs/ARCHITECTURE.md"
+      "docs/ARCHITECTURE.md",
+      "README.md",
+      "pyproject.toml"
     ],
     "test_files": [
       "tests/test_clean_api.py",
