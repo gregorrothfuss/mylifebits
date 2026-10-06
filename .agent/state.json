@@ -1,6 +1,6 @@
 {
-  "goal": "Integrate multi-source Takeout ingestion for Google Photos (streaming sidecars/EXIF) and Google Maps Reviews/Saved Places without external photos frontend, and update README",
-  "active_step_id": 10,
+  "goal": "Integrate multi-source Takeout ingestion for Google Photos (streaming sidecars/EXIF), Google Maps Reviews/Saved Places, and CLIP visual vector embeddings without external photos frontend, and update README without throat clearing",
+  "active_step_id": 11,
   "steps": [
     {
       "id": 1,
@@ -49,12 +49,19 @@
     },
     {
       "id": 10,
-      "description": "Update docs/ARCHITECTURE.md and README.md with comprehensive multi-stream Takeout documentation and present README",
+      "description": "Update docs/ARCHITECTURE.md and README.md with comprehensive multi-stream Takeout documentation",
+      "status": "completed"
+    },
+    {
+      "id": 11,
+      "description": "Implement visual vector embeddings architecture and strip throat clearing from README",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
+      "db.py",
+      "api/photo_search.py",
       "enrichment/photo_corpus.py",
       "importer.py",
       "tests/test_takeout_importer.py",
@@ -66,6 +73,9 @@
       "tests/test_clean_api.py",
       "tests/test_e2e_server.py"
     ],
-    "scratch_logs": []
+    "scratch_logs": [
+      ".agent/scratch/pytest.log",
+      ".agent/scratch/audit.log"
+    ]
   }
 }

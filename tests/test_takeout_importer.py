@@ -359,6 +359,52 @@ class TestTakeoutImporter(unittest.TestCase):
         self.assertAlmostEqual(p_row["latitude"], 42.3601, places=3)
         self.assertIn("Alice", p_row["people"])
 
+    def test_09_embeddings_import_and_vector_search(self):
+        """Tests importing precomputed vector embeddings and OCR text from a companion vault."""
+        import struct
+        import sqlite3
+
+        # Prepare a companion photo vault db
+        vault_path = os.path.join(self.temp_dir, "photos_vault.db")
+        con_vault = sqlite3.connect(vault_path)
+        con_vault.execute("""
+        CREATE TABLE embeddings (
+            sha256 TEXT PRIMARY KEY,
+            vector BLOB NOT NULL
+        );
+        """)
+        con_vault.execute("""
+        CREATE TABLE media_items (
+            sha256 TEXT PRIMARY KEY,
+            blur_score REAL,
+            ocr_text TEXT
+        );
+        """)
+
+        # Generate a dummy 512-dim normalized vector
+        vec = [0.0] * 512
+        vec[0] = 1.0
+        vec_bytes = struct.pack("512f", *vec)
+
+        dummy_sha = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+        con_vault.execute("INSERT INTO embeddings VALUES (?, ?);", (dummy_sha, vec_bytes))
+        con_vault.execute("INSERT INTO media_items VALUES (?, ?, ?);", (dummy_sha, 84.5, "Acme Coffee Roasters receipt"))
+        con_vault.commit()
+        con_vault.close()
+
+        # Ingest embeddings into timeline database
+        res = self.importer.import_any(vault_path, is_embeddings=True)
+        self.assertEqual(res.get("embeddings_imported"), 1)
+        self.assertEqual(res.get("ocr_imported"), 1)
+
+        c = self.importer.conn.cursor()
+        c.execute("SELECT sha256, dim, model FROM photo_embeddings WHERE sha256 = ?;", (dummy_sha,))
+        row = c.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["sha256"], dummy_sha)
+        self.assertEqual(row["dim"], 512)
+        self.assertEqual(row["model"], "open_clip:ViT-B-32")
+
 
 if __name__ == "__main__":
     unittest.main()

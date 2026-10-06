@@ -414,9 +414,26 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         country TEXT,
         people TEXT,
         face_count INTEGER DEFAULT 0,
-        is_partner INTEGER DEFAULT 0
+        is_partner INTEGER DEFAULT 0,
+        blur_score REAL,
+        ocr_text TEXT
     );
     """)
+
+    _add_col_if_missing(c, "photos", "blur_score REAL")
+    _add_col_if_missing(c, "photos", "ocr_text TEXT")
+
+    # 20. Photo Vector Embeddings (CLIP Visual Vector Index)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS photo_embeddings (
+        sha256 TEXT PRIMARY KEY,
+        vector BLOB NOT NULL,
+        model TEXT DEFAULT 'open_clip:ViT-B-32',
+        dim INTEGER DEFAULT 512,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_photo_embeddings_model ON photo_embeddings(model);")
 
     # Create Performance Indices
     c.execute("CREATE INDEX IF NOT EXISTS idx_segments_date ON segments(date);")

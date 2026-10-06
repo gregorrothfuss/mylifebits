@@ -20,6 +20,7 @@ import math
 import os
 import re
 import sqlite3
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -100,9 +101,30 @@ class PhotoCorpusEngine:
             country TEXT,
             people TEXT,
             face_count INTEGER DEFAULT 0,
-            is_partner INTEGER DEFAULT 0
+            is_partner INTEGER DEFAULT 0,
+            blur_score REAL,
+            ocr_text TEXT
         );
         """)
+        try:
+            c.execute("ALTER TABLE photos ADD COLUMN blur_score REAL;")
+        except Exception:
+            pass
+        try:
+            c.execute("ALTER TABLE photos ADD COLUMN ocr_text TEXT;")
+        except Exception:
+            pass
+
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS photo_embeddings (
+            sha256 TEXT PRIMARY KEY,
+            vector BLOB NOT NULL,
+            model TEXT DEFAULT 'open_clip:ViT-B-32',
+            dim INTEGER DEFAULT 512,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_photo_embeddings_model ON photo_embeddings(model);")
         c.execute("CREATE INDEX IF NOT EXISTS idx_photos_local_date ON photos(local_date);")
         c.execute("CREATE INDEX IF NOT EXISTS idx_photos_timestamp_utc ON photos(timestamp_utc);")
         c.execute("CREATE INDEX IF NOT EXISTS idx_photos_place_id ON photos(place_id);")
@@ -283,6 +305,100 @@ class PhotoCorpusEngine:
         except Exception:
             return None
 
+    def compute_blur_score(self, img_bytes: bytes) -> Optional[float]:
+        """Computes blur score using Laplacian edge variance approximation."""
+        if not HAS_PIL:
+            return None
+        try:
+            from PIL import ImageFilter
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                gray = img.convert("L")
+                gray.thumbnail((300, 300))
+                edges = gray.filter(ImageFilter.FIND_EDGES)
+                pixels = list(edges.getdata())
+                if not pixels:
+                    return None
+                mean = sum(pixels) / len(pixels)
+                variance = sum((p - mean) ** 2 for p in pixels) / len(pixels)
+                return round(variance, 2)
+        except Exception:
+            return None
+
+    def compute_clip_embedding(self, img_bytes: bytes) -> Optional[bytes]:
+        """Computes 512-dim normalized vector embedding using OpenCLIP if available."""
+        try:
+            import struct
+            import torch
+            import open_clip
+
+            global _CORPUS_CLIP_MODEL, _CORPUS_CLIP_PREPROCESS, _CORPUS_CLIP_DEVICE
+            if "_CORPUS_CLIP_MODEL" not in globals() or _CORPUS_CLIP_MODEL is None:
+                device = "cpu"
+                model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="laion2b_s34b_b79k")
+                _CORPUS_CLIP_MODEL = model.to(device).eval()
+                _CORPUS_CLIP_PREPROCESS = preprocess
+                _CORPUS_CLIP_DEVICE = device
+
+            with Image.open(io.BytesIO(img_bytes)) as img:
+                img_rgb = img.convert("RGB")
+                tensor = _CORPUS_CLIP_PREPROCESS(img_rgb).unsqueeze(0).to(_CORPUS_CLIP_DEVICE)
+                with torch.no_grad():
+                    feat = _CORPUS_CLIP_MODEL.encode_image(tensor)
+                    feat /= feat.norm(dim=-1, keepdim=True)
+                    vec = feat.cpu().squeeze(0).numpy().tolist()
+                    return struct.pack(f"{len(vec)}f", *vec)
+        except Exception:
+            return None
+
+    def import_embeddings_from_vault(self, vault_db_path: str) -> Dict[str, Any]:
+        """
+        Imports precomputed visual vector embeddings and OCR text from an existing
+        photos_vault.db or companion database into timeline SQLite.
+        """
+        vault_path = os.path.expanduser(vault_db_path)
+        if not os.path.exists(vault_path):
+            raise FileNotFoundError(f"Source vault DB not found: {vault_path}")
+
+        print(f"[*] Importing embeddings and OCR from: {vault_path}...")
+        t0 = time.time()
+        con_vault = sqlite3.connect(vault_path)
+        con_vault.row_factory = sqlite3.Row
+        cur_v = con_vault.cursor()
+
+        tables = set(r[0] for r in cur_v.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall())
+        emb_count = 0
+        ocr_count = 0
+
+        if "embeddings" in tables:
+            rows = cur_v.execute("SELECT sha256, vector FROM embeddings WHERE vector IS NOT NULL;").fetchall()
+            c = self.conn.cursor()
+            c.executemany("""
+            INSERT INTO photo_embeddings (sha256, vector, model, dim)
+            VALUES (?, ?, 'open_clip:ViT-B-32', 512)
+            ON CONFLICT(sha256) DO UPDATE SET vector = excluded.vector;
+            """, [(r["sha256"], r["vector"]) for r in rows])
+            emb_count = len(rows)
+
+        if "media_items" in tables:
+            rows = cur_v.execute("""
+            SELECT sha256, blur_score, ocr_text FROM media_items
+            WHERE (blur_score IS NOT NULL OR ocr_text IS NOT NULL);
+            """).fetchall()
+            c = self.conn.cursor()
+            c.executemany("""
+            UPDATE photos
+            SET blur_score = COALESCE(?, blur_score),
+                ocr_text = COALESCE(?, ocr_text)
+            WHERE sha256 = ?;
+            """, [(r["blur_score"], r["ocr_text"], r["sha256"]) for r in rows])
+            ocr_count = len(rows)
+
+        self.conn.commit()
+        con_vault.close()
+        elapsed = time.time() - t0
+        print(f"[✓] Imported {emb_count} embeddings and {ocr_count} OCR records in {elapsed:.2f}s.")
+        return {"embeddings_imported": emb_count, "ocr_imported": ocr_count, "elapsed_sec": elapsed}
+
     def ingest_photo(
         self,
         filename: str,
@@ -355,16 +471,26 @@ class PhotoCorpusEngine:
         people_json = json.dumps(people_list) if people_list else None
         face_count = len(people_list)
 
+        blur_score = self.compute_blur_score(img_bytes)
+        vec_blob = self.compute_clip_embedding(img_bytes)
+        if vec_blob:
+            c.execute("""
+            INSERT INTO photo_embeddings (sha256, vector, model, dim)
+            VALUES (?, ?, 'open_clip:ViT-B-32', 512)
+            ON CONFLICT(sha256) DO UPDATE SET vector = excluded.vector;
+            """, (sha256, vec_blob))
+
         c.execute("""
         INSERT INTO photos (
             sha256, filename, preview_path, timestamp_utc, timezone_offset,
             local_date, latitude, longitude, place_id, place_name, address, city, country,
-            people, face_count, is_partner
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            people, face_count, is_partner, blur_score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(sha256) DO UPDATE SET
             preview_path = COALESCE(excluded.preview_path, photos.preview_path),
             place_id = COALESCE(excluded.place_id, photos.place_id),
-            place_name = COALESCE(excluded.place_name, photos.place_name);
+            place_name = COALESCE(excluded.place_name, photos.place_name),
+            blur_score = COALESCE(excluded.blur_score, photos.blur_score);
         """, (
             sha256,
             filename,
@@ -382,6 +508,7 @@ class PhotoCorpusEngine:
             people_json,
             face_count,
             meta.get("is_partner", 0),
+            blur_score,
         ))
 
         return {

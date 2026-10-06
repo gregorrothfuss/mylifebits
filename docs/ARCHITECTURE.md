@@ -204,6 +204,15 @@ The platform provides a universal importer (`importer.py`) capable of ingesting 
 - **Preview Generation**: Generates 640px compressed WebP thumbnails stored in `data/previews/` (~20KB each).
 - **Timeline Linking**: Photos are matched by `local_date` and `timestamp_utc` to daily visits and activities, providing rich visual evidence in the timeline without requiring any external photos web UI.
 
+### 3.8 Format 8: Visual Vector Embeddings & Semantic Search Engine
+- **Embedding Architecture**: Visual concepts and scenes are embedded into 512-dimensional $L_2$-normalized vector representations using `open_clip:ViT-B-32` (`laion2b_s34b_b79k`). Vectors are stored as packed 2048-byte IEEE 754 float32 blobs (`struct.pack('512f', ...)`) in the `photo_embeddings` table.
+- **Companion Vault Ingestion**: Supports importing precomputed embeddings and OCR text from existing media databases (`photos_vault.db`) via `importer.py --embeddings <path>`.
+- **Multi-Tier Search Engine (`api/photo_search.py`)**:
+  1. *Local SQLite Vector Index*: Encodes text query to a 512-dim vector via OpenCLIP and executes cosine dot products against `photo_embeddings` in memory.
+  2. *Remote Photo Service*: Queries a configured remote search endpoint (`PHOTOS_SEARCH_URL` or `https://photos.local/api/search`).
+  3. *Local Text & OCR Fallback*: Performs text search over indexed `photos.ocr_text`, `people`, `place_name`, and `filename`.
+- **Visit Anchoring**: Matching photos are resolved against candidate timeline visits via spatial distance ($\le 250\text{ m}$) and temporal intersection ($\pm 30\text{ minutes}$ around segment bounds).
+
 ---
 
 ## 4. Spatio-Temporal Invariants & Physics Engine

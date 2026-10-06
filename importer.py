@@ -919,6 +919,12 @@ class TimelineFusionImporter:
         else:
             raise ValueError(f"Expected photos directory or ZIP archive: {path}")
 
+    def import_embeddings(self, vault_db_path: str) -> Dict[str, Any]:
+        """Imports precomputed visual vector embeddings and OCR records from a photo vault database."""
+        from enrichment.photo_corpus import PhotoCorpusEngine
+        engine = PhotoCorpusEngine(self.conn)
+        return engine.import_embeddings_from_vault(vault_db_path)
+
 
 
 
@@ -1362,12 +1368,15 @@ class TimelineFusionImporter:
         is_photos: bool = False,
         is_reviews: bool = False,
         is_saved: bool = False,
+        is_embeddings: bool = False,
     ) -> Dict[str, Any]:
-        """Universal entrypoint that detects file type (ZIP, Directory, JSON, GeoJSON, Photos, Reviews) and imports cleanly."""
+        """Universal entrypoint that detects file type (ZIP, Directory, JSON, GeoJSON, Photos, Reviews, Embeddings) and imports cleanly."""
         path = os.path.expanduser(path)
         if not os.path.exists(path):
             raise FileNotFoundError(f"Path does not exist: {path}")
 
+        if is_embeddings:
+            return self.import_embeddings(path)
         if is_photos:
             return self.import_photos(path)
         if is_reviews:
@@ -1473,6 +1482,11 @@ def main() -> None:
         help="Import input explicitly as Google Maps Saved Places (JSON)",
     )
     parser.add_argument(
+        "--embeddings",
+        action="store_true",
+        help="Import precomputed visual vector embeddings and OCR from a photo vault database (.db)",
+    )
+    parser.add_argument(
         "--include-records",
         action="store_true",
         help="Also stream and index raw GPS fixes from Records.json",
@@ -1500,6 +1514,7 @@ def main() -> None:
                 is_photos=args.photos,
                 is_reviews=args.reviews,
                 is_saved=args.saved,
+                is_embeddings=args.embeddings,
             )
         except Exception as e:
             print(f"[!] Error importing {target}: {e}")

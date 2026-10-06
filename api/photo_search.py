@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import ssl
 import time
 import urllib.parse
@@ -37,10 +38,124 @@ def _haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) ->
     return r * c
 
 
+_CLIP_MODEL: Any = None
+_CLIP_TOKENIZER: Any = None
+_CLIP_INITIALIZED = False
+
+
+def _get_local_clip_query_vector(query: str) -> Optional[List[float]]:
+    """Encodes query text to 512-dim normalized vector using OpenCLIP if available."""
+    global _CLIP_MODEL, _CLIP_TOKENIZER, _CLIP_INITIALIZED
+    if _CLIP_INITIALIZED and _CLIP_MODEL is None:
+        return None
+    try:
+        import torch
+        import open_clip
+
+        if _CLIP_MODEL is None:
+            device = "cpu"
+            model, _, _ = open_clip.create_model_and_transforms("ViT-B-32", pretrained="laion2b_s34b_b79k")
+            _CLIP_TOKENIZER = open_clip.get_tokenizer("ViT-B-32")
+            _CLIP_MODEL = model.to(device).eval()
+            _CLIP_INITIALIZED = True
+
+        tokens = _CLIP_TOKENIZER([query])
+        with torch.no_grad():
+            feat = _CLIP_MODEL.encode_text(tokens)
+            feat /= feat.norm(dim=-1, keepdim=True)
+            return feat.squeeze(0).tolist()
+    except Exception:
+        _CLIP_INITIALIZED = True
+        _CLIP_MODEL = None
+        return None
+
+
+def _query_local_vector_index(query: str, limit: int = 60) -> List[Dict[str, Any]]:
+    """Searches photo_embeddings or embeddings table in SQLite using CLIP query vector."""
+    tbl_check = query_one("""
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name IN ('photo_embeddings', 'embeddings')
+        LIMIT 1;
+    """)
+    if not tbl_check:
+        return []
+
+    tbl_name = tbl_check["name"]
+    cnt_check = query_one(f"SELECT COUNT(*) as cnt FROM {tbl_name};")
+    if not cnt_check or cnt_check.get("cnt", 0) == 0:
+        return []
+
+    query_vec = _get_local_clip_query_vector(query)
+    if not query_vec:
+        return []
+
+    rows = query_all(f"SELECT sha256, vector FROM {tbl_name};")
+    if not rows:
+        return []
+
+    import struct
+    scores: List[Tuple[float, str]] = []
+    q_len = len(query_vec)
+
+    for r in rows:
+        sha = r.get("sha256")
+        blob = r.get("vector")
+        if not sha or not blob:
+            continue
+        try:
+            vec = struct.unpack(f"{len(blob)//4}f", blob)
+            if len(vec) == q_len:
+                dot = sum(a * b for a, b in zip(query_vec, vec))
+                if dot >= 0.40:
+                    scores.append((dot, sha))
+        except Exception:
+            continue
+
+    scores.sort(key=lambda x: x[0], reverse=True)
+    top_shas = scores[:limit]
+    return [{"sha256": s, "score": round(score, 3)} for score, s in top_shas]
+
+
+def _query_local_text_fallback(query: str, limit: int = 60) -> List[Dict[str, Any]]:
+    """Fallback search over photo OCR text, place names, people, and filename."""
+    wild = f"%{query}%"
+    rows = query_all("""
+        SELECT sha256, filename, ocr_text, people, place_name, local_date
+        FROM photos
+        WHERE (ocr_text LIKE ? OR place_name LIKE ? OR people LIKE ? OR filename LIKE ?)
+        LIMIT ?;
+    """, (wild, wild, wild, wild, limit))
+
+    results = []
+    for r in rows:
+        score = 0.70
+        ocr = (r.get("ocr_text") or "").lower()
+        pname = (r.get("place_name") or "").lower()
+        people = (r.get("people") or "").lower()
+        q_low = query.lower()
+
+        if q_low in ocr:
+            score = 0.88
+        elif q_low in pname:
+            score = 0.82
+        elif q_low in people:
+            score = 0.90
+
+        results.append({
+            "sha256": r["sha256"],
+            "score": score,
+            "filename": r["filename"],
+            "formatted_date": r["local_date"],
+        })
+    return results
+
+
 def query_photo_semantic_index(query: str, limit: int = 60) -> List[Dict[str, Any]]:
     """
-    Queries the semantic photo index via photos.local API.
-    Returns list of dicts: [{sha256, score, filename, formatted_date, ...}]
+    Multi-tier photo semantic search:
+    1. Local vector embeddings index (CLIP ViT-B-32 in SQLite).
+    2. Remote photo service (PHOTOS_SEARCH_URL / photos.local).
+    3. Local OCR and metadata search fallback.
     """
     clean_q = query.strip().lower()
     if not clean_q:
@@ -53,22 +168,39 @@ def query_photo_semantic_index(query: str, limit: int = 60) -> List[Dict[str, An
             _SEARCH_CACHE.move_to_end(clean_q)
             return cached_res[:limit]
 
-    # Query official photos.local service
-    url = f"https://photos.local/api/search?q={urllib.parse.quote(clean_q)}"
-    ctx = ssl._create_unverified_context()
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "LifeBits-VisitSearch/1.0", "Accept": "application/json"}
-    )
-
     photos: List[Dict[str, Any]] = []
+
+    # Tier 1: Local SQLite vector index
     try:
-        with urllib.request.urlopen(req, timeout=12, context=ctx) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            photos = data.get("results", [])
+        photos = _query_local_vector_index(clean_q, limit=limit)
     except Exception as e:
-        logger.warning(f"photos.local search request failed: {e}")
+        logger.debug(f"Local vector search error: {e}")
         photos = []
+
+    # Tier 2: Remote service (photos.local or PHOTOS_SEARCH_URL)
+    if not photos:
+        base_url = os.environ.get("PHOTOS_SEARCH_URL", "https://photos.local/api/search")
+        url = f"{base_url}?q={urllib.parse.quote(clean_q)}"
+        ctx = ssl._create_unverified_context()
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "LifeBits-VisitSearch/1.0", "Accept": "application/json"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=4, context=ctx) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                photos = data.get("results", [])
+        except Exception as e:
+            logger.debug(f"Remote photo search ({base_url}) unreachable: {e}")
+            photos = []
+
+    # Tier 3: Local OCR & Metadata fallback
+    if not photos:
+        try:
+            photos = _query_local_text_fallback(clean_q, limit=limit)
+        except Exception as e:
+            logger.debug(f"Local text fallback search error: {e}")
+            photos = []
 
     # Update LRU cache
     if clean_q in _SEARCH_CACHE:
