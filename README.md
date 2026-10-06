@@ -125,3 +125,7 @@ uv run python scripts/audit_api_contracts.py
 ## License
 
 [MIT](LICENSE)
+
+---
+
+*Named in homage to Gordon Bell and Jim Gemmell's pioneering MyLifeBits lifelogging research at Microsoft Research.*
