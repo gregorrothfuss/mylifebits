@@ -58,6 +58,7 @@ screenshot.png
 !static/**/*.jpg
 !static/**/*.svg
 !static/**/*.ico
+!docs/screenshots/*.png
 
 # Logs & Server Scratch
 *.log

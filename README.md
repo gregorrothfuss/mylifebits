@@ -2,6 +2,8 @@
 
 Personal location history viewer, Google Takeout ingestion engine, and life archive backed by a local SQLite database.
 
+![Daily Timeline View](docs/screenshots/timeline_day_view.png)
+
 ## Quickstart
 
 ```bash
@@ -53,13 +55,20 @@ uv run python importer.py --reviews /path/to/Reviews.json
 uv run python importer.py --saved /path/to/"Saved Places.json"
 ```
 
-### Visual Vector Embeddings (Semantic Search)
-Photos are indexed with 512-dimensional vector embeddings (`open_clip:ViT-B-32`):
+### Visual Vector Embeddings & Universal Search
+Photos and visits are indexed with 512-dimensional vector embeddings (`open_clip:ViT-B-32`):
 ```bash
 # Import precomputed embeddings from an existing photo vault (e.g., photos_vault.db)
 uv run python importer.py --embeddings /path/to/photos_vault.db
 ```
 The search engine (`api/photo_search.py`) queries the local `photo_embeddings` table via vector dot products, falls back to a remote search endpoint (`PHOTOS_SEARCH_URL` / `https://photos.local/api/search`), and falls back to local OCR/metadata search (`ocr_text`, `people`, `place_name`).
+
+![Universal Global Search](docs/screenshots/universal_search.png)
+
+### Flight Paths & Road Snapping
+Multi-modal trips connect street-snapped driving routes, transit legs, and flight paths with contributor reviews:
+
+![Flight and Road Trip View](docs/screenshots/timeline_flight_trip.png)
 
 ## CLI Options
 
