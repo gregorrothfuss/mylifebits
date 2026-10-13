@@ -449,6 +449,91 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_photo_embeddings_model ON photo_embeddings(model);")
 
+    # 21. Layer 0: Immutable Raw Source Segments Ledger
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS raw_source_segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_key TEXT UNIQUE NOT NULL,
+        source_stream TEXT NOT NULL,
+        segment_type TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        start_ts REAL NOT NULL,
+        end_ts REAL NOT NULL,
+        duration_minutes REAL NOT NULL,
+        date TEXT NOT NULL,
+        year INTEGER NOT NULL,
+        month INTEGER NOT NULL,
+        day INTEGER NOT NULL,
+        latitude REAL,
+        longitude REAL,
+        end_lat REAL,
+        end_lng REAL,
+        place_id TEXT,
+        place_name TEXT,
+        place_address TEXT,
+        semantic_type TEXT,
+        category TEXT,
+        city TEXT,
+        activity_type TEXT,
+        distance_meters REAL DEFAULT 0.0,
+        probability REAL DEFAULT 1.0,
+        hierarchy_level INTEGER DEFAULT 0,
+        path_points_json TEXT,
+        has_snapped_path INTEGER DEFAULT 0,
+        raw_payload_json TEXT,
+        ingested_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_raw_source_segments_date ON raw_source_segments(date);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_raw_source_segments_ts ON raw_source_segments(start_ts, end_ts);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_raw_source_segments_stream ON raw_source_segments(source_stream);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_raw_source_segments_place ON raw_source_segments(place_id);")
+
+    # 22. Layer 1: Versioned Inference Execution Runs
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS inference_runs (
+        run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        engine_version TEXT NOT NULL,
+        pass_name TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        input_summary_json TEXT,
+        output_summary_json TEXT,
+        status TEXT DEFAULT 'COMPLETED'
+    );
+    """)
+
+    # 23. Layer 2: Immutable User Review Decisions Ledger
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS user_decisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        decision_key TEXT UNIQUE NOT NULL,
+        decision_type TEXT NOT NULL,
+        date TEXT,
+        start_ts REAL,
+        end_ts REAL,
+        target_place_id TEXT,
+        target_place_name TEXT,
+        source_stream TEXT,
+        proposal_action TEXT,
+        patch_data_json TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_user_decisions_date ON user_decisions(date);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_user_decisions_type ON user_decisions(decision_type);")
+
+    # Provenance & Evidence Migrations for segments and fix_proposals
+    _add_col_if_missing(c, "segments", "engine_version TEXT")
+    _add_col_if_missing(c, "segments", "inference_run_id INTEGER")
+    _add_col_if_missing(c, "segments", "evidence_json TEXT")
+    _add_col_if_missing(c, "segments", "source_key TEXT")
+    _add_col_if_missing(c, "fix_proposals", "engine_version TEXT")
+    _add_col_if_missing(c, "fix_proposals", "inference_run_id INTEGER")
+    _add_col_if_missing(c, "fix_proposals", "evidence_json TEXT")
+    _add_col_if_missing(c, "fix_proposals", "decision_key TEXT")
+
     # Create Performance Indices
     c.execute("CREATE INDEX IF NOT EXISTS idx_segments_date ON segments(date);")
     c.execute("CREATE INDEX IF NOT EXISTS idx_segments_year_month ON segments(year, month);")

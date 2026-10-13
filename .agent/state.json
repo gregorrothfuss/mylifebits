@@ -1,6 +1,6 @@
 {
   "goal": "Clean up repository clutter, build a non-destructive layered timeline engine that never guesses to plug holes, restore authentic baseline visits, and overhaul the evidence-backed Fix Proposals engine and Review UI",
-  "active_step_id": 2,
+  "active_step_id": 3,
   "steps": [
     {
       "id": 1,
@@ -10,12 +10,12 @@
     {
       "id": 2,
       "description": "Safeguard source data and implement non-destructive layered engine schema and architecture (raw_source_segments, inference_runs, user_decisions) in db.py and enrichment/layered_engine.py",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 3,
       "description": "Eliminate heuristic gap-plugging guesses (SYNTHETIC_LIFE, SYNTHETIC_GAP_HEAL, stretched home stays) and restore 100% of authentic baseline visits from Pixel 10 exports and 2024 Takeout",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 4,

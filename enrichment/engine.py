@@ -344,11 +344,11 @@ class TimelineEnrichmentEngine:
                 INSERT INTO segments (
                     segment_type, activity_type, start_time, end_time, start_ts, end_ts,
                     duration_minutes, date, year, month, day, latitude, longitude,
-                    end_lat, end_lng, hierarchy_level
+                    end_lat, end_lng, hierarchy_level, source
                 ) VALUES (
                     'activity', ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, 0
+                    ?, ?, 0, 'GOOGLE_FIT'
                 );
                 """, (
                     mode, gap['start_time'], gap['end_time'], gap['start_ts'], gap['end_ts'],
@@ -356,6 +356,139 @@ class TimelineEnrichmentEngine:
                     gap['next_lat'], gap['next_lng']
                 ))
                 c.execute("UPDATE gaps SET status = 'RESOLVED' WHERE id = ?;", (gap_id,))
+
+        elif action in ('CARVE_PHOTO_VERIFIED_VISIT', 'INSERT_PHOTO_VERIFIED_VISIT', 'RESTORE_REVIEWED_VISIT', 'RESTORE_PLAZES_CHECKIN'):
+            st_ts = float(patch_data.get('start_ts') or 0.0)
+            et_ts = float(patch_data.get('end_ts') or (st_ts + 1800.0))
+            st_iso = patch_data.get('start_time') or f"{prop['date']}T12:00:00Z"
+            et_iso = patch_data.get('end_time') or f"{prop['date']}T13:00:00Z"
+            dur_m = float(patch_data.get('duration_minutes') or round((et_ts - st_ts) / 60.0, 1))
+            d_str = patch_data.get('date') or prop['date']
+            yr = int(d_str[:4]) if d_str else 2026
+            mo = int(d_str[5:7]) if d_str else 1
+            dy = int(d_str[8:10]) if d_str else 1
+            pname = patch_data.get('resolved_poi_name') or patch_data.get('target_place') or 'Verified Place'
+            paddr = patch_data.get('address') or pname
+            pcat = patch_data.get('category') or 'Other / POI'
+            pcity = patch_data.get('city')
+            pid = patch_data.get('place_id')
+            lat = patch_data.get('latitude') or patch_data.get('centroid_lat')
+            lng = patch_data.get('longitude') or patch_data.get('centroid_lng')
+
+            # If carving out of an enclosing stay, split or trim the enclosing stay first
+            enc_id = patch_data.get('segment_id') or (target_id if prop['target_type'] == 'segment' else None)
+            if action == 'CARVE_PHOTO_VERIFIED_VISIT' and enc_id:
+                c.execute("SELECT * FROM segments WHERE id = ?;", (enc_id,))
+                ov = c.fetchone()
+                if ov and ov['start_ts'] < st_ts and ov['end_ts'] > et_ts:
+                    left_dur = round((st_ts - ov['start_ts']) / 60.0, 2)
+                    right_dur = round((ov['end_ts'] - et_ts) / 60.0, 2)
+                    c.execute(
+                        "UPDATE segments SET end_time = ?, end_ts = ?, duration_minutes = ? WHERE id = ?;",
+                        (st_iso, st_ts, left_dur, ov['id']),
+                    )
+                    if right_dur >= 5.0:
+                        r_date = et_iso[:10]
+                        c.execute(
+                            """
+                            INSERT INTO segments (
+                                segment_type, start_time, end_time, start_ts, end_ts,
+                                duration_minutes, date, year, month, day,
+                                latitude, longitude, place_id, place_name, place_address,
+                                semantic_type, category, city, probability, hierarchy_level, source
+                            ) VALUES (
+                                'visit', ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, 1.0, 0, ?
+                            );
+                            """,
+                            (
+                                et_iso, ov['end_time'], et_ts, ov['end_ts'],
+                                right_dur, r_date, int(r_date[:4]), int(r_date[5:7]), int(r_date[8:10]),
+                                ov['latitude'], ov['longitude'], ov['place_id'], ov['place_name'], ov['place_address'],
+                                ov['semantic_type'], ov['category'], ov['city'], ov['source']
+                            ),
+                        )
+
+            c.execute(
+                """
+                INSERT INTO segments (
+                    segment_type, start_time, end_time, start_ts, end_ts,
+                    duration_minutes, date, year, month, day,
+                    latitude, longitude, place_id, place_name, place_address,
+                    category, city, probability, hierarchy_level, is_unconfirmed, source, evidence_json
+                ) VALUES (
+                    'visit', ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, 1.0, 0, 0, ?, ?
+                );
+                """,
+                (
+                    st_iso, et_iso, st_ts, et_ts,
+                    dur_m, d_str, yr, mo, dy,
+                    lat, lng, pid, pname, paddr,
+                    pcat, pcity, prop['source'], prop['evidence_json'] if 'evidence_json' in prop.keys() else None,
+                ),
+            )
+            if pid:
+                c.execute(
+                    "UPDATE places SET visit_count = COALESCE(visit_count, 0) + 1 WHERE place_id = ?;",
+                    (pid,),
+                )
+
+        elif action == 'INSERT_LYFT_RIDE':
+            st_ts = float(patch_data.get('start_ts') or 0.0)
+            et_ts = float(patch_data.get('end_ts') or (st_ts + 900.0))
+            st_iso = patch_data.get('start_time') or f"{prop['date']}T12:00:00Z"
+            et_iso = patch_data.get('end_time') or f"{prop['date']}T12:15:00Z"
+            dur_m = float(patch_data.get('duration_minutes') or round((et_ts - st_ts) / 60.0, 1))
+            dist_m = float(patch_data.get('distance_km') or 1.0) * 1000.0
+            d_str = patch_data.get('date') or prop['date']
+            slat, slng = patch_data.get('start_lat'), patch_data.get('start_lng')
+            elat, elng = patch_data.get('end_lat'), patch_data.get('end_lng')
+            path_pts = json.dumps([[slat, slng], [elat, elng]]) if (slat is not None and elat is not None) else None
+            c.execute(
+                """
+                INSERT INTO segments (
+                    segment_type, activity_type, start_time, end_time, start_ts, end_ts,
+                    duration_minutes, distance_meters, date, year, month, day,
+                    latitude, longitude, end_lat, end_lng, path_points_json,
+                    has_snapped_path, hierarchy_level, source
+                ) VALUES (
+                    'activity', 'IN_TAXI', ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    0, 0, 'LYFT_ARCHIVE'
+                );
+                """,
+                (
+                    st_iso, et_iso, st_ts, et_ts,
+                    dur_m, dist_m, d_str, int(d_str[:4]), int(d_str[5:7]), int(d_str[8:10]),
+                    slat, slng, elat, elng, path_pts,
+                ),
+            )
+
+        # Record immutable ACCEPT decision in user_decisions
+        try:
+            from enrichment.layered_engine import LayeredTimelineEngine
+            le = LayeredTimelineEngine(self.db_path)
+            le.record_user_decision(
+                conn,
+                decision_type="ACCEPT_PROPOSAL",
+                action=action,
+                date_str=prop["date"],
+                start_ts=patch_data.get("start_ts"),
+                end_ts=patch_data.get("end_ts"),
+                target_place_id=patch_data.get("place_id"),
+                target_place_name=patch_data.get("resolved_poi_name") or patch_data.get("target_place"),
+                source_stream=prop["source"],
+                patch_data=patch_data,
+                decision_key=prop["decision_key"] if "decision_key" in prop.keys() else None,
+            )
+        except Exception:
+            pass
 
         # Update proposal state
         c.execute("""
@@ -369,9 +502,31 @@ class TimelineEnrichmentEngine:
         return True
 
     def reject_fix_proposal(self, proposal_id: int) -> bool:
-        """Rejects a proposed fix without modifying baseline data."""
+        """Rejects a proposed fix without modifying baseline data and records user_decision."""
         conn = get_db_connection(self.db_path)
         c = conn.cursor()
+        c.execute("SELECT * FROM fix_proposals WHERE id = ?;", (proposal_id,))
+        prop = c.fetchone()
+        if prop:
+            try:
+                patch_data = json.loads(prop["patch_data_json"]) if prop["patch_data_json"] else {}
+                from enrichment.layered_engine import LayeredTimelineEngine
+                le = LayeredTimelineEngine(self.db_path)
+                le.record_user_decision(
+                    conn,
+                    decision_type="REJECT_PROPOSAL",
+                    action=prop["proposed_action"],
+                    date_str=prop["date"],
+                    start_ts=patch_data.get("start_ts"),
+                    end_ts=patch_data.get("end_ts"),
+                    target_place_id=patch_data.get("place_id"),
+                    target_place_name=patch_data.get("resolved_poi_name") or patch_data.get("target_place"),
+                    source_stream=prop["source"],
+                    patch_data=patch_data,
+                    decision_key=prop["decision_key"] if "decision_key" in prop.keys() else None,
+                )
+            except Exception:
+                pass
         c.execute("""
         UPDATE fix_proposals
         SET status = 'REJECTED'

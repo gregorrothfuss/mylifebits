@@ -268,28 +268,27 @@ class TimelineDiagnosticsEngine:
         return {"speed_anomalies": len(anomaly_rows)}
 
     def _generate_gap_proposals(self) -> Dict[str, Any]:
-        """Analyzes all timeline gaps and populates deterministic, actionable fix proposals."""
-        print("    Generating actionable resolution proposals for all gaps...")
+        """
+        Analyzes timeline gaps and generates strictly evidence-corroborated fix proposals.
+        Never generates heuristic dwell-extension or transit-synthesis guesses for unrecorded gaps.
+        """
+        print("    Generating strictly evidence-corroborated resolution proposals...")
         c = self.conn.cursor()
-        c.execute("DELETE FROM fix_proposals;")
+        # Preserve ACCEPTED and REJECTED history; only refresh PENDING proposals
+        c.execute("DELETE FROM fix_proposals WHERE status = 'PENDING';")
         self.conn.commit()
+
+        c.execute("SELECT decision_key FROM user_decisions WHERE decision_type = 'REJECT_PROPOSAL';")
+        rejected_keys = {r["decision_key"] for r in c.fetchall() if r["decision_key"]}
 
         c.execute("""
         SELECT g.id, g.start_ts, g.end_ts, g.start_time, g.end_time, g.prev_lat, g.prev_lng,
-               g.next_lat, g.next_lng, g.duration_hours, g.date,
-               s1.segment_type as prev_type, s1.place_name as prev_name, s1.activity_type as prev_act,
-               s2.segment_type as next_type, s2.place_name as next_name, s2.activity_type as next_act
+               g.next_lat, g.next_lng, g.duration_hours, g.date
         FROM gaps g
-        LEFT JOIN segments s1 ON g.prev_segment_id = s1.id
-        LEFT JOIN segments s2 ON g.next_segment_id = s2.id
         WHERE (g.status IS NULL OR g.status != 'RESOLVED')
         ORDER BY g.start_ts DESC;
         """)
         gaps = c.fetchall()
-
-        # Delete stale pending gap proposals to prevent outdated duplicates
-        self.conn.execute("DELETE FROM fix_proposals WHERE target_type = 'gap' AND status = 'PENDING';")
-        self.conn.commit()
 
         fix_rows = []
         for g in gaps:
@@ -309,224 +308,89 @@ class TimelineDiagnosticsEngine:
             p_lat, p_lng = g['prev_lat'], g['prev_lng']
             n_lat, n_lng = g['next_lat'], g['next_lng']
 
-            prev_type = g['prev_type']
-            next_type = g['next_type']
-            p_name = g['prev_name'] or 'Previous Location'
-            n_name = g['next_name'] or 'Next Location'
-            p_act_str = (g['prev_act'] or 'transit').replace('_', ' ').lower()
-            n_act_str = (g['next_act'] or 'transit').replace('_', ' ').lower()
-
-            dur_str = f"{dur_h:.1f}h" if dur_h >= 1.0 else f"{dur_m:.0f}m"
-
             # Format local time strings (HH:MM)
             st_str = g['start_time'][11:16] if g['start_time'] and len(g['start_time']) >= 16 else '--:--'
             et_str = g['end_time'][11:16] if g['end_time'] and len(g['end_time']) >= 16 else '--:--'
             time_window = f"{st_str} – {et_str}"
 
-            # Check breadcrumbs
-            c.execute("SELECT COUNT(*), AVG(lat), AVG(lng) FROM breadcrumbs WHERE timestamp >= ? AND timestamp <= ?;", (int(st_ts), int(et_ts)))
+            # Check raw GPS breadcrumbs inside gap
+            c.execute(
+                "SELECT COUNT(*), AVG(lat), AVG(lng) FROM breadcrumbs WHERE timestamp >= ? AND timestamp <= ?;",
+                (int(st_ts), int(et_ts)),
+            )
             bc_row = c.fetchone()
             bc_count = bc_row[0] if bc_row else 0
             avg_lat = bc_row[1] if bc_row else None
             avg_lng = bc_row[2] if bc_row else None
 
             dist_km = haversine_km(p_lat, p_lng, n_lat, n_lng) if (p_lat and n_lat) else 0.0
-            speed_kmh = dist_km / dur_h if dur_h > 0 else 0
 
-            # 1. Reconstruct stationary visit if breadcrumb cluster exists (< 1.0 km displacement)
-            if bc_count and bc_count >= 3 and dist_km < 1.0:
+            # Reconstruct stationary visit ONLY if real raw GPS breadcrumb cluster exists (< 1.0 km displacement)
+            if bc_count and bc_count >= 3 and dist_km < 1.0 and avg_lat is not None and avg_lng is not None:
                 c.execute("""
-                SELECT name, address, latitude, longitude
+                SELECT place_id, name, address, category, city, latitude, longitude
                 FROM places
-                WHERE latitude IS NOT NULL
+                WHERE latitude IS NOT NULL AND place_id LIKE 'ChIJ%'
                 ORDER BY ((latitude - ?) * (latitude - ?) + (longitude - ?) * (longitude - ?)) ASC
                 LIMIT 1;
                 """, (avg_lat, avg_lat, avg_lng, avg_lng))
                 poi_match = c.fetchone()
-                poi_name = poi_match['name'] if poi_match and poi_match['name'] else 'Stationary Location'
-
+                if not poi_match or not poi_match['name']:
+                    continue
+                poi_name = poi_match['name']
                 action = 'RECONSTRUCT_FROM_BREADCRUMBS'
                 reasoning = f'Recover visit at {poi_name} ({time_window}, {dur_m:.0f}m) from {bc_count} raw GPS fixes.'
                 payload = json.dumps({
                     'action': action, 'gap_id': gid, 'date': gdate,
                     'start_ts': st_ts, 'end_ts': et_ts, 'breadcrumb_count': bc_count,
-                    'resolved_poi_name': poi_name, 'centroid_lat': avg_lat, 'centroid_lng': avg_lng,
+                    'place_id': poi_match['place_id'],
+                    'resolved_poi_name': poi_name, 'target_place': poi_name,
+                    'address': poi_match['address'], 'category': poi_match['category'],
+                    'city': poi_match['city'],
+                    'centroid_lat': avg_lat, 'centroid_lng': avg_lng,
+                    'latitude': avg_lat, 'longitude': avg_lng,
                     'duration_minutes': dur_m, 'time_window': time_window
                 })
-                fix_rows.append(('gap', gid, gdate, action, 'raw_breadcrumbs', reasoning, 0.95, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-
-            # 2. Both surrounding segments are movement activities (e.g. IN_BUS -> Gap -> IN_BUS, or SUBWAY -> Gap -> TRAIN)
-            elif prev_type == 'activity' and next_type == 'activity':
-                if dur_m <= 45 and dist_km < 1.0:
-                    if dist_km >= 0.08:
-                        action = 'SYNTHESIZE_TRANSIT_LEG'
-                        mode = 'WALKING'
-                        reasoning = f'Synthesize WALKING transfer between {p_act_str} and {n_act_str} ({dist_km:.1f} km, {dur_m:.0f}m, {time_window}).'
-                        payload = json.dumps({
-                            'action': action, 'gap_id': gid, 'date': gdate,
-                            'start_ts': st_ts, 'end_ts': et_ts, 'mode': mode,
-                            'distance_km': dist_km, 'speed_kmh': speed_kmh,
-                            'start_lat': p_lat, 'start_lng': p_lng, 'end_lat': n_lat, 'end_lng': n_lng,
-                            'time_window': time_window
-                        })
-                        fix_rows.append(('gap', gid, gdate, action, 'transit_synthesis', reasoning, 0.90, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                    else:
-                        action = 'EXTEND_STATIONARY_DWELL'
-                        dwell_name = f"Transit Transfer / Stop Wait"
-                        reasoning = f'Transit transfer wait between {p_act_str} and {n_act_str} ({dur_m:.0f}m, {time_window}).'
-                        payload = json.dumps({
-                            'action': action, 'gap_id': gid, 'date': gdate,
-                            'start_ts': st_ts, 'end_ts': et_ts, 'target_place': dwell_name,
-                            'duration_minutes': dur_m, 'time_window': time_window
-                        })
-                        fix_rows.append(('gap', gid, gdate, action, 'stationary_continuity', reasoning, 0.90, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                elif dur_h >= 4.0 or (dur_h >= 2.5 and speed_kmh < 15.0):
-                    action = 'DOCUMENTED_HIATUS'
-                    reasoning = f'Documented untracked hiatus / transit gap ({dur_h:.1f}h, {time_window}) between {p_act_str} and {n_act_str}.'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'duration_hours': dur_h, 'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'hiatus_indexer', reasoning, 0.75, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                else:
-                    mode = g['prev_act'] or g['next_act'] or 'DRIVING'
-                    if mode == 'IN_PASSENGER_VEHICLE': mode = 'DRIVING'
-                    action = 'SYNTHESIZE_TRANSIT_LEG'
-                    reasoning = f'Synthesize {mode} travel leg ({dist_km:.1f} km, {dur_m:.0f}m, {time_window}).'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'start_ts': st_ts, 'end_ts': et_ts, 'mode': mode,
-                        'distance_km': dist_km, 'speed_kmh': speed_kmh,
-                        'start_lat': p_lat, 'start_lng': p_lng, 'end_lat': n_lat, 'end_lng': n_lng,
-                        'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'transit_synthesis', reasoning, 0.85, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-
-            # 3. Preceding is a verified visit, succeeding is an activity/departure
-            elif prev_type == 'visit' and (next_type == 'activity' or next_type is None):
-                if dist_km < 0.6 or speed_kmh < 3.0:
-                    action = 'EXTEND_STATIONARY_DWELL'
-                    dwell_name = p_name
-                    reasoning = f'Extend stay at {dwell_name} ({dur_str}, {time_window}).'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'start_ts': st_ts, 'end_ts': et_ts, 'target_place': dwell_name,
-                        'duration_minutes': dur_m, 'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'stationary_continuity', reasoning, 0.90, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                elif dur_h >= 4.0 or (dur_h >= 2.5 and speed_kmh < 15.0):
-                    action = 'DOCUMENTED_HIATUS'
-                    reasoning = f'Documented untracked hiatus / gap ({dur_h:.1f}h, {time_window}) departing {p_name}.'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'duration_hours': dur_h, 'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'hiatus_indexer', reasoning, 0.75, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                else:
-                    mode = g['next_act'] or ('WALKING' if dist_km < 2.0 else 'DRIVING')
-                    if mode == 'IN_PASSENGER_VEHICLE': mode = 'DRIVING'
-                    action = 'SYNTHESIZE_TRANSIT_LEG'
-                    reasoning = f'Synthesize {mode} travel leg departing {p_name} ({dist_km:.1f} km, {dur_m:.0f}m, {time_window}).'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'start_ts': st_ts, 'end_ts': et_ts, 'mode': mode,
-                        'distance_km': dist_km, 'speed_kmh': speed_kmh,
-                        'start_lat': p_lat, 'start_lng': p_lng, 'end_lat': n_lat, 'end_lng': n_lng,
-                        'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'transit_synthesis', reasoning, 0.85, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-
-            # 4. Preceding is an activity/arrival, succeeding is a verified visit
-            elif (prev_type == 'activity' or prev_type is None) and next_type == 'visit':
-                if dist_km < 0.6 or speed_kmh < 3.0:
-                    action = 'EXTEND_STATIONARY_DWELL'
-                    dwell_name = n_name
-                    reasoning = f'Extend stay at {dwell_name} ({dur_str}, {time_window}).'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'start_ts': st_ts, 'end_ts': et_ts, 'target_place': dwell_name,
-                        'duration_minutes': dur_m, 'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'stationary_continuity', reasoning, 0.90, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                elif dur_h >= 4.0 or (dur_h >= 2.5 and speed_kmh < 15.0):
-                    action = 'DOCUMENTED_HIATUS'
-                    reasoning = f'Documented untracked hiatus / gap ({dur_h:.1f}h, {time_window}) arriving at {n_name}.'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'duration_hours': dur_h, 'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'hiatus_indexer', reasoning, 0.75, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                else:
-                    mode = g['prev_act'] or ('WALKING' if dist_km < 2.0 else 'DRIVING')
-                    if mode == 'IN_PASSENGER_VEHICLE': mode = 'DRIVING'
-                    action = 'SYNTHESIZE_TRANSIT_LEG'
-                    reasoning = f'Synthesize {mode} travel leg arriving at {n_name} ({dist_km:.1f} km, {dur_m:.0f}m, {time_window}).'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'start_ts': st_ts, 'end_ts': et_ts, 'mode': mode,
-                        'distance_km': dist_km, 'speed_kmh': speed_kmh,
-                        'start_lat': p_lat, 'start_lng': p_lng, 'end_lat': n_lat, 'end_lng': n_lng,
-                        'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'transit_synthesis', reasoning, 0.85, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-
-            # 5. Both surrounding segments are visits (visit -> Gap -> visit)
-            else:
-                if dist_km < 0.35 or (p_name != 'Previous Location' and p_name == n_name):
-                    action = 'EXTEND_STATIONARY_DWELL'
-                    dwell_name = p_name if p_name != 'Previous Location' else n_name
-                    reasoning = f'Extend continuous stay at {dwell_name} ({dur_str}, {time_window}).'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'start_ts': st_ts, 'end_ts': et_ts, 'target_place': dwell_name,
-                        'duration_minutes': dur_m, 'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'stationary_continuity', reasoning, 0.90, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                elif dur_h >= 4.0 or (dur_h >= 2.5 and speed_kmh < 15.0):
-                    action = 'DOCUMENTED_HIATUS'
-                    reasoning = f'Documented untracked hiatus / overnight gap ({dur_h:.1f}h, {time_window}) between {p_name} and {n_name}.'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'duration_hours': dur_h, 'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'hiatus_indexer', reasoning, 0.75, 'PENDING', payload, '2026-08-20T18:55:00Z'))
-                else:
-                    is_airport = any('airport' in (name.lower()) or 'aéroport' in (name.lower()) or 'aeroporto' in (name.lower()) for name in (p_name, n_name))
-                    is_station = any('station' in (name.lower()) or 'bahnhof' in (name.lower()) or 'gare' in (name.lower()) or 'hb' in (name.lower()) for name in (p_name, n_name))
-
-                    if dist_km > 350.0 or speed_kmh > 180.0:
-                        mode = 'FLYING'
-                    elif dist_km > 30.0 or is_station or (is_airport and dist_km > 10.0):
-                        mode = 'IN_TRAIN' if (is_station or (is_airport and dist_km > 10.0)) else 'DRIVING'
-                    elif dist_km > 5.0 or speed_kmh > 15.0:
-                        mode = 'DRIVING'
-                    elif speed_kmh <= 7.0 and dur_h <= 1.5 and dist_km <= 6.0:
-                        mode = 'WALKING'
-                    elif speed_kmh <= 25.0 and dur_h <= 2.0 and dist_km <= 25.0:
-                        mode = 'CYCLING'
-                    else:
-                        mode = 'DRIVING'
-
-                    action = 'SYNTHESIZE_TRANSIT_LEG'
-                    reasoning = f'Synthesize {mode} travel leg from {p_name} to {n_name} ({dist_km:.1f} km, {dur_m:.0f}m, {time_window}).'
-                    payload = json.dumps({
-                        'action': action, 'gap_id': gid, 'date': gdate,
-                        'start_ts': st_ts, 'end_ts': et_ts, 'mode': mode,
-                        'distance_km': dist_km, 'speed_kmh': speed_kmh,
-                        'start_lat': p_lat, 'start_lng': p_lng, 'end_lat': n_lat, 'end_lng': n_lng,
-                        'time_window': time_window
-                    })
-                    fix_rows.append(('gap', gid, gdate, action, 'transit_synthesis', reasoning, 0.85, 'PENDING', payload, '2026-08-20T18:55:00Z'))
+                evidence = json.dumps({
+                    'evidence_type': 'RAW_BREADCRUMBS',
+                    'breadcrumb_count': bc_count,
+                    'centroid_lat': round(avg_lat, 5),
+                    'centroid_lng': round(avg_lng, 5),
+                })
+                dkey = f"{action}:{gdate}:{int(st_ts // 300)}:{poi_match['place_id']}"
+                if dkey in rejected_keys:
+                    continue
+                fix_rows.append((
+                    'gap', gid, gdate, action, 'raw_breadcrumbs', reasoning, 0.95, 'PENDING',
+                    payload, '2026-08-20T18:55:00Z', '2.0.0', evidence, dkey
+                ))
 
         if fix_rows:
             self.conn.executemany("""
-            INSERT INTO fix_proposals (target_type, target_id, date, proposed_action, source, reasoning, confidence, status, patch_data_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            INSERT INTO fix_proposals (
+                target_type, target_id, date, proposed_action, source, reasoning,
+                confidence, status, patch_data_json, created_at,
+                engine_version, evidence_json, decision_key
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, fix_rows)
             self.conn.commit()
 
-        print(f"    [+] Generated {len(fix_rows)} gap resolution proposals.")
-        return {"total_proposals": len(fix_rows)}
+        # Delegate multi-source evidence proposal generation to LayeredTimelineEngine
+        layered_stats = {"total_proposals": 0, "by_source": {}}
+        try:
+            from enrichment.layered_engine import LayeredTimelineEngine
+            layered_engine = LayeredTimelineEngine(self.db_path)
+            layered_stats = layered_engine.generate_evidence_backed_proposals(clear_pending=False)
+        except Exception as exc:
+            print(f"    [!] Layered evidence generator warning: {exc}")
+
+        total_props = len(fix_rows) + int(layered_stats.get("total_proposals", 0))
+        print(f"    [+] Generated {total_props} evidence-corroborated proposals ({len(fix_rows)} breadcrumb, {layered_stats.get('total_proposals', 0)} multi-source).")
+        return {
+            "total_proposals": total_props,
+            "breadcrumb_proposals": len(fix_rows),
+            "by_source": layered_stats.get("by_source", {}),
+        }
 
     def audit_unconfirmed_visits(self) -> Dict[str, Any]:
         """Audits visits with raw lat/lng or unconfirmed locations and creates actionable resolution proposals."""
