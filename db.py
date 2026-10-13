@@ -79,7 +79,14 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         has_review INTEGER DEFAULT 0,
         review_photos TEXT,
         review_photo_count INTEGER DEFAULT 0,
-        source TEXT
+        source TEXT,
+        primary_type TEXT,
+        google_types_json TEXT,
+        business_status TEXT,
+        verification_status TEXT,
+        last_verified_at TEXT,
+        latest_visit_date TEXT,
+        median_dwell_minutes REAL
     );
     """)
 
@@ -93,6 +100,13 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
     _add_col_if_missing(c, "places", "has_review INTEGER DEFAULT 0")
     _add_col_if_missing(c, "places", "review_photos TEXT")
     _add_col_if_missing(c, "places", "review_photo_count INTEGER DEFAULT 0")
+    _add_col_if_missing(c, "places", "primary_type TEXT")
+    _add_col_if_missing(c, "places", "google_types_json TEXT")
+    _add_col_if_missing(c, "places", "business_status TEXT")
+    _add_col_if_missing(c, "places", "verification_status TEXT")
+    _add_col_if_missing(c, "places", "last_verified_at TEXT")
+    _add_col_if_missing(c, "places", "latest_visit_date TEXT")
+    _add_col_if_missing(c, "places", "median_dwell_minutes REAL")
 
     # 3. Timeline Segments (Visits and Movement Activities)
     c.execute("""

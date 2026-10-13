@@ -1,27 +1,72 @@
 """
 Unit & Integration Tests for POI Reconciliation & Nameless Place Elimination.
+Uses a hermetic temporary SQLite database with zero dependency on personal data.
 """
 
-import json
+from __future__ import annotations
+
+import os
 import sqlite3
+import tempfile
 import unittest
 
-import api.router
-from api.router import Request
+from db import init_db
 from enrichment.place_reconciler import (
+    get_aliased_place,
     is_nameless_place,
     reconcile_place_spatial,
-    resolve_visit_place,
-    get_aliased_place,
     record_place_alias,
+    resolve_visit_place,
 )
-
-DEFAULT_DB_PATH = "timeline_viewer.db"
 
 
 class TestPlaceReconciliation(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.tmp_dir.name, "test_reconcile.db")
+        init_db(self.db_path)
 
-    def test_is_nameless_place_detection(self):
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute(
+            """
+            INSERT INTO places (place_id, name, address, category, city, latitude, longitude, visit_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                "ChIJ_canary_cafe_test00001",
+                "Canary Cafe",
+                "171 S 4th St, Brooklyn, NY 11211, USA",
+                "Food & Drink",
+                "New York",
+                40.7114074,
+                -73.9610993,
+                3,
+            ),
+        )
+        c.execute(
+            """
+            INSERT INTO places (place_id, name, address, category, city, latitude, longitude, visit_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                "ChIJs--MqP1YwokRBwAhjXWIHn8",
+                "New York City Hall",
+                "City Hall Park, New York, NY 10007, USA",
+                "Services & Civic",
+                "New York",
+                40.7127744,
+                -74.006059,
+                5,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+    def tearDown(self) -> None:
+        self.tmp_dir.cleanup()
+
+    def test_is_nameless_place_detection(self) -> None:
         """Validates identification of generic placeholders and raw coordinate strings."""
         self.assertTrue(is_nameless_place(None))
         self.assertTrue(is_nameless_place(""))
@@ -34,22 +79,24 @@ class TestPlaceReconciliation(unittest.TestCase):
 
         # Valid POIs should not be flagged as nameless
         self.assertFalse(is_nameless_place("Canary Cafe"))
-        self.assertFalse(is_nameless_place("Home (298 E 2nd St)"))
         self.assertFalse(is_nameless_place("Pi Bakerie"))
         self.assertFalse(is_nameless_place("Google NYC"))
 
-    def test_reconcile_canary_cafe_spatial(self):
-        """Asserts that (40.7114074, -73.9610993) resolves to Canary Cafe from catalog."""
-        res = reconcile_place_spatial(DEFAULT_DB_PATH, 40.7114074, -73.9610993, date_str="2026-09-18")
+    def test_reconcile_canary_cafe_spatial(self) -> None:
+        """Asserts that coordinates within radius resolve to Canary Cafe from catalog."""
+        res = reconcile_place_spatial(
+            self.db_path, 40.7114074, -73.9610993, date_str="2026-09-18"
+        )
         self.assertIsNotNone(res)
+        assert res is not None
         self.assertEqual(res["name"], "Canary Cafe")
         self.assertEqual(res["category"], "Food & Drink")
         self.assertIn("171 S 4th St", res["address"])
 
-    def test_resolve_visit_place_fallback_elimination(self):
+    def test_resolve_visit_place_fallback_elimination(self) -> None:
         """Verifies resolve_visit_place heals nameless visits without returning raw coordinates."""
         res = resolve_visit_place(
-            DEFAULT_DB_PATH,
+            self.db_path,
             40.7114074,
             -73.9610993,
             current_name="Unconfirmed Location",
@@ -57,49 +104,23 @@ class TestPlaceReconciliation(unittest.TestCase):
             allow_reverse_geocode=False,
         )
         self.assertIsNotNone(res)
+        assert res is not None
         self.assertEqual(res["name"], "Canary Cafe")
 
-    def test_day_api_zero_coordinate_titles_on_september_18(self):
-        """Asserts that /api/day for 2026-09-18 contains 0 raw coordinate titles or unconfirmed cards."""
-        req = Request(
-            method="GET",
-            path="/api/day",
-            query_params={"date": ["2026-09-18"]},
-            headers={},
-            body=b"",
-        )
-        res = api.router.dispatch(req)
-        self.assertEqual(res.status_code, 200)
-
-        data = json.loads(res.body.decode("utf-8"))
-        segments = data.get("segments", [])
-        visits = [s for s in segments if s.get("segment_type") == "visit"]
-        self.assertGreater(len(visits), 0)
-
-        venue_found = False
-        for v in visits:
-            name = v.get("place_name", "")
-            self.assertFalse(
-                is_nameless_place(name),
-                f"Found unhealed nameless place in /api/day: '{name}' on visit {v.get('id')}",
-            )
-            self.assertFalse(
-                name.startswith("Location ("),
-                f"Found raw coordinate title: '{name}'",
-            )
-            if "LeTish Cafe" in name or "Canary Cafe" in name:
-                venue_found = True
-
-        self.assertTrue(venue_found, "Expected LeTish Cafe visit on 2026-09-18 between 08:08 and 08:24")
-
-    def test_place_aliases_resolution(self):
-        """Verifies that new/mutated Place IDs resolve to canonical places via place_aliases."""
-        conn = sqlite3.connect(DEFAULT_DB_PATH)
+    def test_place_aliases_resolution(self) -> None:
+        """Verifies that recorded Place ID aliases resolve to canonical places via place_aliases."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
         alt_pid = "ChIJOwg_06VPwokRYv534QaPC8g"
+        canonical_pid = "ChIJs--MqP1YwokRBwAhjXWIHn8"
+        record_place_alias(conn, alt_pid, canonical_pid)
+        conn.commit()
+
         aliased = get_aliased_place(conn, alt_pid)
         self.assertIsNotNone(aliased)
+        assert aliased is not None
         self.assertEqual(aliased["name"], "New York City Hall")
-        self.assertEqual(aliased["place_id"], "ChIJs--MqP1YwokRBwAhjXWIHn8")
+        self.assertEqual(aliased["place_id"], canonical_pid)
         conn.close()
 
 
