@@ -2619,15 +2619,68 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   let currentFixesFilter = "PENDING";
+  let currentFixesSource = "ALL";
+  let currentFixesQuery = "";
   let currentFixesList = [];
   let currentSelectedFixId = null;
   let fixDetailMap = null;
+
+  const FIX_SOURCE_META = {
+    photos_exif: { label: "Photo EXIF", icon: "fa-camera-retro", bg: "#eef2ff", color: "#4f46e5", badgeClass: "indigo" },
+    maps_reviews: { label: "Maps Review", icon: "fa-star", bg: "#fef3c7", color: "#b45309", badgeClass: "amber" },
+    plazes_archive: { label: "Plazes Check-In", icon: "fa-compass", bg: "#ecfdf5", color: "#047857", badgeClass: "green" },
+    lyft_archive: { label: "Lyft Ledger", icon: "fa-taxi", bg: "#fdf2f8", color: "#be185d", badgeClass: "pink" },
+    flight_airport_auditor: { label: "Flight Physics", icon: "fa-plane-departure", bg: "#eff6ff", color: "#1d4ed8", badgeClass: "blue" },
+    google_fit_corroborator: { label: "Google Fit", icon: "fa-heart-pulse", bg: "#fff7ed", color: "#c2410c", badgeClass: "orange" },
+    raw_breadcrumbs: { label: "Raw GPS Fixes", icon: "fa-satellite-dish", bg: "#f3e8ff", color: "#7e22ce", badgeClass: "purple" },
+    unconfirmed_resolver: { label: "POI Match", icon: "fa-location-crosshairs", bg: "#f0fdfa", color: "#0f766e", badgeClass: "teal" }
+  };
+
+  function getFixSourceMeta(source, action) {
+    if (source && FIX_SOURCE_META[source]) return FIX_SOURCE_META[source];
+    if (action === "CARVE_PHOTO_VERIFIED_VISIT" || action === "INSERT_PHOTO_VERIFIED_VISIT") return FIX_SOURCE_META.photos_exif;
+    if (action === "RESTORE_REVIEWED_VISIT") return FIX_SOURCE_META.maps_reviews;
+    if (action === "RESTORE_PLAZES_CHECKIN") return FIX_SOURCE_META.plazes_archive;
+    if (action === "INSERT_LYFT_RIDE") return FIX_SOURCE_META.lyft_archive;
+    if (action === "INSERT_ORIGIN_AIRPORT" || action === "INSERT_DESTINATION_AIRPORT") return FIX_SOURCE_META.flight_airport_auditor;
+    if (action === "SYNTHESIZE_FIT_ACTIVITY") return FIX_SOURCE_META.google_fit_corroborator;
+    if (action === "RECONSTRUCT_FROM_BREADCRUMBS") return FIX_SOURCE_META.raw_breadcrumbs;
+    return { label: source || "Evidence", icon: "fa-wand-magic-sparkles", bg: "#eff6ff", color: "#1d4ed8", badgeClass: "blue" };
+  }
+
+  function parseFixJsonField(raw) {
+    if (!raw) return {};
+    if (typeof raw === "object") return raw;
+    try {
+      return JSON.parse(raw);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function formatFixHeadline(f, patchData, evidence) {
+    const poi = patchData.resolved_poi_name || patchData.target_place || patchData.airport_name || evidence.plaze_name;
+    const act = f.proposed_action || "";
+    if (act === "CARVE_PHOTO_VERIFIED_VISIT") return `Carve Photo Visit · ${poi || "Verified Place"}`;
+    if (act === "INSERT_PHOTO_VERIFIED_VISIT") return `Photo Visit · ${poi || "Verified Place"}`;
+    if (act === "RESTORE_REVIEWED_VISIT") {
+      const stars = patchData.review_rating || evidence.rating;
+      return `Reviewed Visit · ${poi || "Venue"}${stars ? ` (${stars}★)` : ""}`;
+    }
+    if (act === "RESTORE_PLAZES_CHECKIN") return `Plazes Check-In · ${poi || "Venue"}`;
+    if (act === "INSERT_LYFT_RIDE") return `Lyft Ride · ${patchData.distance_km ? `${patchData.distance_km} km` : "Verified Trip"}`;
+    if (act === "INSERT_ORIGIN_AIRPORT") return `Origin Airport · ${patchData.airport_iata || poi || "Airport"}`;
+    if (act === "INSERT_DESTINATION_AIRPORT") return `Arrival Airport · ${patchData.airport_iata || poi || "Airport"}`;
+    if (act === "SYNTHESIZE_FIT_ACTIVITY") return `Google Fit · ${(patchData.activity_type || "Workout").replace(/_/g, " ")}`;
+    if (act === "RECONSTRUCT_FROM_BREADCRUMBS") return `GPS Recovery · ${poi || "Stationary Visit"}`;
+    if (poi) return `${act.replace(/_/g, " ")} · ${poi}`;
+    return act ? act.replace(/_/g, " ") : "Evidence Fix Proposal";
+  }
 
   // Global Keyboard Navigation for Fixes Split-Pane
   document.addEventListener("keydown", (e) => {
     const fixesTab = document.getElementById("tab-fixes");
     if (!fixesTab || !fixesTab.classList.contains("active")) return;
-    // Skip if typing in an input or textarea
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
 
     if (!currentFixesList || currentFixesList.length === 0) return;
@@ -2662,49 +2715,101 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Load Fix Proposals into Split-Pane
-  async function loadFixProposals() {
+  // Load Evidence-Backed Fix Proposals into Split-Pane Review Studio
+  async function loadFixProposals(queryOverride = null) {
+    if (queryOverride !== null) {
+      currentFixesQuery = queryOverride;
+    }
     const list = document.getElementById("fixes-list-container");
     const toolbar = document.getElementById("fixes-toolbar-container");
     const countBadge = document.getElementById("fixes-queue-count");
     const detailPane = document.getElementById("fixes-detail-pane");
+    if (!list) return;
 
-    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading queue...</div>';
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading evidence queue...</div>';
 
     try {
-      const res = await fetch(`/api/fixes?status=${encodeURIComponent(currentFixesFilter)}`);
+      const params = new URLSearchParams({
+        status: currentFixesFilter,
+        source: currentFixesSource,
+        limit: "500"
+      });
+      if (currentFixesQuery) {
+        params.set("q", currentFixesQuery);
+      }
+      const res = await fetch(`/api/fixes?${params.toString()}`);
       const data = await res.json();
       if (data.status === "SUCCESS") {
         currentFixesList = data.fixes || [];
-        const counts = data.counts || { pending: 0, accepted: 0, rejected: 0, total: 0 };
+        const counts = data.counts || { pending: 0, accepted: 0, rejected: 0, total: 0, by_source: {} };
+        const bySource = counts.by_source || {};
 
         const globalBadge = document.getElementById("badge-fixes");
         if (globalBadge) globalBadge.textContent = (counts.pending || 0).toLocaleString();
-        if (countBadge) countBadge.textContent = `${currentFixesList.length} items`;
+        if (countBadge) countBadge.textContent = `${currentFixesList.length} shown`;
 
-        // Render Toolbar Filter Pills
+        // Render Status + Evidence Source Filter Toolbar
         if (toolbar) {
+          const sourceOrder = [
+            "photos_exif",
+            "maps_reviews",
+            "plazes_archive",
+            "lyft_archive",
+            "flight_airport_auditor",
+            "google_fit_corroborator",
+            "raw_breadcrumbs",
+            "unconfirmed_resolver"
+          ].filter(src => (bySource[src] || 0) > 0 || currentFixesSource === src);
+
+          const highConfCount = currentFixesList.filter(f => f.status === "PENDING" && (f.confidence || 0) >= 0.92).length;
+
           toolbar.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-              <div class="filter-pills" style="display:flex;gap:4px;">
-                <button class="pill-btn ${currentFixesFilter === 'PENDING' ? 'active' : ''}" data-filter="PENDING" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'PENDING' ? 'var(--accent-blue)' : 'var(--bg-card)'};color:${currentFixesFilter === 'PENDING' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                  Pending (${counts.pending})
-                </button>
-                <button class="pill-btn ${currentFixesFilter === 'ALL' ? 'active' : ''}" data-filter="ALL" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ALL' ? 'var(--accent-blue)' : 'var(--bg-card)'};color:${currentFixesFilter === 'ALL' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                  All (${counts.total})
-                </button>
-                <button class="pill-btn ${currentFixesFilter === 'ACCEPTED' ? 'active' : ''}" data-filter="ACCEPTED" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ACCEPTED' ? 'var(--accent-green)' : 'var(--bg-card)'};color:${currentFixesFilter === 'ACCEPTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                  Accepted (${counts.accepted})
-                </button>
-                <button class="pill-btn ${currentFixesFilter === 'REJECTED' ? 'active' : ''}" data-filter="REJECTED" style="padding:4px 10px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'REJECTED' ? 'var(--accent-red)' : 'var(--bg-card)'};color:${currentFixesFilter === 'REJECTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
-                  Rejected (${counts.rejected})
-                </button>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                <div class="filter-pills" style="display:flex;gap:4px;flex-wrap:wrap;">
+                  <button class="pill-btn ${currentFixesFilter === 'PENDING' ? 'active' : ''}" data-filter="PENDING" style="padding:4px 9px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'PENDING' ? 'var(--accent-blue)' : 'var(--bg-card)'};color:${currentFixesFilter === 'PENDING' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                    Pending (${counts.pending || 0})
+                  </button>
+                  <button class="pill-btn ${currentFixesFilter === 'ACCEPTED' ? 'active' : ''}" data-filter="ACCEPTED" style="padding:4px 9px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ACCEPTED' ? 'var(--accent-green)' : 'var(--bg-card)'};color:${currentFixesFilter === 'ACCEPTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                    Accepted (${counts.accepted || 0})
+                  </button>
+                  <button class="pill-btn ${currentFixesFilter === 'REJECTED' ? 'active' : ''}" data-filter="REJECTED" style="padding:4px 9px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'REJECTED' ? 'var(--accent-red)' : 'var(--bg-card)'};color:${currentFixesFilter === 'REJECTED' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                    Rejected (${counts.rejected || 0})
+                  </button>
+                  <button class="pill-btn ${currentFixesFilter === 'ALL' ? 'active' : ''}" data-filter="ALL" style="padding:4px 9px;font-size:11px;border-radius:12px;border:1px solid var(--border-color);background:${currentFixesFilter === 'ALL' ? '#334155' : 'var(--bg-card)'};color:${currentFixesFilter === 'ALL' ? '#fff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                    All (${counts.total || 0})
+                  </button>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  ${currentFixesFilter === 'PENDING' && highConfCount > 0 ? `
+                    <button id="btn-batch-accept-fixes" class="btn-primary" style="padding:4px 10px;font-size:10px;background:var(--accent-green);border-radius:12px;cursor:pointer;font-weight:700;" title="Batch-accept all shown proposals with ≥92% confidence">
+                      <i class="fa-solid fa-bolt"></i> Accept ≥92% (${highConfCount})
+                    </button>
+                  ` : ''}
+                  ${(counts.accepted > 0 || counts.rejected > 0) ? `
+                    <button id="btn-purge-fixes" class="btn-secondary" style="padding:4px 8px;font-size:10px;color:var(--accent-red);border-radius:12px;cursor:pointer;" title="Clear resolved records from history">
+                      <i class="fa-solid fa-trash-can"></i> Purge
+                    </button>
+                  ` : ''}
+                </div>
               </div>
-              ${(counts.accepted > 0 || counts.rejected > 0) ? `
-                <button id="btn-purge-fixes" class="btn-secondary" style="padding:4px 8px;font-size:10px;color:var(--accent-red);border-radius:12px;cursor:pointer;" title="Clear resolved records from history">
-                  <i class="fa-solid fa-trash-can"></i> Purge Resolved
+
+              <!-- Evidence Source Facet Pills -->
+              <div class="source-filter-pills" style="display:flex;gap:4px;flex-wrap:wrap;padding-top:4px;border-top:1px solid var(--border-subtle);">
+                <button class="src-pill-btn ${currentFixesSource === 'ALL' ? 'active' : ''}" data-source="ALL" style="padding:3px 8px;font-size:10px;border-radius:10px;border:1px solid ${currentFixesSource === 'ALL' ? '#0f172a' : 'var(--border-color)'};background:${currentFixesSource === 'ALL' ? '#0f172a' : 'var(--bg-main)'};color:${currentFixesSource === 'ALL' ? '#ffffff' : 'var(--text-main)'};cursor:pointer;font-weight:600;">
+                  All Sources
                 </button>
-              ` : ''}
+                ${sourceOrder.map(src => {
+                  const meta = getFixSourceMeta(src, "");
+                  const isAct = currentFixesSource === src;
+                  const cnt = bySource[src] || 0;
+                  return `
+                    <button class="src-pill-btn ${isAct ? 'active' : ''}" data-source="${escapeHtml(src)}" style="padding:3px 8px;font-size:10px;border-radius:10px;border:1px solid ${isAct ? meta.color : 'var(--border-color)'};background:${isAct ? meta.color : meta.bg};color:${isAct ? '#ffffff' : meta.color};cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px;">
+                      <i class="fa-solid ${meta.icon}"></i> ${escapeHtml(meta.label)} (${cnt})
+                    </button>
+                  `;
+                }).join("")}
+              </div>
             </div>
           `;
 
@@ -2713,6 +2818,34 @@ document.addEventListener("DOMContentLoaded", () => {
               currentFixesFilter = btn.dataset.filter;
               loadFixProposals();
             });
+          });
+
+          toolbar.querySelectorAll(".source-filter-pills .src-pill-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+              currentFixesSource = btn.dataset.source;
+              loadFixProposals();
+            });
+          });
+
+          toolbar.querySelector("#btn-batch-accept-fixes")?.addEventListener("click", async () => {
+            const targetIds = currentFixesList
+              .filter(f => f.status === "PENDING" && (f.confidence || 0) >= 0.92)
+              .map(f => f.id);
+            if (!targetIds.length) return;
+            if (!confirm(`Apply ${targetIds.length} high-confidence (≥92%) evidence-backed proposals?`)) return;
+            try {
+              const bRes = await fetch("/api/fixes/batch-apply", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ proposal_ids: targetIds })
+              });
+              const bData = await bRes.json();
+              if (bData.status === "SUCCESS") {
+                loadFixProposals();
+              }
+            } catch (err) {
+              alert("Batch apply failed: " + err.message);
+            }
           });
 
           toolbar.querySelector("#btn-purge-fixes")?.addEventListener("click", async () => {
@@ -2734,13 +2867,13 @@ document.addEventListener("DOMContentLoaded", () => {
           });
         }
 
-        // Render List Queue
+        // Render Queue List
         if (currentFixesList.length === 0) {
           list.innerHTML = `
             <div style="text-align:center;padding:50px 20px;color:var(--text-muted);">
               <i class="fa-solid fa-circle-check" style="color:var(--accent-green);font-size:32px;margin-bottom:12px;display:block;"></i>
               <strong style="font-size:14px;color:var(--text-main);">Queue is empty</strong>
-              <p style="font-size:12px;margin-top:6px;color:var(--text-muted);">Zero ${currentFixesFilter.toLowerCase()} fix proposals.</p>
+              <p style="font-size:12px;margin-top:6px;color:var(--text-muted);">Zero ${currentFixesFilter.toLowerCase()} proposals matching current filters.</p>
             </div>
           `;
           if (detailPane) {
@@ -2748,7 +2881,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="fixes-detail-empty">
                 <i class="fa-solid fa-circle-check" style="font-size:40px;color:var(--accent-green);margin-bottom:14px;"></i>
                 <h3 style="color:var(--text-main);font-size:16px;">All Caught Up</h3>
-                <p style="color:var(--text-muted);font-size:13px;max-width:300px;">No pending proposals require review at this time.</p>
+                <p style="color:var(--text-muted);font-size:13px;max-width:320px;">No pending evidence proposals match this filter.</p>
               </div>
             `;
           }
@@ -2756,50 +2889,48 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         list.innerHTML = "";
-        currentFixesList.forEach((f, idx) => {
+        currentFixesList.forEach((f) => {
           const item = document.createElement("div");
           item.id = `fix-queue-item-${f.id}`;
           item.className = `fix-queue-item ${f.id === currentSelectedFixId ? 'active' : ''}`;
 
-          let icon = "fa-wand-magic-sparkles";
-          let iconBg = "#e8f0fe";
-          let iconColor = "#1a73e8";
-          if (f.proposed_action === "INSERT_ORIGIN_AIRPORT" || f.proposed_action === "INSERT_DESTINATION_AIRPORT") {
-            icon = "fa-plane-departure"; iconBg = "#e8f0fe"; iconColor = "#1a73e8";
-          } else if (f.proposed_action === "SYNTHESIZE_FIT_ACTIVITY") {
-            icon = "fa-person-running"; iconBg = "#fef7e0"; iconColor = "#f59e0b";
-          } else if (f.proposed_action === "RECONSTRUCT_FROM_BREADCRUMBS") {
-            icon = "fa-satellite-dish"; iconBg = "#f3e8ff"; iconColor = "#9334e6";
-          } else if (f.proposed_action === "EXTEND_STATIONARY_DWELL") {
-            icon = "fa-house-user"; iconBg = "#e6f4ea"; iconColor = "#1e8e3e";
-          } else if (f.proposed_action === "SYNTHESIZE_TRANSIT_LEG") {
-            icon = "fa-route"; iconBg = "#e0f7fa"; iconColor = "#12b5cb";
-          } else if (f.proposed_action === "DOCUMENTED_HIATUS") {
-            icon = "fa-power-off"; iconBg = "#f1f3f4"; iconColor = "#5f6368";
-          } else if (f.proposed_action === "MERGE_DUPLICATE_PLACES") {
-            icon = "fa-code-compare"; iconBg = "#ede9fe"; iconColor = "#7c3aed";
-          }
-
-          const actionTitle = f.proposed_action ? f.proposed_action.replace(/_/g, ' ') : 'Fix Proposal';
-          const confPct = Math.round((f.confidence || 0.8) * 100);
+          const patchData = f.patch_data || parseFixJsonField(f.patch_data_json);
+          const evidence = f.evidence || parseFixJsonField(f.evidence_json);
+          const meta = getFixSourceMeta(f.source, f.proposed_action);
+          const headline = formatFixHeadline(f, patchData, evidence);
+          const confPct = Math.round((f.confidence || 0.85) * 100);
+          const timeWin = patchData.time_window || "";
+          const photos = evidence.photos || patchData.photos || [];
 
           item.innerHTML = `
-            <div class="item-icon" style="background:${iconBg};color:${iconColor};">
-              <i class="fa-solid ${icon}"></i>
+            <div class="item-icon" style="background:${meta.bg};color:${meta.color};flex-shrink:0;">
+              <i class="fa-solid ${meta.icon}"></i>
             </div>
-            <div class="item-content">
-              <div class="item-header">
-                <span class="item-action-title" title="${escapeHtml(actionTitle)}">${actionTitle}</span>
-                <span class="tag-badge" style="font-size:9px;font-family:var(--font-mono);">${f.date || '--'}</span>
+            <div class="item-content" style="min-width:0;flex:1;">
+              <div class="item-header" style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                <span class="item-action-title" style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(headline)}">${escapeHtml(headline)}</span>
+                <span class="tag-badge" style="font-size:10px;font-family:var(--font-mono);flex-shrink:0;">${escapeHtml(f.date || '--')}</span>
               </div>
               <div class="item-reasoning">${escapeHtml(f.reasoning || '')}</div>
-              <div class="item-meta">
-                <span class="tag-badge ${confPct >= 90 ? 'snapped' : (confPct >= 75 ? 'warning' : '')}" style="font-size:9px;font-weight:700;">${confPct}% Conf</span>
-                <span class="tag-badge" style="font-size:9px;color:var(--text-muted);">${f.source || 'diagnostics'}</span>
+              ${photos.length > 0 ? `
+                <div style="display:flex;gap:4px;margin:5px 0 3px;align-items:center;">
+                  ${photos.slice(0, 4).map(p => `
+                    <img src="${escapeHtml(p.preview_url || '')}" alt="EXIF" loading="lazy" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid var(--border-color);" onerror="this.style.display='none'">
+                  `).join("")}
+                  ${photos.length > 4 ? `<span style="font-size:10px;font-weight:700;color:var(--text-muted);">+${photos.length - 4}</span>` : ''}
+                </div>
+              ` : ''}
+              <div class="item-meta" style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px;">
+                <span class="tag-badge" style="font-size:9px;font-weight:700;background:${meta.bg};color:${meta.color};border:1px solid ${meta.color}33;">
+                  <i class="fa-solid ${meta.icon}"></i> ${escapeHtml(meta.label)}
+                </span>
+                <span class="tag-badge ${confPct >= 92 ? 'snapped' : 'warning'}" style="font-size:9px;font-weight:700;">${confPct}% Conf</span>
+                ${timeWin ? `<span class="tag-badge" style="font-size:9px;font-family:var(--font-mono);color:var(--text-main);">${escapeHtml(timeWin)}</span>` : ''}
+                ${patchData.city ? `<span class="tag-badge" style="font-size:9px;color:var(--text-muted);">${escapeHtml(patchData.city)}</span>` : ''}
               </div>
             </div>
             ${f.status === 'PENDING' ? `
-              <div class="quick-actions">
+              <div class="quick-actions" style="flex-shrink:0;">
                 <button class="quick-btn accept" title="Accept (A)" data-id="${f.id}"><i class="fa-solid fa-check"></i></button>
                 <button class="quick-btn reject" title="Reject (R)" data-id="${f.id}"><i class="fa-solid fa-xmark"></i></button>
               </div>
@@ -2832,7 +2963,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (e) {
       console.error("Error loading fixes:", e);
-      list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--accent-red);">Failed to load fixes: ${e.message}</div>`;
+      list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--accent-red);">Failed to load fixes: ${escapeHtml(e.message)}</div>`;
     }
   }
 
@@ -2849,52 +2980,153 @@ document.addEventListener("DOMContentLoaded", () => {
     renderFixDetailPane(fix);
   }
 
+  function renderEvidenceShowcaseHtml(f, patchData, evidence) {
+    const evType = evidence.evidence_type || "";
+    const photos = evidence.photos || patchData.photos || [];
+    const revPhotos = evidence.review_photos || patchData.review_photos || [];
+    const rating = evidence.rating || patchData.review_rating;
+    const revText = evidence.review_text || patchData.review_text;
+    const statusNote = evidence.status_note || patchData.status_note;
+
+    let html = "";
+
+    // 1. Contradiction Alert Banner when carving a stretched stay
+    if (f.proposed_action === "CARVE_PHOTO_VERIFIED_VISIT" || evidence.contradicted_place_name) {
+      html += `
+        <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+          <i class="fa-solid fa-scissors" style="color:#b45309;font-size:16px;flex-shrink:0;"></i>
+          <div style="font-size:12px;color:#78350f;line-height:1.4;">
+            <strong>Contradicts Stretched Stay:</strong> Active segment <strong>${escapeHtml(evidence.contradicted_place_name || "Stay")}</strong> is <strong>${evidence.contradiction_distance_km || "?"} km away</strong> during this photo window. Accepting splits the stay cleanly and inserts this verified visit.
+          </div>
+        </div>
+      `;
+    }
+
+    // 2. Geotagged EXIF Photo Gallery
+    if (photos.length > 0) {
+      html += `
+        <div style="background:var(--bg-main);border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#4f46e5;display:flex;align-items:center;gap:6px;">
+              <i class="fa-solid fa-camera-retro"></i> Geotagged EXIF Photo Evidence (${evidence.photo_count || photos.length} Photo${(evidence.photo_count || photos.length) > 1 ? 's' : ''})
+            </strong>
+            <span style="font-size:11px;color:var(--text-muted);">Click any photo to inspect full resolution</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(135px, 1fr));gap:10px;">
+            ${photos.map(p => {
+              const tStr = p.timestamp_utc ? new Date(p.timestamp_utc * 1000).toISOString().slice(11, 19) + " UTC" : "";
+              return `
+                <a href="${escapeHtml(p.preview_url || '#')}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;transition:transform 0.15s ease;">
+                  <div style="width:100%;height:96px;background:#e2e8f0;overflow:hidden;">
+                    <img src="${escapeHtml(p.preview_url || '')}" alt="${escapeHtml(p.filename || 'EXIF Photo')}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">
+                  </div>
+                  <div style="padding:6px 8px;font-size:10px;line-height:1.35;">
+                    <div style="font-weight:700;color:var(--text-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(p.filename || '')}">${escapeHtml(p.filename || 'Photo')}</div>
+                    <div style="font-family:var(--font-mono);color:var(--text-muted);">${escapeHtml(tStr)}</div>
+                    <div style="font-family:var(--font-mono);color:#4f46e5;">${p.latitude}, ${p.longitude}</div>
+                  </div>
+                </a>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    // 3. Google Maps Contributor Review Evidence Card
+    if (evType === "MAPS_REVIEWS" || rating || revText) {
+      const starsStr = "★".repeat(Math.max(1, Math.min(5, Number(rating) || 5))) + "☆".repeat(5 - Math.max(1, Math.min(5, Number(rating) || 5)));
+      html += `
+        <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#b45309;display:flex;align-items:center;gap:6px;">
+              <i class="fa-solid fa-star"></i> Google Maps Contributor Review
+            </strong>
+            <span style="font-size:13px;color:#d97706;font-weight:700;letter-spacing:1px;">${starsStr}</span>
+          </div>
+          ${revText ? `<blockquote style="margin:6px 0 0;padding:8px 12px;background:#ffffff;border-left:3px solid #f59e0b;border-radius:4px;font-size:12.5px;color:#1e293b;font-style:italic;">"${escapeHtml(revText)}"</blockquote>` : ''}
+          ${revPhotos.length > 0 ? `
+            <div style="display:flex;gap:8px;margin-top:8px;overflow-x:auto;">
+              ${revPhotos.map(u => `<img src="${escapeHtml(getPhotoUrl(u, 220))}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #cbd5e1;" loading="lazy">`).join("")}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // 4. Historical Plazes Check-In Evidence Card
+    if (evType === "PLAZES_CHECKIN" || f.source === "plazes_archive") {
+      html += `
+        <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+          <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#047857;display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <i class="fa-solid fa-compass"></i> Plazes Historical Check-In Ledger
+          </strong>
+          <div style="font-size:12px;color:#065f46;">
+            Checked in at <strong>${escapeHtml(patchData.resolved_poi_name || evidence.plaze_name || '')}</strong>
+            ${patchData.address ? ` (${escapeHtml(patchData.address)})` : ''}
+            ${statusNote ? ` — Status Note: <em>"${escapeHtml(statusNote)}"</em>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    return html;
+  }
+
   // Render High-Speed Detail Context Pane
   async function renderFixDetailPane(f) {
     const pane = document.getElementById("fixes-detail-pane");
     if (!pane) return;
 
-    let patchData = {};
-    try {
-      patchData = f.patch_data_json ? (typeof f.patch_data_json === "string" ? JSON.parse(f.patch_data_json) : f.patch_data_json) : {};
-    } catch (_) {
-      patchData = {};
-    }
+    const patchData = f.patch_data || parseFixJsonField(f.patch_data_json);
+    const evidence = f.evidence || parseFixJsonField(f.evidence_json);
+    const meta = getFixSourceMeta(f.source, f.proposed_action);
+    const headline = formatFixHeadline(f, patchData, evidence);
 
-    const confPct = Math.round((f.confidence || 0.8) * 100);
-    const actionTitle = f.proposed_action ? f.proposed_action.replace(/_/g, ' ') : 'Fix Proposal';
+    const confPct = Math.round((f.confidence || 0.85) * 100);
     const isPending = f.status === "PENDING";
     const isAccepted = f.status === "ACCEPTED";
     const isRejected = f.status === "REJECTED";
+    const venueName = patchData.resolved_poi_name || patchData.target_place || patchData.airport_name || "";
+    const venueAddr = patchData.address || "";
+    const venueCat = patchData.category || "Other / POI";
+    const venueCity = patchData.city || "";
+    const timeWin = patchData.time_window || "";
 
     pane.innerHTML = `
       <div class="fixes-detail-card">
         <!-- Header & Action Buttons -->
         <div class="fixes-detail-header">
-          <div class="fixes-detail-title-group">
-            <h2>
-              <span>${actionTitle}</span>
-              <span class="tag-badge ${isAccepted ? 'snapped' : (isRejected ? 'danger' : 'warning')}" style="font-size:11px;font-weight:700;">${f.status}</span>
-              <span class="tag-badge ${confPct >= 90 ? 'snapped' : ''}" style="font-size:11px;">${confPct}% Confidence</span>
+          <div class="fixes-detail-title-group" style="min-width:0;flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+              <span class="tag-badge" style="font-size:11px;font-weight:700;background:${meta.bg};color:${meta.color};border:1px solid ${meta.color}44;">
+                <i class="fa-solid ${meta.icon}"></i> ${escapeHtml(meta.label)}
+              </span>
+              <span class="tag-badge ${isAccepted ? 'snapped' : (isRejected ? 'danger' : 'warning')}" style="font-size:11px;font-weight:700;">${escapeHtml(f.status)}</span>
+              <span class="tag-badge ${confPct >= 92 ? 'snapped' : ''}" style="font-size:11px;font-weight:700;">${confPct}% Confidence</span>
+              ${venueCat ? `<span class="tag-badge" style="font-size:11px;">${escapeHtml(venueCat)}</span>` : ''}
+            </div>
+            <h2 style="margin:2px 0 6px;font-size:17px;font-weight:800;color:var(--text-main);">
+              ${escapeHtml(headline)}
             </h2>
-            <div style="display:flex;align-items:center;gap:10px;margin-top:6px;font-size:13px;color:var(--text-muted);">
-              <span><i class="fa-solid fa-calendar-day" style="color:var(--accent-blue);"></i> <strong>${f.date}</strong></span>
-              <span><i class="fa-solid fa-fingerprint"></i> ID: ${f.id}</span>
-              <span><i class="fa-solid fa-bullseye"></i> Target: ${f.target_type} #${f.target_id}</span>
-              <span><i class="fa-solid fa-robot"></i> Source: ${f.source}</span>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--text-muted);">
+              <span><i class="fa-solid fa-calendar-day" style="color:var(--accent-blue);"></i> <strong style="color:var(--text-main);">${escapeHtml(f.date || '--')}</strong></span>
+              ${timeWin ? `<span><i class="fa-regular fa-clock"></i> <strong style="color:var(--text-main);">${escapeHtml(timeWin)}</strong> (${Math.round(patchData.duration_minutes || 60)}m)</span>` : ''}
+              ${venueAddr || venueCity ? `<span><i class="fa-solid fa-location-dot"></i> ${escapeHtml(venueAddr || venueCity)}</span>` : ''}
+              ${patchData.place_id ? `<span style="font-family:var(--font-mono);font-size:11px;"><i class="fa-solid fa-fingerprint"></i> ${escapeHtml(String(patchData.place_id).slice(0, 18))}…</span>` : ''}
             </div>
           </div>
 
           <div class="fixes-action-btn-group">
             ${isPending ? `
-              <button id="btn-fix-accept" class="btn-primary" style="background:var(--accent-green);" title="Accept proposal and mutate database (Shortcut: A)">
+              <button id="btn-fix-accept" class="btn-primary" style="background:var(--accent-green);" title="Accept proposal and record decision (Shortcut: A)">
                 <i class="fa-solid fa-check"></i> Accept Fix <kbd style="margin-left:4px;font-size:10px;background:rgba(255,255,255,0.25);border:none;color:#fff;">A</kbd>
               </button>
-              <button id="btn-fix-reject" class="btn-secondary" style="color:var(--accent-red);" title="Dismiss proposal (Shortcut: R)">
+              <button id="btn-fix-reject" class="btn-secondary" style="color:var(--accent-red);" title="Dismiss proposal permanently (Shortcut: R)">
                 <i class="fa-solid fa-xmark"></i> Reject <kbd style="margin-left:4px;font-size:10px;border-color:var(--border-color);">R</kbd>
               </button>
             ` : ''}
-            <button id="btn-fix-quick-edit" class="btn-secondary" title="Customize parameters in-place (Shortcut: E)">
+            <button id="btn-fix-quick-edit" class="btn-secondary" title="Customize venue name or category before applying (Shortcut: E)">
               <i class="fa-solid fa-pen-to-square"></i> Edit <kbd style="margin-left:4px;font-size:10px;border-color:var(--border-color);">E</kbd>
             </button>
             <button id="btn-fix-view-day" class="btn-secondary" title="Open full interactive day view in Timeline tab">
@@ -2905,15 +3137,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
         <!-- In-Pane Quick Edit Drawer (Hidden by default) -->
         <div id="fixes-in-pane-edit" style="display:none;background:var(--bg-main);border:1px solid var(--border-color);border-radius:8px;padding:14px;margin-bottom:16px;">
-          <h4 style="margin:0 0 10px;font-size:13px;color:var(--text-main);"><i class="fa-solid fa-sliders"></i> Quick Edit Proposal Parameters</h4>
+          <h4 style="margin:0 0 10px;font-size:13px;color:var(--text-main);"><i class="fa-solid fa-sliders"></i> Customize Proposal Before Applying</h4>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div>
-              <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Target Venue / Place Name</label>
-              <input type="text" id="quick-edit-place" class="form-input" style="width:100%;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border-color);" value="${escapeHtml(patchData.resolved_poi_name || patchData.target_place || '')}">
+              <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;color:var(--text-main);">Target Venue / Place Name</label>
+              <input type="text" id="quick-edit-place" class="form-input" style="width:100%;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border-color);" value="${escapeHtml(venueName)}">
             </div>
             <div>
-              <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">Category / Taxonomy</label>
-              <input type="text" id="quick-edit-cat" class="form-input" style="width:100%;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border-color);" value="${escapeHtml(patchData.category || 'Other / POI')}">
+              <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;color:var(--text-main);">Category / Taxonomy</label>
+              <input type="text" id="quick-edit-cat" class="form-input" style="width:100%;padding:6px 10px;font-size:12px;border-radius:6px;border:1px solid var(--border-color);" value="${escapeHtml(venueCat)}">
             </div>
           </div>
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
@@ -2922,37 +3154,45 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
 
-        <!-- Rationale & Patch Metadata -->
-        <div style="background:var(--bg-main);border:1px solid var(--border-subtle);border-radius:8px;padding:14px 16px;margin-bottom:16px;">
-          <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);display:block;margin-bottom:6px;">Automated Rationale & Evidence</strong>
-          <p style="font-size:13px;color:var(--text-main);line-height:1.5;margin:0;">${escapeHtml(f.reasoning || 'No automated rationale provided.')}</p>
+        <!-- Rationale Summary -->
+        <div style="background:var(--bg-main);border:1px solid var(--border-subtle);border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+          <strong style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);display:block;margin-bottom:4px;">Corroborating Evidence Summary</strong>
+          <p style="font-size:13px;color:var(--text-main);line-height:1.5;margin:0;font-weight:500;">${escapeHtml(f.reasoning || 'Verified multi-source observation.')}</p>
           ${patchData.breadcrumb_count ? `
-            <div style="margin-top:8px;font-size:12px;color:var(--accent-purple);font-weight:600;">
+            <div style="margin-top:6px;font-size:12px;color:#7e22ce;font-weight:600;">
               <i class="fa-solid fa-satellite-dish"></i> Corroborated by ${patchData.breadcrumb_count} raw GPS sensor fixes
             </div>
           ` : ''}
           ${patchData.distance_km ? `
-            <div style="margin-top:8px;font-size:12px;color:var(--text-muted);">
-              <span>Distance: <strong>${patchData.distance_km.toFixed(1)} km</strong></span>
-              ${patchData.speed_kmh ? `<span style="margin-left:12px;">Implied Speed: <strong>${patchData.speed_kmh.toFixed(1)} km/h</strong></span>` : ''}
-              ${patchData.time_window ? `<span style="margin-left:12px;">Time Window: <strong>${patchData.time_window}</strong></span>` : ''}
+            <div style="margin-top:6px;font-size:12px;color:var(--text-muted);">
+              <span>Distance: <strong style="color:var(--text-main);">${Number(patchData.distance_km).toFixed(1)} km</strong></span>
+              ${patchData.speed_kmh ? `<span style="margin-left:12px;">Implied Speed: <strong style="color:var(--text-main);">${Number(patchData.speed_kmh).toFixed(1)} km/h</strong></span>` : ''}
+              ${patchData.time_window ? `<span style="margin-left:12px;">Window: <strong style="color:var(--text-main);">${escapeHtml(patchData.time_window)}</strong></span>` : ''}
             </div>
           ` : ''}
         </div>
 
-        <!-- Mini Map & Coordinate Preview (if coords exist) -->
+        <!-- Rich Visual Evidence Showcase (Photos / Reviews / Plazes) -->
+        ${renderEvidenceShowcaseHtml(f, patchData, evidence)}
+
+        <!-- Mini Map & Coordinate Preview -->
         ${(patchData.centroid_lat || patchData.start_lat || patchData.latitude) ? `
           <div style="margin-bottom:16px;">
-            <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);display:block;margin-bottom:6px;">Spatial Pinpoint</strong>
-            <div id="fixes-mini-map" style="width:100%;height:180px;border-radius:8px;border:1px solid var(--border-color);overflow:hidden;"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);">Spatial Verification Map</strong>
+              <span style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted);">
+                ${Number(patchData.centroid_lat || patchData.start_lat || patchData.latitude).toFixed(5)}, ${Number(patchData.centroid_lng || patchData.start_lng || patchData.longitude).toFixed(5)}
+              </span>
+            </div>
+            <div id="fixes-mini-map" style="width:100%;height:195px;border-radius:8px;border:1px solid var(--border-color);overflow:hidden;"></div>
           </div>
         ` : ''}
 
         <!-- Day Timeline Context Preview -->
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);">Timeline Sequence Context (${f.date})</strong>
-            <span style="font-size:11px;color:var(--text-muted);">Green dashed card indicates proposed insertion</span>
+            <strong style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);">Before / After Day Sequence (${escapeHtml(f.date || '')})</strong>
+            <span style="font-size:11px;color:var(--accent-green);font-weight:600;"><i class="fa-solid fa-sparkles"></i> Highlighted card shows proposed change</span>
           </div>
           <div id="fixes-day-preview-container">
             <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;">
@@ -3024,34 +3264,82 @@ document.addEventListener("DOMContentLoaded", () => {
           }
           fixDetailMap = L.map("fixes-mini-map", {
             center: [lat, lng],
-            zoom: 14,
-            zoomControl: false,
+            zoom: 15,
+            zoomControl: true,
             attributionControl: false
           });
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(fixDetailMap);
-          L.marker([lat, lng]).addTo(fixDetailMap);
+          L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", { maxZoom: 20 }).addTo(fixDetailMap);
+
+          const mapBounds = [[lat, lng]];
+          const mainMarker = L.circleMarker([lat, lng], {
+            radius: 8,
+            fillColor: "#10b981",
+            color: "#ffffff",
+            weight: 2.5,
+            fillOpacity: 0.95
+          }).addTo(fixDetailMap);
+          mainMarker.bindPopup(`<strong>${escapeHtml(venueName || headline)}</strong>`);
+
+          // Plot individual EXIF photo GPS pins if present
+          const photos = evidence.photos || patchData.photos || [];
+          photos.forEach(p => {
+            if (p.latitude && p.longitude) {
+              L.circleMarker([p.latitude, p.longitude], {
+                radius: 5,
+                fillColor: "#4f46e5",
+                color: "#ffffff",
+                weight: 1.5,
+                fillOpacity: 0.9
+              }).addTo(fixDetailMap);
+              mapBounds.push([p.latitude, p.longitude]);
+            }
+          });
 
           // If travel leg has end coords, draw line
           const elat = patchData.end_lat;
           const elng = patchData.end_lng;
           if (elat && elng) {
-            L.marker([elat, elng]).addTo(fixDetailMap);
-            L.polyline([[lat, lng], [elat, elng]], { color: "var(--accent-blue)", dashArray: "4, 6" }).addTo(fixDetailMap);
-            fixDetailMap.fitBounds([[lat, lng], [elat, elng]], { padding: [20, 20] });
+            L.circleMarker([elat, elng], {
+              radius: 7,
+              fillColor: "#3b82f6",
+              color: "#ffffff",
+              weight: 2,
+              fillOpacity: 0.95
+            }).addTo(fixDetailMap);
+            L.polyline([[lat, lng], [elat, elng]], { color: "#2563eb", weight: 3, dashArray: "5, 6" }).addTo(fixDetailMap);
+            mapBounds.push([elat, elng]);
+          }
+
+          if (mapBounds.length > 1) {
+            fixDetailMap.fitBounds(mapBounds, { padding: [24, 24], maxZoom: 16 });
           }
         }
       }, 50);
     }
 
-    // Fetch Day Preview Timeline Sequence
+    // Fetch Day Preview Timeline Sequence (using dayData.segments!)
     try {
       const dRes = await fetch(`/api/day?date=${encodeURIComponent(f.date)}`);
       const dayData = await dRes.json();
       const previewContainer = document.getElementById("fixes-day-preview-container");
       if (previewContainer && dayData.status === "SUCCESS") {
-        const items = dayData.items || [];
+        const items = dayData.segments || dayData.items || [];
+        const propSt = patchData.start_ts || null;
+        const propLabel = venueName || headline;
+        const propWin = timeWin || "Proposed";
+        const contradictedId = evidence.contradicted_segment_id || patchData.segment_id || null;
+
         if (items.length === 0) {
-          previewContainer.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">No existing segments on this day (entire day is currently untracked).</div>';
+          previewContainer.innerHTML = `
+            <div class="fixes-mini-timeline">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">No existing segments recorded on ${escapeHtml(f.date)} — this proposal anchors the day:</div>
+              <div class="fixes-mini-step proposed">
+                <div class="step-time"><i class="fa-solid fa-sparkles"></i> ${escapeHtml(propWin)}</div>
+                <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(propLabel)}</div>
+                <span class="tag-badge snapped" style="font-size:10px;">New Evidence Segment</span>
+              </div>
+            </div>
+          `;
         } else {
           let timelineHtml = '<div class="fixes-mini-timeline">';
           let insertedProposal = false;
@@ -3060,37 +3348,49 @@ document.addEventListener("DOMContentLoaded", () => {
             const isVisit = it.segment_type === "visit";
             const stTime = it.start_time ? it.start_time.substring(11, 16) : '--:--';
             const etTime = it.end_time ? it.end_time.substring(11, 16) : '--:--';
-            const icon = isVisit ? "fa-location-dot" : "fa-person-walking";
-            const label = isVisit ? (it.place_name || "Visit") : (it.activity_type || "Activity");
+            const icon = isVisit ? "fa-location-dot" : "fa-route";
+            const label = isVisit ? (it.place_name || "Visit") : (it.activity_type || "Activity").replace(/_/g, " ");
+            const isContradicted = contradictedId && Number(it.id) === Number(contradictedId);
 
-            // Check if proposal should be rendered before this item
-            const propSt = patchData.start_ts || (f.start_time ? new Date(f.start_time).getTime()/1000 : null);
             if (!insertedProposal && propSt && it.start_ts && propSt < it.start_ts) {
               timelineHtml += `
                 <div class="fixes-mini-step proposed">
-                  <div class="step-time"><i class="fa-solid fa-sparkles"></i> Proposed</div>
-                  <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(patchData.resolved_poi_name || patchData.target_place || actionTitle)}</div>
-                  <span class="tag-badge snapped" style="font-size:10px;">New Segment</span>
+                  <div class="step-time"><i class="fa-solid fa-sparkles"></i> ${escapeHtml(propWin)}</div>
+                  <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(propLabel)}</div>
+                  <span class="tag-badge snapped" style="font-size:10px;">+ Insert</span>
                 </div>
               `;
               insertedProposal = true;
             }
 
             timelineHtml += `
-              <div class="fixes-mini-step">
-                <div class="step-time">${stTime} – ${etTime}</div>
-                <div class="step-name"><i class="fa-solid ${icon}" style="color:var(--text-muted);margin-right:6px;"></i> ${escapeHtml(label)}</div>
-                <span class="tag-badge" style="font-size:10px;">${it.duration_minutes ? Math.round(it.duration_minutes) + 'm' : ''}</span>
+              <div class="fixes-mini-step" style="${isContradicted ? 'border-color:#f59e0b;background:#fffbeb;' : ''}">
+                <div class="step-time">${escapeHtml(stTime)} – ${escapeHtml(etTime)}</div>
+                <div class="step-name"><i class="fa-solid ${icon}" style="color:${isContradicted ? '#b45309' : 'var(--text-muted)'};margin-right:6px;"></i> ${escapeHtml(label)}</div>
+                <span class="tag-badge ${isContradicted ? 'warning' : ''}" style="font-size:10px;">
+                  ${isContradicted ? '✂ Split Stay' : (it.duration_minutes ? Math.round(it.duration_minutes) + 'm' : '')}
+                </span>
               </div>
             `;
+
+            if (isContradicted && !insertedProposal) {
+              timelineHtml += `
+                <div class="fixes-mini-step proposed" style="margin-left:18px;">
+                  <div class="step-time"><i class="fa-solid fa-camera-retro"></i> ${escapeHtml(propWin)}</div>
+                  <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(propLabel)}</div>
+                  <span class="tag-badge snapped" style="font-size:10px;">Carved Visit</span>
+                </div>
+              `;
+              insertedProposal = true;
+            }
           });
 
           if (!insertedProposal) {
             timelineHtml += `
               <div class="fixes-mini-step proposed">
-                <div class="step-time"><i class="fa-solid fa-sparkles"></i> Proposed</div>
-                <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(patchData.resolved_poi_name || patchData.target_place || actionTitle)}</div>
-                <span class="tag-badge snapped" style="font-size:10px;">New Segment</span>
+                <div class="step-time"><i class="fa-solid fa-sparkles"></i> ${escapeHtml(propWin)}</div>
+                <div class="step-name"><i class="fa-solid fa-plus-circle" style="color:var(--accent-green);margin-right:6px;"></i> ${escapeHtml(propLabel)}</div>
+                <span class="tag-badge snapped" style="font-size:10px;">+ Insert</span>
               </div>
             `;
           }
@@ -3119,6 +3419,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (currentFixesFilter === "PENDING") {
           currentFixesList = currentFixesList.filter(f => f.id !== fixId);
           document.getElementById(`fix-queue-item-${fixId}`)?.remove();
+          const globalBadge = document.getElementById("badge-fixes");
+          if (globalBadge) {
+            const cur = parseInt((globalBadge.textContent || "0").replace(/,/g, ""), 10);
+            if (!isNaN(cur) && cur > 0) globalBadge.textContent = (cur - 1).toLocaleString();
+          }
           const nextFix = currentFixesList[curIdx] || currentFixesList[curIdx - 1] || currentFixesList[0];
           if (nextFix) {
             selectFixItem(nextFix.id);
@@ -3150,6 +3455,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (currentFixesFilter === "PENDING") {
           currentFixesList = currentFixesList.filter(f => f.id !== fixId);
           document.getElementById(`fix-queue-item-${fixId}`)?.remove();
+          const globalBadge = document.getElementById("badge-fixes");
+          if (globalBadge) {
+            const cur = parseInt((globalBadge.textContent || "0").replace(/,/g, ""), 10);
+            if (!isNaN(cur) && cur > 0) globalBadge.textContent = (cur - 1).toLocaleString();
+          }
           const nextFix = currentFixesList[curIdx] || currentFixesList[curIdx - 1] || currentFixesList[0];
           if (nextFix) {
             selectFixItem(nextFix.id);
@@ -5391,6 +5701,7 @@ document.addEventListener("DOMContentLoaded", () => {
         currentResults = [];
         if (activeTab === "places") loadPlaces("");
         else if (activeTab === "trips") loadTrips("", currentTripCountry);
+        else if (activeTab === "fixes") loadFixProposals("");
         return;
       }
 
@@ -5400,6 +5711,9 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (activeTab === "trips") {
         clearTimeout(tabLiveSearchTimer);
         tabLiveSearchTimer = setTimeout(() => loadTrips(q, currentTripCountry), 250);
+      } else if (activeTab === "fixes") {
+        clearTimeout(tabLiveSearchTimer);
+        tabLiveSearchTimer = setTimeout(() => loadFixProposals(q), 250);
       }
 
       clearTimeout(debounceTimer);

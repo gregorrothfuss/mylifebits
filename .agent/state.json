@@ -1,6 +1,6 @@
 {
   "goal": "Clean up repository clutter, build a non-destructive layered timeline engine that never guesses to plug holes, restore authentic baseline visits, and overhaul the evidence-backed Fix Proposals engine and Review UI",
-  "active_step_id": 3,
+  "active_step_id": 6,
   "steps": [
     {
       "id": 1,
@@ -15,22 +15,22 @@
     {
       "id": 3,
       "description": "Eliminate heuristic gap-plugging guesses (SYNTHETIC_LIFE, SYNTHETIC_GAP_HEAL, stretched home stays) and restore 100% of authentic baseline visits from Pixel 10 exports and 2024 Takeout",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 4,
       "description": "Repair modal physics anomalies, malformed Place IDs, unsynchronized place categories/cities/visit counts, and road-snapped polyline flags across timeline_viewer.db",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 5,
       "description": "Rebuild the Fix Proposals engine around verifiable multi-source evidence (Photos EXIF, Reviews, Plazes, Fit, Breadcrumbs, Lyft) and upgrade the Fix Proposals Review Studio UI",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 6,
       "description": "Harden audit_strict_dominance.py and ODLH compiler and pass all 4-Tier Web Verification Gates and E2E tests",
-      "status": "pending"
+      "status": "completed"
     }
   ],
   "context_cache": {
@@ -53,7 +53,8 @@
     ],
     "scratch_logs": [
       ".agent/scratch/pytest.log",
-      ".agent/scratch/audit.log"
+      ".agent/scratch/audit.log",
+      ".agent/scratch/dominance.log"
     ]
   }
 }

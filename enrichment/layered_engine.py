@@ -902,109 +902,157 @@ class LayeredTimelineEngine:
                             unswallowed_visits += 1
                         # Case 2B: Enclosing Home/Work/Hotel stay -> split stay around the commercial visit
                         elif ov["start_ts"] <= st_ts - 300 and ov["end_ts"] >= et_ts + 300:
-                            left_dur = round((st_ts - ov["start_ts"]) / 60.0, 2)
-                            right_dur = round((ov["end_ts"] - et_ts) / 60.0, 2)
-                            # Shorten original stay to left half
-                            c.execute(
-                                """
-                                UPDATE segments
-                                SET end_time = ?, end_ts = ?, duration_minutes = ?,
-                                    engine_version = ?, inference_run_id = ?
-                                WHERE id = ?;
-                                """,
-                                (
-                                    lv["start_time"],
-                                    st_ts,
-                                    left_dur,
-                                    ENGINE_VERSION,
-                                    run_id,
-                                    ov["id"],
-                                ),
+                            dist_anchor_km = (
+                                haversine_distance(ov["latitude"], ov["longitude"], lat, lng) / 1000.0
+                                if (ov["latitude"] is not None and lat is not None)
+                                else 1.0
                             )
-                            # Insert commercial visit
-                            c.execute(
-                                """
-                                INSERT INTO segments (
-                                    segment_type, start_time, end_time, start_ts, end_ts,
-                                    duration_minutes, date, year, month, day,
-                                    latitude, longitude, place_id, place_name, place_address,
-                                    semantic_type, category, city, probability, hierarchy_level,
-                                    source, engine_version, inference_run_id, source_key
-                                ) VALUES (
-                                    'visit', ?, ?, ?, ?,
-                                    ?, ?, ?, ?, ?,
-                                    ?, ?, ?, ?, ?,
-                                    ?, ?, ?, 1.0, 0,
-                                    ?, ?, ?, ?
-                                );
-                                """,
-                                (
-                                    lv["start_time"],
-                                    lv["end_time"],
-                                    st_ts,
-                                    et_ts,
-                                    lv["duration_minutes"],
-                                    lv["date"],
-                                    lv["year"],
-                                    lv["month"],
-                                    lv["day"],
-                                    lat,
-                                    lng,
-                                    pid,
-                                    pname,
-                                    paddr,
-                                    sem_type,
-                                    pcat,
-                                    pcity,
-                                    lv["source_stream"],
-                                    ENGINE_VERSION,
-                                    run_id,
-                                    lv["source_key"],
-                                ),
-                            )
-                            # Insert right half of anchor stay
-                            r_date = lv["end_time"][:10]
-                            c.execute(
-                                """
-                                INSERT INTO segments (
-                                    segment_type, start_time, end_time, start_ts, end_ts,
-                                    duration_minutes, date, year, month, day,
-                                    latitude, longitude, place_id, place_name, place_address,
-                                    semantic_type, category, city, probability, hierarchy_level,
-                                    source, engine_version, inference_run_id
-                                ) VALUES (
-                                    'visit', ?, ?, ?, ?,
-                                    ?, ?, ?, ?, ?,
-                                    ?, ?, ?, ?, (SELECT address FROM places WHERE place_id = ?),
-                                    ?, ?, (SELECT city FROM places WHERE place_id = ?), 1.0, 0,
-                                    ?, ?, ?
-                                );
-                                """,
-                                (
-                                    lv["end_time"],
-                                    ov["end_time"],
-                                    et_ts,
-                                    ov["end_ts"],
-                                    right_dur,
-                                    r_date,
-                                    int(r_date[:4]),
-                                    int(r_date[5:7]),
-                                    int(r_date[8:10]),
-                                    ov["latitude"],
-                                    ov["longitude"],
-                                    ov["place_id"],
-                                    ov["place_name"],
-                                    ov["place_id"],
-                                    ov["semantic_type"],
-                                    ov["category"],
-                                    ov["place_id"],
-                                    ov["source"],
-                                    ENGINE_VERSION,
-                                    run_id,
-                                ),
-                            )
-                            unswallowed_visits += 1
-                            split_stays += 1
+                            # If anchor stay is >50 km away (e.g. routine Home/Work template on an international travel day),
+                            # replace the false routine stay with the authentic travel visit rather than creating a teleport
+                            if dist_anchor_km > 50.0:
+                                c.execute(
+                                    """
+                                    UPDATE segments
+                                    SET start_time = ?, end_time = ?, start_ts = ?, end_ts = ?,
+                                        duration_minutes = ?, date = ?, year = ?, month = ?, day = ?,
+                                        latitude = ?, longitude = ?, place_id = ?, place_name = ?,
+                                        place_address = ?, semantic_type = ?, category = ?, city = ?,
+                                        source = ?, engine_version = ?, inference_run_id = ?, source_key = ?
+                                    WHERE id = ?;
+                                    """,
+                                    (
+                                        lv["start_time"],
+                                        lv["end_time"],
+                                        st_ts,
+                                        et_ts,
+                                        lv["duration_minutes"],
+                                        lv["date"],
+                                        lv["year"],
+                                        lv["month"],
+                                        lv["day"],
+                                        lat,
+                                        lng,
+                                        pid,
+                                        pname,
+                                        paddr,
+                                        sem_type,
+                                        pcat,
+                                        pcity,
+                                        lv["source_stream"],
+                                        ENGINE_VERSION,
+                                        run_id,
+                                        lv["source_key"],
+                                        ov["id"],
+                                    ),
+                                )
+                                unswallowed_visits += 1
+                            else:
+                                buf_sec = max(60.0, min(1800.0, round(dist_anchor_km * 120.0)))
+                                left_et_ts = max(float(ov["start_ts"]) + 60.0, st_ts - buf_sec)
+                                right_st_ts = min(float(ov["end_ts"]) - 60.0, et_ts + buf_sec)
+                                left_dur = round((left_et_ts - ov["start_ts"]) / 60.0, 2)
+                                right_dur = round((ov["end_ts"] - right_st_ts) / 60.0, 2)
+                                # Shorten original stay to left half with travel buffer
+                                c.execute(
+                                    """
+                                    UPDATE segments
+                                    SET end_time = ?, end_ts = ?, duration_minutes = ?,
+                                        engine_version = ?, inference_run_id = ?
+                                    WHERE id = ?;
+                                    """,
+                                    (
+                                        lv["start_time"],
+                                        left_et_ts,
+                                        left_dur,
+                                        ENGINE_VERSION,
+                                        run_id,
+                                        ov["id"],
+                                    ),
+                                )
+                                # Insert commercial visit
+                                c.execute(
+                                    """
+                                    INSERT INTO segments (
+                                        segment_type, start_time, end_time, start_ts, end_ts,
+                                        duration_minutes, date, year, month, day,
+                                        latitude, longitude, place_id, place_name, place_address,
+                                        semantic_type, category, city, probability, hierarchy_level,
+                                        source, engine_version, inference_run_id, source_key
+                                    ) VALUES (
+                                        'visit', ?, ?, ?, ?,
+                                        ?, ?, ?, ?, ?,
+                                        ?, ?, ?, ?, ?,
+                                        ?, ?, ?, 1.0, 0,
+                                        ?, ?, ?, ?
+                                    );
+                                    """,
+                                    (
+                                        lv["start_time"],
+                                        lv["end_time"],
+                                        st_ts,
+                                        et_ts,
+                                        lv["duration_minutes"],
+                                        lv["date"],
+                                        lv["year"],
+                                        lv["month"],
+                                        lv["day"],
+                                        lat,
+                                        lng,
+                                        pid,
+                                        pname,
+                                        paddr,
+                                        sem_type,
+                                        pcat,
+                                        pcity,
+                                        lv["source_stream"],
+                                        ENGINE_VERSION,
+                                        run_id,
+                                        lv["source_key"],
+                                    ),
+                                )
+                                # Insert right half of anchor stay with travel buffer
+                                r_date = lv["end_time"][:10]
+                                c.execute(
+                                    """
+                                    INSERT INTO segments (
+                                        segment_type, start_time, end_time, start_ts, end_ts,
+                                        duration_minutes, date, year, month, day,
+                                        latitude, longitude, place_id, place_name, place_address,
+                                        semantic_type, category, city, probability, hierarchy_level,
+                                        source, engine_version, inference_run_id
+                                    ) VALUES (
+                                        'visit', ?, ?, ?, ?,
+                                        ?, ?, ?, ?, ?,
+                                        ?, ?, ?, ?, (SELECT address FROM places WHERE place_id = ?),
+                                        ?, ?, (SELECT city FROM places WHERE place_id = ?), 1.0, 0,
+                                        ?, ?, ?
+                                    );
+                                    """,
+                                    (
+                                        lv["end_time"],
+                                        ov["end_time"],
+                                        right_st_ts,
+                                        ov["end_ts"],
+                                        right_dur,
+                                        r_date,
+                                        int(r_date[:4]),
+                                        int(r_date[5:7]),
+                                        int(r_date[8:10]),
+                                        ov["latitude"],
+                                        ov["longitude"],
+                                        ov["place_id"],
+                                        ov["place_name"],
+                                        ov["place_id"],
+                                        ov["semantic_type"],
+                                        ov["category"],
+                                        ov["place_id"],
+                                        ov["source"],
+                                        ENGINE_VERSION,
+                                        run_id,
+                                    ),
+                                )
+                                unswallowed_visits += 1
+                                split_stays += 1
 
         # Also restore missing authentic activities from ON_DEVICE_2026 / TAKEOUT_2024 on unoccupied intervals
         c.execute(
@@ -1242,6 +1290,26 @@ class LayeredTimelineEngine:
                     else:
                         new_mode = "IN_PASSENGER_VEHICLE"
                     reclassified_flights += 1
+                elif speed_kmh > 1350.0 and dur_h > 0:
+                    clamped_m = round(
+                        min(
+                            chord_m * 1.05 if chord_m >= 300000.0 else dist_m,
+                            dur_h * 900.0 * 1000.0,
+                        ),
+                        1,
+                    )
+                    if clamped_m < 300000.0:
+                        new_mode = "IN_PASSENGER_VEHICLE"
+                        clamped_m = round(min(clamped_m, dur_h * 105.0 * 1000.0), 1)
+                        dist_m = clamped_m
+                        dist_km = dist_m / 1000.0
+                        speed_kmh = dist_km / dur_h if dur_h > 0 else 0.0
+                        reclassified_flights += 1
+                    c.execute(
+                        "UPDATE segments SET distance_meters = ? WHERE id = ?;",
+                        (clamped_m, aid),
+                    )
+                    reclassified_speeds += 1
             else:
                 if dist_km > 300.0 and speed_kmh > 250.0 and speed_kmh <= 1200.0:
                     new_mode = "FLYING"
@@ -1252,7 +1320,6 @@ class LayeredTimelineEngine:
                     elif speed_kmh <= 150.0:
                         new_mode = "IN_PASSENGER_VEHICLE"
                     else:
-                        # Clamp implausible distance to chord or walking speed
                         clamped_m = round(min(chord_m, dur_h * 6.0 * 1000.0), 1)
                         c.execute(
                             "UPDATE segments SET distance_meters = ? WHERE id = ?;",
@@ -1269,16 +1336,24 @@ class LayeredTimelineEngine:
                             (clamped_m, aid),
                         )
                     reclassified_speeds += 1
-                elif mode in ("DRIVING", "IN_PASSENGER_VEHICLE", "IN_TAXI", "IN_BUS") and speed_kmh > 160.0:
-                    if dist_km > 300.0 and speed_kmh <= 1150.0:
-                        new_mode = "FLYING"
-                    else:
-                        clamped_m = round(min(chord_m, dur_h * 90.0 * 1000.0), 1)
-                        c.execute(
-                            "UPDATE segments SET distance_meters = ? WHERE id = ?;",
-                            (clamped_m, aid),
-                        )
-                    reclassified_speeds += 1
+
+            # Check ground vehicle speed ceiling (including newly reclassified ex-FLYING segments)
+            if new_mode in ("DRIVING", "IN_PASSENGER_VEHICLE", "IN_TAXI", "IN_BUS") and speed_kmh > 160.0 and dur_h > 0:
+                if dist_km > 300.0 and 250.0 <= speed_kmh <= 1150.0:
+                    new_mode = "FLYING"
+                else:
+                    clamped_m = round(
+                        min(
+                            chord_m if chord_m > 0 else dist_m,
+                            dur_h * 105.0 * 1000.0,
+                        ),
+                        1,
+                    )
+                    c.execute(
+                        "UPDATE segments SET distance_meters = ? WHERE id = ?;",
+                        (clamped_m, aid),
+                    )
+                reclassified_speeds += 1
 
             if new_mode != mode:
                 c.execute(
@@ -1299,6 +1374,88 @@ class LayeredTimelineEngine:
         )
         normalized_docks = int(c.rowcount or 0)
 
+        # Resolve any remaining top-level visit overlaps (e.g. 15s Citi Bike dock stop or UTC/local boundary overlap)
+        c.execute(
+            """
+            SELECT id, start_ts, end_ts, duration_minutes, place_name, source, latitude, longitude
+            FROM segments
+            WHERE hierarchy_level = 0 AND segment_type = 'visit'
+            ORDER BY start_ts ASC, end_ts ASC;
+            """
+        )
+        top_visits = [dict(r) for r in c.fetchall()]
+        resolved_overlaps = 0
+        for i in range(len(top_visits) - 1):
+            v1 = top_visits[i]
+            for j in range(i + 1, min(i + 15, len(top_visits))):
+                v2 = top_visits[j]
+                if v2["start_ts"] >= v1["end_ts"]:
+                    break
+                # Overlap between v1 and v2
+                v1_dur = v1["end_ts"] - v1["start_ts"]
+                v2_dur = v2["end_ts"] - v2["start_ts"]
+                if v2_dur <= 180 and v1_dur > v2_dur:
+                    # Trim v1 end or nest v2 if strictly inside
+                    if v2["start_ts"] - v1["start_ts"] <= 60:
+                        new_v1_st = v2["end_ts"] + 60.0
+                        c.execute(
+                            "UPDATE segments SET start_ts = ?, duration_minutes = ROUND((end_ts - ?) / 60.0, 2) WHERE id = ?;",
+                            (new_v1_st, new_v1_st, v1["id"]),
+                        )
+                        v1["start_ts"] = new_v1_st
+                    elif v1["end_ts"] - v2["end_ts"] <= 60:
+                        new_v1_et = v2["start_ts"] - 60.0
+                        c.execute(
+                            "UPDATE segments SET end_ts = ?, duration_minutes = ROUND((? - start_ts) / 60.0, 2) WHERE id = ?;",
+                            (new_v1_et, new_v1_et, v1["id"]),
+                        )
+                        v1["end_ts"] = new_v1_et
+                    else:
+                        c.execute("UPDATE segments SET hierarchy_level = 1 WHERE id = ?;", (v2["id"],))
+                else:
+                    new_v1_et = max(v1["start_ts"] + 60.0, v2["start_ts"] - 60.0)
+                    if new_v1_et < v2["start_ts"] and new_v1_et > v1["start_ts"]:
+                        c.execute(
+                            "UPDATE segments SET end_ts = ?, duration_minutes = ROUND((? - start_ts) / 60.0, 2) WHERE id = ?;",
+                            (new_v1_et, new_v1_et, v1["id"]),
+                        )
+                        v1["end_ts"] = new_v1_et
+                    else:
+                        c.execute("UPDATE segments SET hierarchy_level = 1 WHERE id = ?;", (v2["id"],))
+                resolved_overlaps += 1
+
+        # Ensure >=60s transition buffer on adjacent visits >500m apart where split/trim created <=30s gap
+        c.execute(
+            """
+            SELECT s1.id, s2.id, s1.start_ts, s1.end_ts, s2.start_ts, s2.end_ts,
+                   s1.latitude, s1.longitude, s2.latitude, s2.longitude
+            FROM segments s1
+            JOIN segments s2 ON s1.date = s2.date AND s2.start_ts >= s1.end_ts AND s2.start_ts <= (s1.end_ts + 30)
+            WHERE s1.hierarchy_level = 0 AND s2.hierarchy_level = 0
+              AND s1.segment_type = 'visit' AND s2.segment_type = 'visit'
+              AND s1.latitude IS NOT NULL AND s2.latitude IS NOT NULL
+              AND (s1.engine_version = '2.0.0' OR s2.engine_version = '2.0.0');
+            """
+        )
+        buffered_jumps = 0
+        for row in c.fetchall():
+            id1, id2, st1, et1, st2, et2, lat1, lng1, lat2, lng2 = row
+            if haversine_distance(lat1, lng1, lat2, lng2) > 500.0:
+                if (et1 - st1) >= 180.0:
+                    new_et1 = st2 - 60.0
+                    c.execute(
+                        "UPDATE segments SET end_ts = ?, duration_minutes = ROUND((? - start_ts) / 60.0, 2) WHERE id = ?;",
+                        (new_et1, new_et1, id1),
+                    )
+                    buffered_jumps += 1
+                elif (et2 - st2) >= 180.0:
+                    new_st2 = et1 + 60.0
+                    c.execute(
+                        "UPDATE segments SET start_ts = ?, duration_minutes = ROUND((end_ts - ?) / 60.0, 2) WHERE id = ?;",
+                        (new_st2, new_st2, id2),
+                    )
+                    buffered_jumps += 1
+
         conn.commit()
         out = {
             "propagated_endpoints": propagated_endpoints,
@@ -1306,6 +1463,8 @@ class LayeredTimelineEngine:
             "reclassified_flights": reclassified_flights,
             "reclassified_speeds": reclassified_speeds,
             "normalized_citi_docks": normalized_docks,
+            "resolved_overlaps": resolved_overlaps,
+            "buffered_jumps": buffered_jumps,
         }
         self.complete_inference_run(conn, run_id, out)
         conn.close()
@@ -1870,31 +2029,50 @@ class LayeredTimelineEngine:
         # =====================================================================
         c.execute(
             """
-            SELECT r.id, r.place_name, r.address, r.latitude, r.longitude,
-                   r.rating, r.review_text, r.published_at, r.published_ts,
-                   r.matched_place_id, r.photo_urls_json,
-                   p.category, p.city, p.visit_count
+            SELECT r.id, r.place_name, r.date, r.created_at, r.latitude, r.longitude,
+                   r.rating, r.review_text, r.matched_place_id, r.photo_urls,
+                   p.address, p.category, p.city, p.visit_count
             FROM poi_reviews r
             LEFT JOIN places p ON r.matched_place_id = p.place_id
             WHERE r.latitude IS NOT NULL AND r.longitude IS NOT NULL
-              AND r.matched_place_id LIKE 'ChIJ%'
               AND COALESCE(p.visit_count, 0) = 0
-            ORDER BY r.published_ts DESC
+            ORDER BY r.date DESC, r.id DESC
             LIMIT 120;
             """
         )
         for rev in [dict(r) for r in c.fetchall()]:
-            pub_iso = rev.get("published_at") or ""
-            date_str = pub_iso[:10] if len(pub_iso) >= 10 else None
+            pub_iso = rev.get("created_at") or rev.get("date") or ""
+            date_str = (rev.get("date") or pub_iso)[:10] if len(rev.get("date") or pub_iso) >= 10 else None
             if not date_str:
                 continue
-            pub_ts = float(rev["published_ts"] or parse_iso_to_ts(pub_iso) or 0.0)
+            pub_ts = float(parse_iso_to_ts(pub_iso) or parse_iso_to_ts(f"{date_str}T19:00:00Z") or 0.0)
             if pub_ts <= 0:
+                continue
+
+            rlat, rlng = float(rev["latitude"]), float(rev["longitude"])
+            matched_pid = rev.get("matched_place_id")
+            poi = None
+            if not matched_pid or not str(matched_pid).startswith("ChIJ"):
+                poi = find_nearest_poi(rlat, rlng, max_m=350.0, prefer_non_home=True)
+                if poi:
+                    matched_pid = poi["place_id"]
+            if not matched_pid or not str(matched_pid).startswith("ChIJ"):
+                continue
+
+            # Check if a visit already exists on this date near these coordinates
+            idx = bisect.bisect_left(visit_starts, pub_ts - 86400)
+            already_visited = False
+            for k in range(max(0, idx - 2), min(len(visit_segs), idx + 15)):
+                vs = visit_segs[k]
+                if vs["date"] == date_str and vs["latitude"] is not None:
+                    if haversine_distance(rlat, rlng, vs["latitude"], vs["longitude"]) <= 350.0:
+                        already_visited = True
+                        break
+            if already_visited:
                 continue
 
             st_ts = pub_ts - 3600.0
             et_ts = pub_ts
-            rlat, rlng = float(rev["latitude"]), float(rev["longitude"])
             off_h = get_timezone_offset_hours(rlat, rlng, st_ts)
             tz = datetime.timezone(datetime.timedelta(hours=off_h))
             st_iso = datetime.datetime.fromtimestamp(st_ts, tz=tz).isoformat()
@@ -1902,13 +2080,13 @@ class LayeredTimelineEngine:
             time_win = f"{st_iso[11:16]} – {et_iso[11:16]}"
 
             r_photos = []
-            if rev.get("photo_urls_json"):
+            if rev.get("photo_urls"):
                 try:
-                    r_photos = json.loads(rev["photo_urls_json"])
+                    r_photos = json.loads(rev["photo_urls"])
                 except Exception:
                     r_photos = []
 
-            pname = rev["place_name"] or "Reviewed Venue"
+            pname = rev["place_name"] or (poi["name"] if poi else "Reviewed Venue")
             rating_str = f"{rev['rating']}★" if rev.get("rating") else "Reviewed"
             snippet = (rev.get("review_text") or "").strip()[:120]
             reasoning = (
@@ -1932,12 +2110,12 @@ class LayeredTimelineEngine:
                 "end_time": et_iso,
                 "duration_minutes": 60.0,
                 "time_window": time_win,
-                "place_id": rev.get("matched_place_id"),
+                "place_id": matched_pid,
                 "resolved_poi_name": pname,
                 "target_place": pname,
-                "address": rev.get("address"),
-                "category": rev.get("category") or "Food & Drink",
-                "city": rev.get("city"),
+                "address": rev.get("address") or (poi.get("address") if poi else None),
+                "category": rev.get("category") or (poi.get("category") if poi else None) or "Food & Drink",
+                "city": rev.get("city") or (poi.get("city") if poi else None),
                 "latitude": rlat,
                 "longitude": rlng,
                 "centroid_lat": rlat,
@@ -2178,3 +2356,61 @@ class LayeredTimelineEngine:
         self.complete_inference_run(conn, run_id, out)
         conn.close()
         return out
+
+    def run_full_layered_pipeline(
+        self,
+        pixel10_json: str = "pixel10_export/Timeline-20260930.json",
+        takeout_zip: str = "data/takeout/lh-20241129T224901Z-001.zip",
+    ) -> Dict[str, Any]:
+        """Executes the complete non-destructive Layer 0 -> Layer 1 -> Layer 2 pipeline."""
+        print("[*] Step 1/7: Snapshotting existing authentic segments into Layer 0 (raw_source_segments)...")
+        s0 = self.snapshot_existing_authentic_segments_to_layer0()
+        print(f"    -> {s0}")
+
+        print("[*] Step 2/7: Ingesting Pixel 10 export (ON_DEVICE_2026) into Layer 0...")
+        s1 = self.ingest_pixel10_export_to_layer0(pixel10_json)
+        print(f"    -> {s1}")
+
+        print("[*] Step 3/7: Ingesting 2024 Takeout archive (TAKEOUT_2024) into Layer 0...")
+        s2 = self.ingest_takeout_2024_to_layer0(takeout_zip)
+        print(f"    -> {s2}")
+
+        print("[*] Step 4/7: Purging heuristic gap-plugging guesses from active segments...")
+        s3 = self.purge_heuristic_gap_guesses()
+        print(f"    -> {s3}")
+
+        print("[*] Step 5/7: Restoring missing and swallowed authentic baseline visits...")
+        s4 = self.restore_missing_and_swallowed_authentic_visits()
+        print(f"    -> {s4}")
+
+        print("[*] Step 6/7: Sanitizing modal physics, polylines, and Place/Segment metadata...")
+        s5 = self.sanitize_physics_and_polylines()
+        s6 = self.synchronize_places_and_metadata()
+        print(f"    -> physics: {s5}")
+        print(f"    -> metadata: {s6}")
+
+        print("[*] Step 7/7: Running diagnostics & generating strictly evidence-backed Fix Proposals...")
+        from diagnostics import TimelineDiagnosticsEngine
+        diag = TimelineDiagnosticsEngine(self.db_path)
+        d_report = diag.run_full_diagnostics()
+
+        return {
+            "layer0_snapshot": s0,
+            "layer0_pixel10": s1,
+            "layer0_takeout2024": s2,
+            "purged_guesses": s3,
+            "restored_baseline": s4,
+            "physics_sanitization": s5,
+            "metadata_sync": s6,
+            "diagnostics": d_report.get("scorecard"),
+            "proposals": d_report.get("proposals"),
+        }
+
+
+if __name__ == "__main__":
+    engine = LayeredTimelineEngine()
+    summary = engine.run_full_layered_pipeline()
+    print("\n=== Layered Engine Execution Summary ===")
+    print(json.dumps(summary, indent=2))
+
+

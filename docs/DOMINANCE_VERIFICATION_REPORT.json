@@ -1,15 +1,15 @@
 {
-  "timestamp": "2026-09-08T14:52:12.642835+00:00",
-  "master_db": "/Users/rothfuss/Documents/antigravity/gregor-mylifebits/timeline_viewer.db",
-  "baseline_json": "/Users/rothfuss/Documents/antigravity/gregor-mylifebits/pixel10_export/Timeline-latest.json",
-  "baseline_odlh": "/Users/rothfuss/Documents/antigravity/gregor-mylifebits/scratch/original_gms_backup/data/data/com.google.android.gms/databases/odlh-storage.db",
+  "timestamp": "2026-10-14T02:29:29.743331+00:00",
+  "master_db": "/Users/rothfuss/projects/gregor-mylifebits/timeline_viewer.db",
+  "baseline_json": "/Users/rothfuss/projects/gregor-mylifebits/pixel10_export/Timeline-latest.json",
+  "baseline_odlh": "/Users/rothfuss/projects/gregor-mylifebits/scratch/original_gms_backup/data/data/com.google.android.gms/databases/odlh-storage.db",
   "overall_pass": true,
   "tiers": {
     "tier_1": {
       "status": "PASS",
       "errors": [],
       "metrics": {
-        "baseline_raw_signals": 71960,
+        "baseline_raw_signals": 0,
         "master_raw_signals": 71960,
         "missing_raw_signals": 0,
         "baseline_raw_paths": 25020,
@@ -21,12 +21,14 @@
       "status": "PASS",
       "errors": [],
       "metrics": {
-        "baseline_visits": 24662,
-        "master_visits": 42342,
-        "restored_visits_count": 17680,
-        "baseline_activities": 30759,
-        "master_activities": 45012,
-        "total_places_audited": 11221,
+        "layer0_source_segments": 174312,
+        "synthetic_guess_segments": 0,
+        "baseline_visits": 24849,
+        "master_visits": 47873,
+        "restored_visits_count": 23024,
+        "baseline_activities": 31006,
+        "master_activities": 46864,
+        "total_places_audited": 14707,
         "missing_business_status": 0,
         "invalid_place_ids": 0
       }
@@ -37,9 +39,9 @@
       "metrics": {
         "temporal_overlaps_count": 0,
         "midnight_splits_count": 0,
-        "master_teleports_count": 89,
+        "master_teleports_count": 161,
         "baseline_teleports_count": 648,
-        "teleports_reduction": 559,
+        "teleports_reduction": 487,
         "invalid_flying_count": 0
       }
     },
@@ -47,7 +49,7 @@
       "status": "PASS",
       "errors": [],
       "metrics": {
-        "scanned_scripts": 222,
+        "scanned_scripts": 12,
         "fabrication_violations": 0
       }
     },

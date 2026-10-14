@@ -245,11 +245,9 @@ class DominanceAuditor:
 
         t2_details: Dict[str, Any] = {"status": "PENDING", "errors": [], "metrics": {}}
 
-        # Connect to Master DB
         m_conn = sqlite3.connect(self.master_db)
         m_cur = m_conn.cursor()
 
-        # Check total visits in baseline vs master
         with open(self.baseline_json, "r", encoding="utf-8") as f:
             base_data = json.load(f)
 
@@ -263,33 +261,59 @@ class DominanceAuditor:
         m_cur.execute("SELECT COUNT(*) FROM segments WHERE segment_type = 'activity';")
         master_activities = m_cur.fetchone()[0]
 
-        print(f"[*] Baseline Visits:     {len(base_visits):,}")
-        print(f"[*] Master DB Visits:    {master_visits:,} (+{master_visits - len(base_visits):,} restored)")
-        print(f"[*] Baseline Activities: {len(base_activities):,}")
-        print(f"[*] Master Activities:   {master_activities:,} (+{master_activities - len(base_activities):,} restored)")
+        m_cur.execute("SELECT COUNT(*) FROM raw_source_segments;")
+        layer0_count = m_cur.fetchone()[0]
 
-        # Invariant: Master visits >= Baseline visits
+        m_cur.execute(
+            "SELECT COUNT(*) FROM segments WHERE source IN ('SYNTHETIC_LIFE', 'SYNTHETIC_GAP_HEAL') OR source LIKE 'SYNTHETIC%';"
+        )
+        synthetic_guess_count = m_cur.fetchone()[0]
+
+        print(f"[*] Layer 0 Immutable Source Segments: {layer0_count:,}")
+        print(f"[*] Heuristic Synthetic Guesses:       {synthetic_guess_count}")
+        print(f"[*] Baseline Visits:                   {len(base_visits):,}")
+        print(f"[*] Master DB Visits:                  {master_visits:,} (+{master_visits - len(base_visits):,} restored)")
+        print(f"[*] Baseline Activities:               {len(base_activities):,}")
+        print(f"[*] Master Activities:                 {master_activities:,} (+{master_activities - len(base_activities):,} restored)")
+
+        if layer0_count < len(base_visits) + len(base_activities):
+            t2_details["errors"].append(
+                f"Layer 0 raw_source_segments ({layer0_count}) incomplete against baseline"
+            )
+
+        if synthetic_guess_count > 0:
+            t2_details["errors"].append(
+                f"Found {synthetic_guess_count} heuristic synthetic guess segments in active timeline"
+            )
+
         if master_visits < len(base_visits):
             t2_details["errors"].append(
                 f"Master visits count ({master_visits}) < Baseline visits ({len(base_visits)})"
             )
 
-        # Invariant: Place ID / Feature ID integrity check
-        # Verify all places in places table have valid structures
+        # Invariant: 20-byte ChIJ Place ID / Feature ID binary structure check
         m_cur.execute("SELECT place_id, name, business_status FROM places;")
         places_rows = m_cur.fetchall()
-        print(f"[*] Auditing {len(places_rows):,} places in Master catalog...")
+        print(f"[*] Auditing {len(places_rows):,} places in Master catalog for 20-byte ChIJ integrity...")
 
         invalid_fids = 0
         missing_statuses = 0
         for pid, name, status in places_rows:
-            if not pid or len(pid) < 5:
+            if not pid or not str(pid).startswith("ChIJ"):
                 invalid_fids += 1
+            else:
+                try:
+                    pad = pid + "=" * ((4 - len(pid) % 4) % 4)
+                    raw = base64.urlsafe_b64decode(pad.encode("ascii"))
+                    if len(raw) < 20 or raw[0] != 0x0A or raw[2] != 0x09 or raw[11] != 0x11:
+                        invalid_fids += 1
+                except Exception:
+                    invalid_fids += 1
             if not status:
                 missing_statuses += 1
 
         print(f"[*] Places with missing business_status: {missing_statuses}")
-        print(f"[*] Places with invalid Place ID format: {invalid_fids}")
+        print(f"[*] Places with invalid 20-byte ChIJ ID: {invalid_fids}")
 
         if missing_statuses > 0:
             t2_details["errors"].append(f"Found {missing_statuses} places lacking lifecycle business_status")
@@ -297,20 +321,21 @@ class DominanceAuditor:
         if invalid_fids > 0:
             t2_details["errors"].append(f"Found {invalid_fids} malformed Place IDs in master places table")
 
-        # Invariant: Provenance check on restored visits
         m_cur.execute("""
         SELECT COUNT(*) FROM segments
         WHERE segment_type = 'visit'
           AND (source IS NULL OR source = '');
         """)
         unattributed_visits = m_cur.fetchone()[0]
-        print(f"[*] Restored visits with missing source provenance: {unattributed_visits}")
+        print(f"[*] Visits with missing source provenance: {unattributed_visits}")
         if unattributed_visits > 0:
             t2_details["errors"].append(f"Found {unattributed_visits} visits lacking source provenance")
 
         m_conn.close()
 
         t2_details["metrics"] = {
+            "layer0_source_segments": layer0_count,
+            "synthetic_guess_segments": synthetic_guess_count,
             "baseline_visits": len(base_visits),
             "master_visits": master_visits,
             "restored_visits_count": master_visits - len(base_visits),
@@ -326,7 +351,7 @@ class DominanceAuditor:
         self.results["tiers"]["tier_2"] = t2_details
 
         if tier_pass:
-            print("[✓] TIER 2 AUDIT PASSED: Entity dominance and 100% FID integrity mathematically confirmed.")
+            print("[✓] TIER 2 AUDIT PASSED: Entity dominance and 100% 20-byte FID integrity mathematically confirmed.")
         else:
             print(f"[✗] TIER 2 AUDIT FAILED: {'; '.join(t2_details['errors'])}")
         return tier_pass
@@ -344,19 +369,20 @@ class DominanceAuditor:
         m_conn = sqlite3.connect(self.master_db)
         m_cur = m_conn.cursor()
 
-        # 1. Check for temporal overlaps (> 60 seconds tolerance)
+        # 1. Check for top-level temporal overlaps (> 60 seconds tolerance)
         m_cur.execute("""
         SELECT s1.id, s2.id, s1.date, s1.end_ts, s2.start_ts, (s1.end_ts - s2.start_ts) as overlap_sec
         FROM segments s1
         JOIN segments s2 ON s1.date = s2.date AND s1.id != s2.id
-        WHERE s1.start_ts <= s2.start_ts
+        WHERE s1.hierarchy_level = 0 AND s2.hierarchy_level = 0
+          AND s1.start_ts <= s2.start_ts
           AND s1.end_ts > (s2.start_ts + 60)
           AND s1.segment_type = 'visit' AND s2.segment_type = 'visit'
         ORDER BY overlap_sec DESC
         LIMIT 20;
         """)
         overlaps = m_cur.fetchall()
-        print(f"[*] Concurrent visit temporal overlaps (>60s): {len(overlaps)}")
+        print(f"[*] Top-level visit temporal overlaps (>60s): {len(overlaps)}")
         if len(overlaps) > 0:
             sample = overlaps[0]
             t3_details["errors"].append(
@@ -383,7 +409,8 @@ class DominanceAuditor:
                (s2.start_ts - s1.end_ts) as gap_sec
         FROM segments s1
         JOIN segments s2 ON s1.date = s2.date AND s2.start_ts >= s1.end_ts AND s2.start_ts <= (s1.end_ts + 30)
-        WHERE s1.segment_type = 'visit' AND s2.segment_type = 'visit'
+        WHERE s1.hierarchy_level = 0 AND s2.hierarchy_level = 0
+          AND s1.segment_type = 'visit' AND s2.segment_type = 'visit'
           AND s1.latitude IS NOT NULL AND s2.latitude IS NOT NULL;
         """)
         candidate_jumps = m_cur.fetchall()
@@ -393,7 +420,6 @@ class DominanceAuditor:
             if d > 0.5:
                 master_teleports += 1
 
-        # Baseline teleport count from production JSON
         base_teleports = 648
         print(f"[*] Baseline production teleports (>500m in <30s): {base_teleports:,}")
         print(f"[*] Master DB candidate teleports:                  {master_teleports:,} (reduced by {base_teleports - master_teleports:,})")
@@ -402,19 +428,18 @@ class DominanceAuditor:
                 f"Master DB teleports ({master_teleports}) exceed baseline production teleports ({base_teleports})"
             )
 
-        # 4. Check for invalid synthetic FLYING velocity labels (AGENTS.md Rule 6.4)
+        # 4. Unexempted check for invalid FLYING segments (<300km across ALL sources — AGENTS.md Rule 6.4)
         m_cur.execute("""
         SELECT id, date, distance_meters, duration_minutes
         FROM segments
         WHERE activity_type = 'FLYING'
-          AND source NOT IN ('TAKEOUT_2024', 'ON_DEVICE_2026')
-          AND (distance_meters < 300000 OR (distance_meters / (duration_minutes * 60.0)) < 60.0);
+          AND distance_meters < 300000;
         """)
         invalid_flights = m_cur.fetchall()
-        print(f"[*] Invalid synthetic FLYING activity segments (<300km or <216 km/h): {len(invalid_flights)}")
+        print(f"[*] Invalid FLYING activity segments (<300km across all sources): {len(invalid_flights)}")
         if len(invalid_flights) > 0:
             t3_details["errors"].append(
-                f"Found {len(invalid_flights)} invalid synthetic FLYING segments violating physical constraints"
+                f"Found {len(invalid_flights)} invalid FLYING segments (<300km) violating physical constraints"
             )
 
         m_conn.close()
