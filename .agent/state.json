@@ -1,6 +1,6 @@
 {
-  "goal": "Clean up repository clutter, build a non-destructive layered timeline engine that never guesses to plug holes, restore authentic baseline visits, and overhaul the evidence-backed Fix Proposals engine and Review UI",
-  "active_step_id": 6,
+  "goal": "Point https://mylifebits.local/ to Timeline Studio (index.html) instead of the offline Pixel VM (phone.html) and verify E2E",
+  "active_step_id": 7,
   "steps": [
     {
       "id": 1,
@@ -31,30 +31,25 @@
       "id": 6,
       "description": "Harden audit_strict_dominance.py and ODLH compiler and pass all 4-Tier Web Verification Gates and E2E tests",
       "status": "completed"
+    },
+    {
+      "id": 7,
+      "description": "Route root (/) in server.py to Timeline Studio (/index.html) instead of /phone.html, remove eager /api/device/screen img fetch on load, restart com.gregor.mylifebits service, and verify https://mylifebits.local/",
+      "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      ".gitignore",
-      "db.py",
-      "diagnostics.py",
-      "enrichment/engine.py",
-      "enrichment/layered_engine.py",
-      "api/routes/fixes.py",
+      "server.py",
       "static/index.html",
-      "static/app.js",
-      "static/style.css",
-      "scripts/audit_strict_dominance.py"
+      "tests/test_e2e_server.py"
     ],
     "test_files": [
-      "tests/test_clean_api.py",
-      "tests/test_e2e_server.py",
-      "tests/test_takeout_importer.py"
+      "tests/test_e2e_server.py"
     ],
     "scratch_logs": [
       ".agent/scratch/pytest.log",
-      ".agent/scratch/audit.log",
-      ".agent/scratch/dominance.log"
+      ".agent/scratch/audit.log"
     ]
   }
 }

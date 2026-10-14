@@ -85,14 +85,14 @@ class TimelineViewerHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, "Preview not found")
                 return
         else:
-            if self.path in ("/", ""):
-                self.path = "/phone.html"
-            elif self.path in ("/studio", "/studio/", "/dashboard"):
+            parsed_url = urllib.parse.urlparse(self.path)
+            clean_path = parsed_url.path
+            if clean_path in ("/", "", "/studio", "/studio/", "/dashboard"):
                 self.path = "/index.html"
-            elif self.path in ("/phone", "/phone/", "/vm", "/vm/"):
+            elif clean_path in ("/phone", "/phone/", "/vm", "/vm/"):
                 self.path = "/phone.html"
-            elif self.path.startswith("/static/"):
-                self.path = self.path[len("/static"):]
+            elif clean_path.startswith("/static/"):
+                self.path = clean_path[len("/static"):]
             super().do_GET()
 
     def do_POST(self) -> None:

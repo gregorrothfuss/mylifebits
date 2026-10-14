@@ -127,7 +127,8 @@ class TestTimelineServerE2E(unittest.TestCase):
         status, headers, body, _ = self._execute_http("GET", "/")
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers.get("content-type", ""))
-        self.assertIn(b"Timeline", body)
+        self.assertIn(b"global-search-input", body)
+        self.assertNotIn(b"<title>Pixel 8 VM", body)
 
     def test_02_static_app_js_direct(self) -> None:
         status, headers, body, _ = self._execute_http("GET", "/app.js")
