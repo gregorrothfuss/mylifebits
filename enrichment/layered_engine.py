@@ -497,11 +497,7 @@ class LayeredTimelineEngine:
                         )
 
                         # Compute local date & ISO string using timezone offset at coordinates
-                        off_h = (
-                            get_timezone_offset_hours(lat, lng, st_ts)
-                            if (lat is not None and lng is not None)
-                            else -5.0
-                        )
+                        off_h = get_timezone_offset_hours(lat, lng, st_ts)
                         tz = datetime.timezone(datetime.timedelta(hours=off_h))
                         dt_st = datetime.datetime.fromtimestamp(st_ts, tz=tz)
                         dt_et = datetime.datetime.fromtimestamp(et_ts, tz=tz)
@@ -588,11 +584,9 @@ class LayeredTimelineEngine:
                             else None
                         )
 
-                        off_h = (
-                            get_timezone_offset_hours(slat, slng, st_ts)
-                            if (slat is not None and slng is not None)
-                            else -5.0
-                        )
+                        ref_lat = slat if slat is not None else elat
+                        ref_lng = slng if slng is not None else elng
+                        off_h = get_timezone_offset_hours(ref_lat, ref_lng, st_ts)
                         tz = datetime.timezone(datetime.timedelta(hours=off_h))
                         dt_st = datetime.datetime.fromtimestamp(st_ts, tz=tz)
                         dt_et = datetime.datetime.fromtimestamp(et_ts, tz=tz)
@@ -671,6 +665,12 @@ class LayeredTimelineEngine:
                 path_points_json, has_snapped_path, raw_payload_json
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(source_key) DO UPDATE SET
+                start_time = excluded.start_time,
+                end_time = excluded.end_time,
+                date = excluded.date,
+                year = excluded.year,
+                month = excluded.month,
+                day = excluded.day,
                 place_name = COALESCE(raw_source_segments.place_name, excluded.place_name),
                 place_address = COALESCE(raw_source_segments.place_address, excluded.place_address),
                 category = COALESCE(raw_source_segments.category, excluded.category),
@@ -686,8 +686,10 @@ class LayeredTimelineEngine:
 
     def purge_heuristic_gap_guesses(self) -> Dict[str, int]:
         """
-        Removes synthetic gap-plugging and synthetic life routine guesses from `segments`
-        so the active timeline contains strictly authentic observations and user-accepted fixes.
+        Removes synthetic gap-plugging, relabeled SYNTHETIC_LIFE routines, and legacy
+        UTC-Z mutated rows from `raw_source_segments` and `segments` so the active
+        timeline is built strictly from authentic local-timezone source exports and
+        verified user-accepted fixes.
         """
         conn = get_db_connection(self.db_path)
         c = conn.cursor()
@@ -695,18 +697,36 @@ class LayeredTimelineEngine:
             conn, "layer1_purge_heuristic_guesses", {"db_path": self.db_path}
         )
 
+        c.execute("PRAGMA foreign_keys = OFF;")
+        c.execute(
+            """
+            DELETE FROM raw_source_segments
+            WHERE start_time LIKE '%Z'
+               OR source_stream IN ('SYNTHETIC_LIFE', 'SYNTHETIC_GAP_HEAL', 'cleaned_walk', 'interpolated')
+               OR source_stream LIKE 'SYNTHETIC%';
+            """
+        )
+        purged_l0 = int(c.rowcount or 0)
+
         c.execute(
             """
             DELETE FROM segments
-            WHERE source IN ('SYNTHETIC_LIFE', 'SYNTHETIC_GAP_HEAL')
+            WHERE start_time LIKE '%Z'
+               OR source IN ('SYNTHETIC_LIFE', 'SYNTHETIC_GAP_HEAL', 'cleaned_walk', 'interpolated')
                OR source LIKE 'SYNTHETIC%'
                OR source LIKE 'qg_cat_%';
             """
         )
         purged_count = int(c.rowcount or 0)
+        c.execute("UPDATE segments SET parent_segment_id = NULL WHERE parent_segment_id NOT IN (SELECT id FROM segments);")
+        c.execute("DELETE FROM anomalies WHERE segment_id IS NOT NULL AND segment_id NOT IN (SELECT id FROM segments);")
         conn.commit()
+        c.execute("PRAGMA foreign_keys = ON;")
 
-        out = {"purged_synthetic_segments": purged_count}
+        out = {
+            "purged_layer0_legacy_z_rows": purged_l0,
+            "purged_synthetic_segments": purged_count,
+        }
         self.complete_inference_run(conn, run_id, out)
         conn.close()
         return out
@@ -724,6 +744,31 @@ class LayeredTimelineEngine:
         run_id = self.start_inference_run(
             conn, "layer1_restore_authentic_baseline", {"db_path": self.db_path}
         )
+
+        # Ensure all place_ids referenced in raw_source_segments exist in places catalog
+        c.execute(
+            """
+            INSERT OR IGNORE INTO places (
+                place_id, name, address, category, city, semantic_type,
+                latitude, longitude, business_status, visit_count
+            )
+            SELECT
+                place_id,
+                COALESCE(MAX(place_name), 'Verified Place'),
+                MAX(place_address),
+                COALESCE(MAX(category), 'Other / POI'),
+                MAX(city),
+                MAX(semantic_type),
+                AVG(latitude),
+                AVG(longitude),
+                'OPERATIONAL',
+                0
+            FROM raw_source_segments
+            WHERE place_id IS NOT NULL
+            GROUP BY place_id;
+            """
+        )
+        conn.commit()
 
         c.execute(
             "SELECT place_id, name, address, category, city, semantic_type, latitude, longitude FROM places;"
@@ -780,7 +825,7 @@ class LayeredTimelineEngine:
             lat = lv["latitude"] if lv["latitude"] is not None else p_info.get("latitude")
             lng = lv["longitude"] if lv["longitude"] is not None else p_info.get("longitude")
 
-            # Check if this place_id already exists on this date (+/- 1 day) or within +/- 6h
+            # Check if this place_id already exists within +/- 5 minutes
             c.execute(
                 """
                 SELECT id FROM segments
@@ -789,7 +834,7 @@ class LayeredTimelineEngine:
                   AND start_ts <= ? AND end_ts >= ?
                 LIMIT 1;
                 """,
-                (pid, et_ts + 21600, st_ts - 21600),
+                (pid, et_ts + 300, st_ts - 300),
             )
             if c.fetchone():
                 continue
@@ -1171,6 +1216,33 @@ class LayeredTimelineEngine:
         for i, seg in enumerate(all_segs):
             if seg["segment_type"] if "segment_type" in seg else None:
                 pass
+        # Pre-load TAKEOUT_2024 multi-point polylines and breadcrumbs for O(N log M) hydration
+        import bisect
+
+        c.execute(
+            """
+            SELECT start_ts, end_ts, path_points_json
+            FROM raw_source_segments
+            WHERE segment_type = 'activity'
+              AND has_snapped_path = 1
+              AND path_points_json IS NOT NULL
+            ORDER BY start_ts ASC;
+            """
+        )
+        l0_snapped_rows = c.fetchall()
+        l0_snapped_starts = [float(r[0]) for r in l0_snapped_rows]
+
+        c.execute(
+            """
+            SELECT timestamp, lat, lng
+            FROM breadcrumbs
+            WHERE is_excluded = 0 AND lat IS NOT NULL AND lng IS NOT NULL
+            ORDER BY timestamp ASC;
+            """
+        )
+        bc_rows = c.fetchall()
+        bc_ts = [int(r[0]) for r in bc_rows]
+
         # Fetch activities with neighbor coords
         c.execute(
             """
@@ -1249,6 +1321,49 @@ class LayeredTimelineEngine:
                     (slat, slng, elat, elng, aid),
                 )
                 propagated_endpoints += 1
+
+            # Hydrate multi-point polyline from TAKEOUT_2024 or breadcrumbs if currently < 3 points
+            if len(pts) < 3:
+                st_f = float(a["start_ts"] or 0.0)
+                et_f = float(a["end_ts"] or 0.0)
+                idx = bisect.bisect_left(l0_snapped_starts, st_f - 120.0)
+                matched_pts = None
+                while idx < len(l0_snapped_rows) and float(l0_snapped_rows[idx][0]) <= st_f + 120.0:
+                    if abs(float(l0_snapped_rows[idx][1]) - et_f) <= 300.0:
+                        try:
+                            cand = json.loads(l0_snapped_rows[idx][2])
+                            if len(cand) >= 3:
+                                matched_pts = cand
+                                break
+                        except Exception:
+                            pass
+                    idx += 1
+
+                if not matched_pts and bc_ts and st_f > 0 and et_f > st_f:
+                    b_start = bisect.bisect_left(bc_ts, int(st_f) - 30)
+                    b_end = bisect.bisect_right(bc_ts, int(et_f) + 30)
+                    if b_end - b_start >= 1:
+                        poly = []
+                        if slat is not None and slng is not None:
+                            poly.append([slat, slng])
+                        step = max(1, (b_end - b_start) // 35)
+                        for b_idx in range(b_start, b_end, step):
+                            blat, blng = float(bc_rows[b_idx][1]), float(bc_rows[b_idx][2])
+                            if not poly or abs(blat - poly[-1][0]) > 1e-5 or abs(blng - poly[-1][1]) > 1e-5:
+                                poly.append([blat, blng])
+                        if elat is not None and elng is not None:
+                            if not poly or abs(elat - poly[-1][0]) > 1e-5 or abs(elng - poly[-1][1]) > 1e-5:
+                                poly.append([elat, elng])
+                        if len(poly) >= 3:
+                            matched_pts = poly
+
+                if matched_pts and len(matched_pts) >= 3:
+                    pts = matched_pts
+                    c.execute(
+                        "UPDATE segments SET path_points_json = ?, has_snapped_path = 1 WHERE id = ?;",
+                        (json.dumps(pts), aid),
+                    )
+                    activated_polylines += 1
 
             # Activate has_snapped_path = 1 if >= 3 points
             if len(pts) >= 3 and not a["has_snapped_path"]:
@@ -1695,6 +1810,20 @@ class LayeredTimelineEngine:
             UPDATE segments
             SET category = 'Other / POI'
             WHERE segment_type = 'visit' AND (category IS NULL OR category = '');
+            """
+        )
+        c.execute(
+            """
+            UPDATE segments
+            SET source = 'USER_MANUAL'
+            WHERE source IS NULL OR source = '';
+            """
+        )
+        c.execute(
+            """
+            UPDATE places
+            SET business_status = 'OPERATIONAL'
+            WHERE business_status IS NULL OR business_status = '';
             """
         )
 
