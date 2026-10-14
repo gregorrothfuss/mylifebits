@@ -1,8 +1,8 @@
 {
   "timestamp": "2026-10-14T02:29:29.743331+00:00",
-  "master_db": "/Users/rothfuss/projects/gregor-mylifebits/timeline_viewer.db",
-  "baseline_json": "/Users/rothfuss/projects/gregor-mylifebits/pixel10_export/Timeline-latest.json",
-  "baseline_odlh": "/Users/rothfuss/projects/gregor-mylifebits/scratch/original_gms_backup/data/data/com.google.android.gms/databases/odlh-storage.db",
+  "master_db": "timeline_viewer.db",
+  "baseline_json": "pixel10_export/Timeline-latest.json",
+  "baseline_odlh": "scratch/original_gms_backup/data/data/com.google.android.gms/databases/odlh-storage.db",
   "overall_pass": true,
   "tiers": {
     "tier_1": {

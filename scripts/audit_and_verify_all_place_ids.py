@@ -23,18 +23,18 @@ import datetime
 import os
 import zipfile
 
-DB_PATH = "timeline_viewer.db"
-TAKEOUT_ZIP = "/Users/rothfuss/Downloads/lh-20241129T224901Z-001.zip"
+DB_PATH = os.environ.get("TIMELINE_DB_PATH", "timeline_viewer.db")
+TAKEOUT_ZIP = os.environ.get("TAKEOUT_ZIP", "Takeout.zip")
 REPORT_PATH = "docs/PLACE_ID_STATUS_AUDIT_REPORT.md"
 os.makedirs("docs", exist_ok=True)
 
 EXEMPT_RESIDENCES = {
-    "ChIJ1Xtn1XBZwokRidZWjS4NYdA": "Home (189 Ave C)",
-    "ChIJsU3aL3lZwokR4Exe5-kCXmY": "Home (298 E 2nd St)",
-    "ChIJ4QuaXHZZwokRzVbWGLIi028": "Home (512 E 12th St)",
-    "ChIJkR7T_JtZwokRgJ1sGs-t4PM": "Home (85 E 10th St)",
-    "ChIJmXj63HhZwokRtUAu4Fa3p5A": "Home (22 Loisaida Ave)",
-    "ChIJJ4u2D5-gmkcRVQbTTP8BiJY": "Home (Goldauerstrasse 12)",
+    "ChIJ1Xtn1XBZwokRidZWjS4NYdA": "Home / Residence",
+    "ChIJsU3aL3lZwokR4Exe5-kCXmY": "Home / Residence",
+    "ChIJ4QuaXHZZwokRzVbWGLIi028": "Home / Residence",
+    "ChIJkR7T_JtZwokRgJ1sGs-t4PM": "Home / Residence",
+    "ChIJmXj63HhZwokRtUAu4Fa3p5A": "Home / Residence",
+    "ChIJJ4u2D5-gmkcRVQbTTP8BiJY": "Home / Residence",
     "ChIJkafi_schlauch_zurich": "Home / Historic Base",
     "ChIJbhf_enge_zurich": "Home / Historic Base",
 }

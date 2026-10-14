@@ -5,7 +5,7 @@
 
 ### **1. Executive Summary & Problem Scope**
 
-In our previous engineering submission ([docs/gms_odlh_places_timeout_bug_report.md](file:///Users/rothfuss/Documents/antigravity/gregor-mylifebits/docs/gms_odlh_places_timeout_bug_report.md)), we detailed the root cause of the $15.017\text{s}$ Android Binder IPC timeout (`DEADLINE_EXCEEDED` / `"Maps is offline"`) and proposed a write-time pre-aggregation engine (`places_summary_table` with `WorkManager` background deltas).
+In our previous engineering submission ([docs/gms_odlh_places_timeout_bug_report.md](docs/gms_odlh_places_timeout_bug_report.md)), we detailed the root cause of the $15.017\text{s}$ Android Binder IPC timeout (`DEADLINE_EXCEEDED` / `"Maps is offline"`) and proposed a write-time pre-aggregation engine (`places_summary_table` with `WorkManager` background deltas).
 
 While write-side pre-computation provides immediate relief for summary tabs, **a comprehensive resolution requires eliminating read-path bottlenecks directly in the GMS Core query provider and Google Maps client**. 
 

@@ -1,8 +1,8 @@
 # Strict 5-Tier Dominance & Zero Data Loss Verification Report
 
 **Generated:** 2026-10-14T02:29:29.743331+00:00  
-**Master Database:** `/Users/rothfuss/projects/gregor-mylifebits/timeline_viewer.db`  
-**Baseline Export:** `/Users/rothfuss/projects/gregor-mylifebits/pixel10_export/Timeline-latest.json`  
+**Master Database:** `timeline_viewer.db`  
+**Baseline Export:** `pixel10_export/Timeline-latest.json`  
 **Gate Result:** **PASSED — AUTHORIZED FOR PRODUCTION ROUND-TRIP**
 
 ---

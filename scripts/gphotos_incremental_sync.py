@@ -25,7 +25,7 @@ from typing import Optional, Dict, Any
 
 # Ensure project paths are accessible
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent
-COS_DIR = Path("/Users/rothfuss/projects/gregor_cos")
+COS_DIR = Path(os.environ.get("COS_DIR", str(Path.home() / "projects" / "gregor_cos")))
 COS_DB_PATH = COS_DIR / "photos_vault.db"
 DEFAULT_PROFILE_DIR = Path.home() / ".google_photos_session"
 DEFAULT_INBOX_DIR = Path.home() / "Downloads" / "photo_inbox"

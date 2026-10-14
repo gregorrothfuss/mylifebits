@@ -1,6 +1,6 @@
 {
   "goal": "Fix broken EXIF photo preview images and Day View edit modal/persistence across server.py, api/routes/, and static/app.js",
-  "active_step_id": 9,
+  "active_step_id": 10,
   "steps": [
     {
       "id": 1,
@@ -46,6 +46,11 @@
       "id": 9,
       "description": "Fix broken EXIF photo preview images (/previews/*.webp resolution from gregor_cos/previews and data/previews) and fix Day View edit modal visibility, DOM ID collisions, and segment edit persistence",
       "status": "completed"
+    },
+    {
+      "id": 10,
+      "description": "Sanitize private addresses, user paths, and legacy verification reports, and push latest changes to GitHub remote origin",
+      "status": "in_progress"
     }
   ],
   "context_cache": {

@@ -3984,7 +3984,7 @@ document.addEventListener("DOMContentLoaded", () => {
       formHtml = `
         <div class="form-group">
           <label>Place / Venue Name</label>
-          <input type="text" id="seg-edit-place-name" value="${escapeHtml(segment.place_name || segment.catalog_place_name || '')}" placeholder="e.g. Home (189 Ave C), Google NYC...">
+          <input type="text" id="seg-edit-place-name" value="${escapeHtml(segment.place_name || segment.catalog_place_name || '')}" placeholder="e.g. Home, Central Park, Cafe...">
         </div>
         <div class="form-group">
           <label>Category</label>
@@ -3992,7 +3992,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div class="form-group">
           <label>Address</label>
-          <input type="text" id="seg-edit-place-addr" value="${escapeHtml(segment.place_address || segment.catalog_place_address || '')}" placeholder="e.g. 189 Avenue C, New York, NY">
+          <input type="text" id="seg-edit-place-addr" value="${escapeHtml(segment.place_address || segment.catalog_place_address || '')}" placeholder="e.g. 123 Main St, New York, NY">
         </div>
         <div class="form-row">
           <div class="form-group">

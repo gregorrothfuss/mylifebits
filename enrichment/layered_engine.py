@@ -2263,7 +2263,11 @@ class LayeredTimelineEngine:
         if os.path.exists(plazes_zip_path):
             try:
                 with zipfile.ZipFile(plazes_zip_path, "r") as pz:
-                    tsv_raw = pz.read("gregorrothfuss/plazes_visited.tsv").decode("utf-8", errors="ignore")
+                    tsv_name = next((n for n in pz.namelist() if n.endswith("plazes_visited.tsv")), None)
+                    acts_name = next((n for n in pz.namelist() if n.endswith("activities_created.json")), None)
+                    if not tsv_name or not acts_name:
+                        return
+                    tsv_raw = pz.read(tsv_name).decode("utf-8", errors="ignore")
                     plazes_venues: Dict[str, Dict[str, Any]] = {}
                     for line in tsv_raw.splitlines()[1:]:
                         cols = line.split("\t")
@@ -2283,7 +2287,7 @@ class LayeredTimelineEngine:
                             except Exception:
                                 pass
 
-                    acts_raw = json.loads(pz.read("gregorrothfuss/activities_created.json"))
+                    acts_raw = json.loads(pz.read(acts_name))
                     plazes_added = 0
                     for act in acts_raw:
                         if plazes_added >= 80:

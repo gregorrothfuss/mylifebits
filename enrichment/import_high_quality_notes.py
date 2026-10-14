@@ -83,15 +83,14 @@ def extract_city_from_visit(s_name, s_addr, s_city, p_name, p_addr, p_city) -> s
                     return clean_location_candidate(candidate)
     for name in (s_name, p_name):
         if name:
-            if any(h in name for h in ("298 E 2nd St", "189 Ave C", "Google NYC", "Manhattan")):
+            name_lower = name.lower()
+            if any(h in name_lower for h in ("new york", "manhattan", "brooklyn", "queens")):
                 return "New York"
-            if "800 E 17th St" in name:
-                return "Brooklyn"
-            if "52 Portsmouth St" in name:
+            if "cambridge" in name_lower:
                 return "Cambridge"
-            if "28 Elm St" in name:
+            if "somerville" in name_lower:
                 return "Somerville"
-            if any(z in name for z in ("Huttenstrasse", "University of Zurich", "KPMG AG", "Wiedikon")):
+            if any(z in name_lower for z in ("zürich", "zurich", "wiedikon")):
                 return "Zürich"
     return None
 
