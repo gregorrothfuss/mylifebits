@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function getPhotoUrl(url, size = 400) {
     if (!url) return '';
-    if (url.startsWith('/api/photo')) return url;
+    if (url.startsWith('/api/photo') || url.startsWith('/previews/')) return url;
     return `/api/photo?url=${encodeURIComponent(url)}&size=${size}`;
   }
   window.getPhotoUrl = getPhotoUrl;
@@ -862,7 +862,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.segment_type === "visit") {
           const title = s.place_name || s.catalog_place_name || s.place_address || "Visit";
           const addr = s.place_address || s.catalog_place_address || (s.latitude ? `${s.latitude.toFixed(4)}, ${s.longitude.toFixed(4)}` : "");
-          const cat = s.catalog_category || s.category || "Other / POI";
+          const cat = s.category || s.catalog_category || "Other / POI";
           const city = s.catalog_city || s.city || "";
           const rating = s.catalog_review_rating || s.review_rating;
           const revText = s.catalog_review_text;
@@ -1029,7 +1029,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             card.querySelector(".edit-visit-fix-btn")?.addEventListener("click", (e) => {
               e.stopPropagation();
-              openEditProposalModal(matchingVisitFix, null);
+              openEditProposalModal(s, matchingVisitFix);
             });
           }
 
@@ -3013,10 +3013,10 @@ document.addEventListener("DOMContentLoaded", () => {
             <span style="font-size:11px;color:var(--text-muted);">Click any photo to inspect full resolution</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(135px, 1fr));gap:10px;">
-            ${photos.map(p => {
+            ${photos.map((p, idx) => {
               const tStr = p.timestamp_utc ? new Date(p.timestamp_utc * 1000).toISOString().slice(11, 19) + " UTC" : "";
               return `
-                <a href="${escapeHtml(p.preview_url || '#')}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;transition:transform 0.15s ease;">
+                <a href="${escapeHtml(p.preview_url || '#')}" target="_blank" rel="noopener" class="exif-photo-card" data-photo-idx="${idx}" style="text-decoration:none;color:inherit;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;overflow:hidden;display:flex;flex-direction:column;transition:transform 0.15s ease;">
                   <div style="width:100%;height:96px;background:#e2e8f0;overflow:hidden;">
                     <img src="${escapeHtml(p.preview_url || '')}" alt="${escapeHtml(p.filename || 'EXIF Photo')}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">
                   </div>
@@ -3249,6 +3249,30 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (err) {
         alert("Request failed: " + err.message);
       }
+    });
+
+    // Bind EXIF photo card clicks to open full-resolution Lightbox modal
+    const exifPhotosList = evidence.photos || patchData.photos || [];
+    pane.querySelectorAll(".exif-photo-card").forEach(cardEl => {
+      cardEl.addEventListener("click", (e) => {
+        if (e.metaKey || e.ctrlKey) return;
+        e.preventDefault();
+        const idx = parseInt(cardEl.getAttribute("data-photo-idx") || "0", 10);
+        const p = exifPhotosList[idx];
+        if (p && typeof window.openPhotoLightbox === "function") {
+          window.openPhotoLightbox({
+            id: p.id || idx,
+            filename: p.filename || p.id || "Photo",
+            preview_url: getPhotoUrl(p.preview_url || (p.id ? `/previews/${p.id}.webp` : "")),
+            captured_at: p.timestamp || p.captured_at || "",
+            place_name: venueName || headline || "",
+            latitude: p.latitude || lat,
+            longitude: p.longitude || lng
+          });
+        } else {
+          window.open(cardEl.href, "_blank");
+        }
+      });
     });
 
     // Render Mini Map if coordinates are available
@@ -3929,6 +3953,18 @@ document.addEventListener("DOMContentLoaded", () => {
     "TRAVEL"
   ];
 
+  function showGenericModal(modal) {
+    if (!modal) return;
+    modal.style.display = "flex";
+    modal.classList.remove("hidden");
+  }
+
+  function hideGenericModal(modal) {
+    if (!modal) return;
+    modal.style.display = "none";
+    modal.classList.add("hidden");
+  }
+
   function openEditSegmentModal(segment) {
     const modal = document.getElementById("modal-container");
     const content = document.getElementById("modal-content");
@@ -3943,28 +3979,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let formHtml = "";
     if (isVisit) {
-      const catOptions = ALL_CATEGORIES.map(c => `<option value="${c}" ${c === segment.category ? 'selected' : ''}>${c}</option>`).join("");
+      const curCat = segment.category || segment.catalog_category || "Other / POI";
+      const catOptions = ALL_CATEGORIES.map(c => `<option value="${c}" ${c === curCat ? 'selected' : ''}>${c}</option>`).join("");
       formHtml = `
         <div class="form-group">
           <label>Place / Venue Name</label>
-          <input type="text" id="edit-place-name" value="${escapeHtml(segment.place_name || segment.catalog_place_name || '')}" placeholder="e.g. Home (189 Ave C), Google NYC...">
+          <input type="text" id="seg-edit-place-name" value="${escapeHtml(segment.place_name || segment.catalog_place_name || '')}" placeholder="e.g. Home (189 Ave C), Google NYC...">
         </div>
         <div class="form-group">
           <label>Category</label>
-          <select id="edit-place-category">${catOptions}</select>
+          <select id="seg-edit-place-category">${catOptions}</select>
         </div>
         <div class="form-group">
           <label>Address</label>
-          <input type="text" id="edit-place-addr" value="${escapeHtml(segment.place_address || segment.catalog_place_address || '')}" placeholder="e.g. 189 Avenue C, New York, NY">
+          <input type="text" id="seg-edit-place-addr" value="${escapeHtml(segment.place_address || segment.catalog_place_address || '')}" placeholder="e.g. 189 Avenue C, New York, NY">
         </div>
         <div class="form-row">
           <div class="form-group">
             <label>Start Time</label>
-            <input type="datetime-local" step="60" id="edit-start-time" value="${toDateTimeLocalValue(segment.start_time, segment.date, segment.start_time_local)}">
+            <input type="datetime-local" step="60" id="seg-edit-start-time" value="${toDateTimeLocalValue(segment.start_time, segment.date, segment.local_start_time)}">
           </div>
           <div class="form-group">
             <label>End Time</label>
-            <input type="datetime-local" step="60" id="edit-end-time" value="${toDateTimeLocalValue(segment.end_time, segment.date, segment.end_time_local)}">
+            <input type="datetime-local" step="60" id="seg-edit-end-time" value="${toDateTimeLocalValue(segment.end_time, segment.date, segment.local_end_time)}">
           </div>
         </div>
       `;
@@ -3976,7 +4013,7 @@ document.addEventListener("DOMContentLoaded", () => {
       formHtml = `
         <div class="form-group">
           <label>Travel Mode</label>
-          <select id="edit-activity-type">${actOptions}</select>
+          <select id="seg-edit-activity-type">${actOptions}</select>
         </div>
         <div class="form-group">
           <label>Calculated Trajectory Distance</label>
@@ -3987,11 +4024,11 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="form-row">
           <div class="form-group">
             <label>Start Time</label>
-            <input type="datetime-local" step="60" id="edit-start-time" value="${toDateTimeLocalValue(segment.start_time, segment.date)}">
+            <input type="datetime-local" step="60" id="seg-edit-start-time" value="${toDateTimeLocalValue(segment.start_time, segment.date, segment.local_start_time)}">
           </div>
           <div class="form-group">
             <label>End Time</label>
-            <input type="datetime-local" step="60" id="edit-end-time" value="${toDateTimeLocalValue(segment.end_time, segment.date)}">
+            <input type="datetime-local" step="60" id="seg-edit-end-time" value="${toDateTimeLocalValue(segment.end_time, segment.date, segment.local_end_time)}">
           </div>
         </div>
       `;
@@ -4006,20 +4043,25 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
     `;
 
-    modal.classList.remove("hidden");
+    showGenericModal(modal);
 
-    document.getElementById("modal-cancel-btn").onclick = () => modal.classList.add("hidden");
+    document.getElementById("modal-cancel-btn").onclick = () => hideGenericModal(modal);
 
     document.getElementById("modal-delete-btn").onclick = async () => {
       if (!confirm("Are you sure you want to delete this segment from the timeline?")) return;
       try {
-        await fetch("/api/segments/delete", {
+        const res = await fetch("/api/segments/delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: segment.id })
         });
-        modal.classList.add("hidden");
-        loadDay(currentDate);
+        const resData = await res.json();
+        if (resData.status !== "SUCCESS") {
+          alert("Failed to delete segment: " + (resData.error || "Unknown error"));
+          return;
+        }
+        hideGenericModal(modal);
+        await loadDay(currentDate, false);
         loadOverview();
       } catch (err) {
         alert("Failed to delete segment: " + err.message);
@@ -4029,25 +4071,30 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("modal-save-btn").onclick = async () => {
       const payload = { id: segment.id };
       if (isVisit) {
-        payload.place_name = document.getElementById("edit-place-name").value.trim();
-        payload.category = document.getElementById("edit-place-category").value;
-        payload.place_address = document.getElementById("edit-place-addr").value.trim();
+        payload.place_name = document.getElementById("seg-edit-place-name").value.trim();
+        payload.category = document.getElementById("seg-edit-place-category").value;
+        payload.place_address = document.getElementById("seg-edit-place-addr").value.trim();
       } else {
-        payload.activity_type = document.getElementById("edit-activity-type").value;
+        payload.activity_type = document.getElementById("seg-edit-activity-type").value;
       }
-      const stVal = document.getElementById("edit-start-time").value;
-      const etVal = document.getElementById("edit-end-time").value;
+      const stVal = document.getElementById("seg-edit-start-time").value;
+      const etVal = document.getElementById("seg-edit-end-time").value;
       payload.start_time = fromDateTimeLocalValue(stVal, segment.start_time);
       payload.end_time = fromDateTimeLocalValue(etVal, segment.end_time);
 
       try {
-        await fetch("/api/segments/update", {
+        const res = await fetch("/api/segments/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
-        modal.classList.add("hidden");
-        loadDay(currentDate);
+        const resData = await res.json();
+        if (resData.status !== "SUCCESS") {
+          alert("Failed to update segment: " + (resData.error || "Unknown error"));
+          return;
+        }
+        hideGenericModal(modal);
+        await loadDay(currentDate, false);
         loadOverview();
       } catch (err) {
         alert("Failed to update segment: " + err.message);
@@ -4056,6 +4103,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function openEditProposalModal(target, proposal) {
+    if (!proposal && target && target.proposed_action) {
+      proposal = target;
+      target = null;
+    }
+    if (!proposal) return;
     const modal = document.getElementById("modal-container");
     const content = document.getElementById("modal-content");
     const title = document.getElementById("modal-title");
@@ -4156,9 +4208,9 @@ document.addEventListener("DOMContentLoaded", () => {
     actionSelect.onchange = updateActionFields;
     updateActionFields();
 
-    modal.classList.remove("hidden");
+    showGenericModal(modal);
 
-    document.getElementById("modal-cancel-btn").onclick = () => modal.classList.add("hidden");
+    document.getElementById("modal-cancel-btn").onclick = () => hideGenericModal(modal);
 
     document.getElementById("modal-reject-btn").onclick = async () => {
       try {
@@ -4167,8 +4219,8 @@ document.addEventListener("DOMContentLoaded", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ proposal_id: proposal.id })
         });
-        modal.classList.add("hidden");
-        loadDay(currentDate);
+        hideGenericModal(modal);
+        loadDay(currentDate, false);
         loadFixProposals();
         loadOverview();
       } catch (err) {
@@ -4199,8 +4251,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         const resData = await res.json();
         if (resData.status === "SUCCESS") {
-          modal.classList.add("hidden");
-          loadDay(currentDate);
+          hideGenericModal(modal);
+          loadDay(currentDate, false);
           loadFixProposals();
           loadOverview();
         } else {
@@ -4275,8 +4327,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    modal.classList.remove("hidden");
-    document.getElementById("modal-cancel-btn").onclick = () => modal.classList.add("hidden");
+    showGenericModal(modal);
+    document.getElementById("modal-cancel-btn").onclick = () => hideGenericModal(modal);
 
     document.getElementById("modal-add-btn").onclick = async () => {
       const stVal = document.getElementById("new-seg-start").value;
@@ -4306,8 +4358,8 @@ document.addEventListener("DOMContentLoaded", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
-        modal.classList.add("hidden");
-        loadDay(currentDate);
+        hideGenericModal(modal);
+        loadDay(currentDate, false);
         loadOverview();
       } catch (err) {
         alert("Failed to create segment: " + err.message);
@@ -4843,10 +4895,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const modalEl = document.getElementById("modal-container");
     document.getElementById("modal-close-btn")?.addEventListener("click", () => {
-      modalEl?.classList.add("hidden");
+      hideGenericModal(modalEl);
     });
     modalEl?.addEventListener("click", (e) => {
-      if (e.target === modalEl) modalEl.classList.add("hidden");
+      if (e.target === modalEl) hideGenericModal(modalEl);
     });
   }
 
@@ -5313,7 +5365,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function openEarthRidePlayer(targetId, isTrip = false, tripTitle = null) {
     const modal = document.getElementById("flythrough-modal");
-    modal.classList.remove("hidden");
+    showGenericModal(modal);
     document.getElementById("floating-hotspot-card")?.classList.add("hidden");
 
     earthActiveSegmentId = !isTrip ? targetId : null;
@@ -5600,7 +5652,7 @@ document.addEventListener("DOMContentLoaded", () => {
       earthAnimationId = null;
     }
     const modal = document.getElementById("flythrough-modal");
-    if (modal) modal.classList.add("hidden");
+    hideGenericModal(modal);
   }
 
   document.getElementById("btn-fly-close")?.addEventListener("click", close3DModal);
@@ -5614,7 +5666,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       const genericModal = document.getElementById("modal-container");
       if (genericModal && !genericModal.classList.contains("hidden")) {
-        genericModal.classList.add("hidden");
+        hideGenericModal(genericModal);
       }
     }
   });

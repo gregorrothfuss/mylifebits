@@ -229,8 +229,11 @@ def _handle_edit_and_apply(req: Request) -> Response:
     """Edits and applies a fix proposal, supporting custom POI name, category, and time window overrides."""
     data = req.json()
     prop_id = data.get("proposal_id")
-    custom_place = (data.get("place_name") or "").strip()
-    custom_cat = (data.get("category") or "Other / POI").strip()
+    custom_place = (data.get("place_name") or data.get("custom_place") or "").strip()
+    custom_cat = (data.get("category") or data.get("custom_cat") or "Other / POI").strip()
+    custom_mode = (data.get("mode") or "").strip()
+    custom_start = (data.get("start_time") or "").strip()
+    custom_end = (data.get("end_time") or "").strip()
 
     if not prop_id:
         return error_response("Missing proposal_id", status_code=400)
@@ -250,6 +253,13 @@ def _handle_edit_and_apply(req: Request) -> Response:
         pdata["target_place"] = custom_place
     if custom_cat:
         pdata["category"] = custom_cat
+    if custom_mode:
+        pdata["activity_type"] = custom_mode
+        pdata["mode"] = custom_mode
+    if custom_start:
+        pdata["start_time"] = custom_start
+    if custom_end:
+        pdata["end_time"] = custom_end
 
     with get_db() as conn:
         c = conn.cursor()

@@ -28,8 +28,12 @@ def _get_previews_search_dirs() -> List[Path]:
     env_dir = os.environ.get("PREVIEWS_DIR")
     if env_dir:
         dirs.append(Path(env_dir))
+    root_dir = Path(__file__).resolve().parent.parent.parent
     dirs.extend([
-        Path(__file__).resolve().parent.parent.parent / "previews",
+        root_dir / "previews",
+        root_dir / "data" / "previews",
+        root_dir.parent / "gregor_cos" / "previews",
+        Path.home() / "projects" / "gregor_cos" / "previews",
         Path.home() / "photos" / "previews",
         Path.home() / "projects" / "photos_vault" / "previews",
     ])
@@ -61,6 +65,23 @@ def find_preview_file(identifier: str) -> Optional[Path]:
             p = base_dir / cand
             if p.is_file() and p.stat().st_size > 0:
                 return p
+
+    stem = Path(clean_id).stem
+    try:
+        row = query_one(
+            "SELECT preview_path FROM photos WHERE sha256 = ? OR filename = ? LIMIT 1;",
+            (stem, clean_id),
+        )
+        if row and row.get("preview_path"):
+            alt_name = Path(str(row["preview_path"])).name
+            for base_dir in PREVIEWS_SEARCH_DIRS:
+                if not base_dir.exists():
+                    continue
+                p = base_dir / alt_name
+                if p.is_file() and p.stat().st_size > 0:
+                    return p
+    except Exception:
+        pass
 
     return None
 

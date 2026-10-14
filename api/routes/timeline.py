@@ -85,45 +85,51 @@ def get_day(req: Request) -> Response:
             s["started_previous_day"] = 1
 
         if s["segment_type"] == "visit":
-            cur_name = s.get("catalog_place_name") or s.get("place_name")
-            cur_cat = s.get("catalog_category") or s.get("category")
-            cur_addr = s.get("catalog_place_address") or s.get("place_address")
+            is_user_edited = s.get("source") in ("USER_EDIT", "USER_MANUAL")
+            cur_name = (s.get("place_name") or s.get("catalog_place_name")) if is_user_edited else (s.get("catalog_place_name") or s.get("place_name"))
+            cur_cat = (s.get("category") or s.get("catalog_category")) if is_user_edited else (s.get("catalog_category") or s.get("category"))
+            cur_addr = (s.get("place_address") or s.get("catalog_place_address")) if is_user_edited else (s.get("catalog_place_address") or s.get("place_address"))
 
             s["place_name"] = cur_name
             s["category"] = cur_cat
             s["place_address"] = cur_addr
 
-            label, cat = get_date_aware_label(DEFAULT_DB_PATH, cur_name, s.get("latitude"), s.get("longitude"), date_str)
-            if label:
-                s["place_name"] = label
-                s["catalog_place_name"] = label
-                s["category"] = cat
-                s["catalog_category"] = cat
-            elif is_nameless_place(cur_name):
-                sp_match = resolve_visit_place(
-                    DEFAULT_DB_PATH,
-                    s.get("latitude"),
-                    s.get("longitude"),
-                    cur_name,
-                    cur_addr,
-                    date_str=date_str,
-                    incoming_place_id=s.get("place_id"),
-                    allow_reverse_geocode=False,
-                )
-                if sp_match:
-                    s["place_name"] = sp_match["name"]
-                    s["catalog_place_name"] = sp_match["name"]
-                    if sp_match.get("address"):
-                        s["place_address"] = sp_match["address"]
-                        s["catalog_place_address"] = sp_match["address"]
-                    if sp_match.get("category"):
-                        s["category"] = sp_match["category"]
-                        s["catalog_category"] = sp_match["category"]
-                    if sp_match.get("place_id"):
-                        s["catalog_place_id"] = sp_match["place_id"]
-                else:
-                    s["place_name"] = cur_addr or ""
-                    s["catalog_place_name"] = cur_addr or ""
+            if is_user_edited:
+                s["catalog_place_name"] = cur_name
+                s["catalog_category"] = cur_cat
+                s["catalog_place_address"] = cur_addr
+            else:
+                label, cat = get_date_aware_label(DEFAULT_DB_PATH, cur_name, s.get("latitude"), s.get("longitude"), date_str)
+                if label:
+                    s["place_name"] = label
+                    s["catalog_place_name"] = label
+                    s["category"] = cat
+                    s["catalog_category"] = cat
+                elif is_nameless_place(cur_name):
+                    sp_match = resolve_visit_place(
+                        DEFAULT_DB_PATH,
+                        s.get("latitude"),
+                        s.get("longitude"),
+                        cur_name,
+                        cur_addr,
+                        date_str=date_str,
+                        incoming_place_id=s.get("place_id"),
+                        allow_reverse_geocode=False,
+                    )
+                    if sp_match:
+                        s["place_name"] = sp_match["name"]
+                        s["catalog_place_name"] = sp_match["name"]
+                        if sp_match.get("address"):
+                            s["place_address"] = sp_match["address"]
+                            s["catalog_place_address"] = sp_match["address"]
+                        if sp_match.get("category"):
+                            s["category"] = sp_match["category"]
+                            s["catalog_category"] = sp_match["category"]
+                        if sp_match.get("place_id"):
+                            s["catalog_place_id"] = sp_match["place_id"]
+                    else:
+                        s["place_name"] = cur_addr or ""
+                        s["catalog_place_name"] = cur_addr or ""
 
             s["review_rating"] = s.get("catalog_review_rating") or s.get("review_rating")
             s["review_text"] = s.get("catalog_review_text") or s.get("review_text")
