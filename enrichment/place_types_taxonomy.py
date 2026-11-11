@@ -1,0 +1,287 @@
+"""
+Google Places API Official Types Taxonomy Mapper.
+Maps official Google Place Types (primaryType and types array from Places API New v1)
+directly and deterministically to UI categories without heuristics or regex guessing.
+"""
+
+from typing import List, Optional, Union
+
+# Google Places API (New) Official Place Types to Studio Categories
+GOOGLE_PLACE_TYPE_CATEGORY_MAP = {
+    # 1. Food & Drink
+    "bakery": "Food & Drink",
+    "cafe": "Food & Drink",
+    "coffee_shop": "Food & Drink",
+    "restaurant": "Food & Drink",
+    "bar": "Food & Drink",
+    "pub": "Food & Drink",
+    "brewery": "Food & Drink",
+    "winery": "Food & Drink",
+    "distillery": "Food & Drink",
+    "meal_takeaway": "Food & Drink",
+    "meal_delivery": "Food & Drink",
+    "food_delivery": "Food & Drink",
+    "ice_cream_shop": "Food & Drink",
+    "food": "Food & Drink",
+    "food_store": "Food & Drink",
+    "bistro": "Food & Drink",
+    "pizza_restaurant": "Food & Drink",
+    "pizza_delivery": "Food & Drink",
+    "ramen_restaurant": "Food & Drink",
+    "sushi_restaurant": "Food & Drink",
+    "fast_food_restaurant": "Food & Drink",
+    "steak_house": "Food & Drink",
+    "diner": "Food & Drink",
+    "bagel_shop": "Food & Drink",
+    "donut_shop": "Food & Drink",
+    "sandwich_shop": "Food & Drink",
+    "tea_house": "Food & Drink",
+    "dessert_shop": "Food & Drink",
+    "seafood_restaurant": "Food & Drink",
+    "mexican_restaurant": "Food & Drink",
+    "italian_restaurant": "Food & Drink",
+    "american_restaurant": "Food & Drink",
+    "chinese_restaurant": "Food & Drink",
+    "japanese_restaurant": "Food & Drink",
+    "thai_restaurant": "Food & Drink",
+    "indian_restaurant": "Food & Drink",
+    "mediterranean_restaurant": "Food & Drink",
+    "vietnamese_restaurant": "Food & Drink",
+    "korean_restaurant": "Food & Drink",
+    "spanish_restaurant": "Food & Drink",
+    "french_restaurant": "Food & Drink",
+    "greek_restaurant": "Food & Drink",
+    "german_restaurant": "Food & Drink",
+    "swiss_restaurant": "Food & Drink",
+    "cocktail_bar": "Food & Drink",
+    "wine_bar": "Food & Drink",
+    "beer_garden": "Food & Drink",
+    "beer_bar": "Food & Drink",
+    "juice_shop": "Food & Drink",
+    "confectionery": "Food & Drink",
+    "pastry_shop": "Food & Drink",
+
+    # 2. Travel & Transit
+    "subway_station": "Travel & Transit",
+    "transit_station": "Travel & Transit",
+    "train_station": "Travel & Transit",
+    "airport": "Travel & Transit",
+    "international_airport": "Travel & Transit",
+    "bus_station": "Travel & Transit",
+    "bus_stop": "Travel & Transit",
+    "ferry_terminal": "Travel & Transit",
+    "transit_stop": "Travel & Transit",
+    "light_rail_station": "Travel & Transit",
+    "transit_depot": "Travel & Transit",
+    "heliport": "Travel & Transit",
+    "transportation_service": "Travel & Transit",
+    "taxi_stand": "Travel & Transit",
+    "parking": "Travel & Transit",
+    "parking_lot": "Travel & Transit",
+    "parking_garage": "Travel & Transit",
+    "rest_stop": "Travel & Transit",
+    "car_rental": "Travel & Transit",
+    "travel_agency": "Travel & Transit",
+
+    # 3. Shopping & Retail
+    "supermarket": "Shopping & Retail",
+    "grocery_store": "Shopping & Retail",
+    "asian_grocery_store": "Shopping & Retail",
+    "shopping_mall": "Shopping & Retail",
+    "shopping_center": "Shopping & Retail",
+    "clothing_store": "Shopping & Retail",
+    "department_store": "Shopping & Retail",
+    "convenience_store": "Shopping & Retail",
+    "pharmacy": "Shopping & Retail",
+    "drugstore": "Shopping & Retail",
+    "store": "Shopping & Retail",
+    "book_store": "Shopping & Retail",
+    "electronics_store": "Shopping & Retail",
+    "home_goods_store": "Shopping & Retail",
+    "home_improvement_store": "Shopping & Retail",
+    "hardware_store": "Shopping & Retail",
+    "shoe_store": "Shopping & Retail",
+    "liquor_store": "Shopping & Retail",
+    "market": "Shopping & Retail",
+    "florist": "Shopping & Retail",
+    "jewelry_store": "Shopping & Retail",
+    "gift_shop": "Shopping & Retail",
+    "furniture_store": "Shopping & Retail",
+    "sporting_goods_store": "Shopping & Retail",
+    "variety_store": "Shopping & Retail",
+    "discount_store": "Shopping & Retail",
+    "wholesaler": "Shopping & Retail",
+    "pet_store": "Shopping & Retail",
+    "bicycle_store": "Shopping & Retail",
+    "thrift_store": "Shopping & Retail",
+    "cosmetics_store": "Shopping & Retail",
+
+    # 4. Hotels & Lodging
+    "lodging": "Hotels & Lodging",
+    "hotel": "Hotels & Lodging",
+    "motel": "Hotels & Lodging",
+    "resort_hotel": "Hotels & Lodging",
+    "bed_and_breakfast": "Hotels & Lodging",
+    "hostel": "Hotels & Lodging",
+    "guest_house": "Hotels & Lodging",
+    "campground": "Hotels & Lodging",
+    "extended_stay_hotel": "Hotels & Lodging",
+    "rv_park": "Hotels & Lodging",
+    "cottage": "Hotels & Lodging",
+    "inn": "Hotels & Lodging",
+
+    # 5. Work & Office
+    "corporate_office": "Work & Office",
+    "office": "Work & Office",
+    "coworking_space": "Work & Office",
+    "business_center": "Work & Office",
+    "company": "Work & Office",
+
+    # 6. Housing & Residential
+    "premise": "Home & Residence",
+    "subpremise": "Home & Residence",
+    "street_address": "Home & Residence",
+    "residential": "Home & Residence",
+    "house": "Home & Residence",
+    "apartment_complex": "Home & Residence",
+    "apartment_building": "Home & Residence",
+    "housing_complex": "Home & Residence",
+    "condominium_complex": "Home & Residence",
+    "real_estate_agency": "Services & Civic",
+
+    # 7. Arts, Culture & Outdoors
+    "park": "Arts & Entertainment",
+    "city_park": "Arts & Entertainment",
+    "state_park": "Arts & Entertainment",
+    "national_park": "Arts & Entertainment",
+    "playground": "Arts & Entertainment",
+    "observation_deck": "Arts & Entertainment",
+    "hiking_area": "Arts & Entertainment",
+    "natural_feature": "Arts & Entertainment",
+    "tourist_attraction": "Arts & Entertainment",
+    "museum": "Arts & Entertainment",
+    "art_museum": "Arts & Entertainment",
+    "history_museum": "Arts & Entertainment",
+    "science_museum": "Arts & Entertainment",
+    "art_gallery": "Arts & Entertainment",
+    "art_studio": "Arts & Entertainment",
+    "athletic_field": "Arts & Entertainment",
+    "sports_complex": "Arts & Entertainment",
+    "golf_course": "Arts & Entertainment",
+    "summer_camp_organizer": "Arts & Entertainment",
+    "movie_theater": "Arts & Entertainment",
+    "cinema": "Arts & Entertainment",
+    "amusement_park": "Arts & Entertainment",
+    "zoo": "Arts & Entertainment",
+    "aquarium": "Arts & Entertainment",
+    "performing_arts_theater": "Arts & Entertainment",
+    "theater": "Arts & Entertainment",
+    "stadium": "Arts & Entertainment",
+    "cultural_center": "Arts & Entertainment",
+    "botanical_garden": "Arts & Entertainment",
+    "garden": "Arts & Entertainment",
+    "bowling_alley": "Arts & Entertainment",
+    "casino": "Arts & Entertainment",
+    "night_club": "Arts & Entertainment",
+    "event_venue": "Arts & Entertainment",
+    "historical_landmark": "Arts & Entertainment",
+    "monument": "Arts & Entertainment",
+    "memorial": "Arts & Entertainment",
+    "plaza": "Arts & Entertainment",
+    "beach": "Arts & Entertainment",
+
+    # 8. Health, Wellness & Services
+    "spa": "Health & Services",
+    "sauna": "Health & Services",
+    "public_bath": "Health & Services",
+    "massage": "Health & Services",
+    "wellness_center": "Health & Services",
+    "gym": "Health & Services",
+    "fitness_center": "Health & Services",
+    "sports_club": "Health & Services",
+    "swimming_pool": "Health & Services",
+    "hospital": "Health & Services",
+    "medical_clinic": "Health & Services",
+    "dentist": "Health & Services",
+    "doctor": "Health & Services",
+    "health": "Health & Services",
+    "health_consultant": "Health & Services",
+
+    # 9. Services & Civic
+    "educational_institution": "Services & Civic",
+    "government_office": "Services & Civic",
+    "marina": "Travel & Transit",
+    "doctor": "Health & Services",
+    "physiotherapist": "Health & Services",
+    "bank": "Health & Services",
+    "atm": "Health & Services",
+    "post_office": "Health & Services",
+    "laundry": "Health & Services",
+    "laundromat": "Health & Services",
+    "dry_cleaner": "Health & Services",
+    "hair_care": "Health & Services",
+    "hair_salon": "Health & Services",
+    "beauty_salon": "Health & Services",
+    "barber_shop": "Health & Services",
+    "nail_salon": "Health & Services",
+    "veterinary_care": "Health & Services",
+    "car_repair": "Health & Services",
+    "car_wash": "Health & Services",
+    "gas_station": "Health & Services",
+    "electric_vehicle_charging_station": "Health & Services",
+    "storage": "Health & Services",
+    "service": "Health & Services",
+    "general_contractor": "Health & Services",
+    "locksmith": "Health & Services",
+    "electrician": "Health & Services",
+    "plumber": "Health & Services",
+
+    # 9. Civic & Education
+    "school": "Services & Civic",
+    "primary_school": "Services & Civic",
+    "secondary_school": "Services & Civic",
+    "university": "Services & Civic",
+    "college": "Services & Civic",
+    "city_hall": "Services & Civic",
+    "courthouse": "Services & Civic",
+    "local_government_office": "Services & Civic",
+    "police": "Services & Civic",
+    "fire_station": "Services & Civic",
+    "library": "Services & Civic",
+    "place_of_worship": "Services & Civic",
+    "church": "Services & Civic",
+    "synagogue": "Services & Civic",
+    "mosque": "Services & Civic",
+    "hindu_temple": "Services & Civic",
+    "embassy": "Services & Civic",
+    "non_profit_organization": "Services & Civic",
+    "neighborhood": "Travel & Transit",
+    "locality": "Travel & Transit",
+    "sublocality": "Travel & Transit",
+    "airport_terminal": "Travel & Transit"
+}
+
+
+def map_google_types_to_category(primary_type: Optional[str], types: Optional[Union[List[str], str]] = None) -> Optional[str]:
+    """
+    Directly maps Google Places API official types to our canonical category.
+    Evaluates primaryType first, then iterates through types array in order.
+    """
+    if primary_type and primary_type in GOOGLE_PLACE_TYPE_CATEGORY_MAP:
+        return GOOGLE_PLACE_TYPE_CATEGORY_MAP[primary_type]
+
+    if types:
+        if isinstance(types, str):
+            import json
+            try:
+                type_list = json.loads(types) if types.startswith('[') else [t.strip() for t in types.split(',')]
+            except Exception:
+                type_list = [types.strip()]
+        else:
+            type_list = types
+
+        for t in type_list:
+            if t in GOOGLE_PLACE_TYPE_CATEGORY_MAP:
+                return GOOGLE_PLACE_TYPE_CATEGORY_MAP[t]
+
+    return None

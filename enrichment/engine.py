@@ -1,0 +1,686 @@
+"""
+Multi-Source Enrichment Engine & Fix Proposal Reasoner.
+Orchestrates connectors, generates explainable timeline patches, and applies user-approved fixes.
+"""
+
+import json
+import datetime
+from typing import Dict, Any, List, Optional
+import sqlite3
+
+from db import get_db_connection, get_db_path
+from enrichment.base import BaseEnrichmentConnector, FixProposalData
+from enrichment.photos import PhotosEXIFConnector
+from enrichment.place_aggregates import (
+    is_valid_20byte_chij,
+    mint_canonical_chij,
+    recompute_place_aggregates,
+)
+from enrichment.transactions import TransactionsConnector
+from enrichment.email_connector import EmailConnector
+from enrichment.routing import RoutingSnapperConnector
+
+
+class TimelineEnrichmentEngine:
+    """Evaluates timeline gaps and unconfirmed places, proposing explainable fixes."""
+
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        self.db_path = get_db_path(db_path)
+        self.connectors: List[BaseEnrichmentConnector] = [
+            PhotosEXIFConnector(),
+            TransactionsConnector(),
+            EmailConnector(),
+            RoutingSnapperConnector()
+        ]
+
+    def register_connector(self, connector: BaseEnrichmentConnector) -> None:
+        self.connectors.append(connector)
+
+    def generate_all_proposals(self) -> Dict[str, Any]:
+        """Runs all registered connectors against open gaps and unconfirmed places."""
+        conn = get_db_connection(self.db_path)
+        c = conn.cursor()
+
+        # Fetch open gaps
+        c.execute("""
+        SELECT id, start_time, end_time, start_ts, end_ts, date, duration_hours,
+               prev_lat, prev_lng, next_lat, next_lng, jump_distance_km
+        FROM gaps
+        WHERE status = 'OPEN' AND is_historical = 0
+        ORDER BY duration_hours DESC;
+        """)
+        gaps = [dict(r) for r in c.fetchall()]
+
+        # Fetch unconfirmed places
+        c.execute("""
+        SELECT id, start_time, end_time, start_ts, end_ts, date,
+               latitude, longitude, place_id, semantic_type
+        FROM segments
+        WHERE segment_type = 'visit' AND is_unconfirmed = 1
+        ORDER BY start_ts DESC;
+        """)
+        unconfirmed = [dict(r) for r in c.fetchall()]
+
+        all_proposals: List[FixProposalData] = []
+        for conn_obj in self.connectors:
+            try:
+                props = conn_obj.generate_proposals(gaps, unconfirmed)
+                all_proposals.extend(props)
+            except Exception as e:
+                print(f"[!] Error running connector {conn_obj.get_source_name()}: {e}")
+
+        # Batch insert into fix_proposals table
+        if all_proposals:
+            rows = [p.to_tuple() for p in all_proposals]
+            c.executemany("""
+            INSERT INTO fix_proposals (
+                target_type, target_id, date, proposed_action, source, reasoning,
+                confidence, status, patch_data_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, rows)
+            conn.commit()
+
+        conn.close()
+        return {
+            "total_proposals_generated": len(all_proposals),
+            "sources": list(set(p.source for p in all_proposals))
+        }
+
+    def apply_fix_proposal(self, proposal_id: int) -> bool:
+        """Applies a proposed fix patch non-destructively to the database."""
+        conn = get_db_connection(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT * FROM fix_proposals WHERE id = ?;", (proposal_id,))
+        prop = c.fetchone()
+        if not prop or prop['status'] != 'PENDING':
+            conn.close()
+            return False
+
+        patch_data = json.loads(prop['patch_data_json'])
+        action = prop['proposed_action']
+        target_id = prop['target_id']
+        affected_pids: List[Optional[str]] = []
+
+        if action == 'HYDRATE_PLACE':
+            c.execute("""
+            UPDATE segments
+            SET place_name = ?,
+                place_address = COALESCE(?, place_address),
+                is_unconfirmed = 0
+            WHERE id = ?;
+            """, (patch_data.get('resolved_name'), patch_data.get('address'), target_id))
+            c.execute("SELECT place_id FROM segments WHERE id = ?;", (target_id,))
+            srow = c.fetchone()
+            if srow and srow["place_id"]:
+                affected_pids.append(srow["place_id"])
+
+        elif action == 'RESOLVE_UNCONFIRMED_VISIT':
+            c.execute(
+                "SELECT place_id, start_ts, end_ts, latitude, longitude FROM segments WHERE id = ?;",
+                (target_id,),
+            )
+            seg_row = c.fetchone()
+            target_name = (
+                patch_data.get('resolved_poi_name')
+                or patch_data.get('target_place')
+                or patch_data.get('resolved_name')
+                or 'Verified POI'
+            )
+            target_cat = patch_data.get('category') or 'Other / POI'
+            seg_pid = (seg_row['place_id'] if seg_row else None) or patch_data.get('place_id')
+            if not is_valid_20byte_chij(seg_pid) and seg_row:
+                seg_pid = mint_canonical_chij(
+                    seg_row['latitude'],
+                    seg_row['longitude'],
+                    f"resolve_unconfirmed|{target_id}|{target_name}",
+                )
+            if seg_pid:
+                c.execute(
+                    """
+                    INSERT INTO places (
+                        place_id, name, address, category, latitude, longitude,
+                        source, business_status, user_confirmed
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'USER_EDIT', 'OPERATIONAL', 1)
+                    ON CONFLICT(place_id) DO UPDATE SET
+                        name = excluded.name,
+                        category = excluded.category,
+                        user_confirmed = 1;
+                    """,
+                    (
+                        seg_pid,
+                        target_name,
+                        patch_data.get('address') or target_name,
+                        target_cat,
+                        seg_row['latitude'] if seg_row else patch_data.get('latitude'),
+                        seg_row['longitude'] if seg_row else patch_data.get('longitude'),
+                    ),
+                )
+                affected_pids.append(seg_pid)
+                patch_data.setdefault('place_id', seg_pid)
+            patch_data.setdefault('resolved_poi_name', target_name)
+            if seg_row:
+                patch_data.setdefault('start_ts', seg_row['start_ts'])
+                patch_data.setdefault('end_ts', seg_row['end_ts'])
+            c.execute(
+                """
+                UPDATE segments
+                SET place_id = COALESCE(?, place_id),
+                    place_name = ?,
+                    place_address = COALESCE(?, place_address, ?),
+                    category = ?,
+                    is_unconfirmed = 0
+                WHERE id = ?;
+                """,
+                (
+                    seg_pid,
+                    target_name,
+                    patch_data.get('address'),
+                    target_name,
+                    target_cat,
+                    target_id,
+                ),
+            )
+
+        elif action == 'EXTEND_STATIONARY_DWELL':
+            gap_id = target_id
+            c.execute("SELECT * FROM gaps WHERE id = ?;", (gap_id,))
+            gap = c.fetchone()
+            if gap:
+                c.execute("SELECT * FROM segments WHERE id = ?;", (gap['prev_segment_id'],))
+                prev_seg = c.fetchone()
+                c.execute("SELECT * FROM segments WHERE id = ?;", (gap['next_segment_id'],))
+                next_seg = c.fetchone()
+
+                # 1. If preceding segment is a visit, extend it forward
+                if prev_seg and prev_seg['segment_type'] == 'visit':
+                    new_dur = (gap['end_ts'] - prev_seg['start_ts']) / 60.0
+                    c.execute("""
+                    UPDATE segments
+                    SET end_time = ?, end_ts = ?, duration_minutes = ?
+                    WHERE id = ?;
+                    """, (gap['end_time'], gap['end_ts'], new_dur, prev_seg['id']))
+                    affected_pids.append(prev_seg['place_id'])
+
+                # 2. If preceding is activity but succeeding is a visit (e.g. Home), extend succeeding backward
+                elif next_seg and next_seg['segment_type'] == 'visit':
+                    new_dur = (next_seg['end_ts'] - gap['start_ts']) / 60.0
+                    c.execute("""
+                    UPDATE segments
+                    SET start_time = ?, start_ts = ?, duration_minutes = ?
+                    WHERE id = ?;
+                    """, (gap['start_time'], gap['start_ts'], new_dur, next_seg['id']))
+                    affected_pids.append(next_seg['place_id'])
+
+                # 3. If both are activities, insert a stationary visit in between
+                else:
+                    g_yr = int(gap['date'][:4]) if gap['date'] else 2026
+                    g_mo = int(gap['date'][5:7]) if gap['date'] else 8
+                    g_day = int(gap['date'][8:10]) if gap['date'] else 20
+                    dur_m = (gap['end_ts'] - gap['start_ts']) / 60.0
+                    from life_periods import get_date_aware_label
+                    label, cat = get_date_aware_label(self.db_path, "Stationary Dwell", gap['prev_lat'], gap['prev_lng'], gap['date'])
+                    pname = label if label else "Stationary Dwell"
+                    dwell_pid = mint_canonical_chij(gap['prev_lat'], gap['prev_lng'], f"dwell|{pname}|{gap['date']}")
+                    c.execute(
+                        """
+                        INSERT OR IGNORE INTO places (place_id, name, address, category, latitude, longitude, source, business_status)
+                        VALUES (?, ?, ?, ?, ?, ?, 'USER_ACCEPTED_FIX', 'OPERATIONAL');
+                        """,
+                        (dwell_pid, pname, pname, cat or 'Other / POI', gap['prev_lat'], gap['prev_lng']),
+                    )
+                    c.execute("""
+                    INSERT INTO segments (
+                        segment_type, place_id, place_name, place_address, category, start_time, end_time, start_ts, end_ts,
+                        duration_minutes, date, year, month, day, latitude, longitude, hierarchy_level, is_unconfirmed, source
+                    ) VALUES (
+                        'visit', ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, 0, 0, ?
+                    );
+                    """, (
+                        dwell_pid, pname, pname, cat or 'Other / POI', gap['start_time'], gap['end_time'],
+                        gap['start_ts'], gap['end_ts'], dur_m, gap['date'], g_yr, g_mo, g_day,
+                        gap['prev_lat'], gap['prev_lng'], prop['source'] or 'USER_ACCEPTED_FIX'
+                    ))
+                    affected_pids.append(dwell_pid)
+
+            c.execute("UPDATE gaps SET status = 'RESOLVED' WHERE id = ?;", (gap_id,))
+
+        elif action == 'SYNTHESIZE_TRANSIT_LEG':
+            gap_id = target_id
+            c.execute("SELECT * FROM gaps WHERE id = ?;", (gap_id,))
+            gap = c.fetchone()
+            if gap:
+                mode = patch_data.get('mode', 'IN_PASSENGER_VEHICLE')
+                dur_m = patch_data.get('duration_minutes', gap['duration_hours'] * 60.0)
+                dist_m = patch_data.get('distance_km', gap['jump_distance_km'] or 0.0) * 1000.0
+                pts_list = patch_data.get('path_points')
+                if not isinstance(pts_list, list) or len(pts_list) < 2:
+                    pts_list = (
+                        [[gap['prev_lat'], gap['prev_lng']], [gap['next_lat'], gap['next_lng']]]
+                        if gap['prev_lat'] is not None and gap['next_lat'] is not None
+                        else []
+                    )
+                path_pts = json.dumps(pts_list) if len(pts_list) >= 2 else None
+                has_snapped = 1 if len(pts_list) >= 3 else 0
+                g_yr = int(gap['date'][:4]) if gap['date'] else 2026
+                g_mo = int(gap['date'][5:7]) if gap['date'] else 8
+                g_day = int(gap['date'][8:10]) if gap['date'] else 20
+
+                c.execute("""
+                INSERT INTO segments (
+                    segment_type, activity_type, start_time, end_time, start_ts, end_ts,
+                    duration_minutes, distance_meters, date, year, month, day, latitude, longitude,
+                    end_lat, end_lng, path_points_json, has_snapped_path, hierarchy_level, source
+                ) VALUES (
+                    'activity', ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, 0, ?
+                );
+                """, (
+                    mode, gap['start_time'], gap['end_time'], gap['start_ts'], gap['end_ts'],
+                    dur_m, dist_m, gap['date'], g_yr, g_mo, g_day, gap['prev_lat'], gap['prev_lng'],
+                    gap['next_lat'], gap['next_lng'], path_pts, has_snapped, prop['source'] or 'USER_ACCEPTED_FIX'
+                ))
+            c.execute("UPDATE gaps SET status = 'RESOLVED' WHERE id = ?;", (gap_id,))
+
+        elif action in ('RECONSTRUCT_FROM_BREADCRUMBS', 'INSERT_VISIT'):
+            gap_id = target_id
+            c.execute("SELECT * FROM gaps WHERE id = ?;", (gap_id,))
+            gap = c.fetchone()
+            if gap:
+                g_yr = int(gap['date'][:4]) if gap['date'] else 2026
+                g_mo = int(gap['date'][5:7]) if gap['date'] else 8
+                g_day = int(gap['date'][8:10]) if gap['date'] else 20
+
+                c.execute("""
+                SELECT lat, lng, speed_kmh, timestamp
+                FROM breadcrumbs
+                WHERE timestamp >= ? AND timestamp <= ?
+                ORDER BY timestamp ASC;
+                """, (int(gap['start_ts']), int(gap['end_ts'])))
+                bc_pts = c.fetchall()
+                lat_val = patch_data.get('latitude') or (bc_pts[0]['lat'] if bc_pts else gap['prev_lat'])
+                lng_val = patch_data.get('longitude') or (bc_pts[0]['lng'] if bc_pts else gap['prev_lng'])
+                dur_m = (gap['end_ts'] - gap['start_ts']) / 60.0
+
+                from breadcrumbs import haversine_distance
+                from life_periods import get_date_aware_label
+
+                is_movement = False
+                if bc_pts and len(bc_pts) >= 2:
+                    p1 = bc_pts[0]
+                    p2 = bc_pts[-1]
+                    displacement_m = haversine_distance(p1['lat'], p1['lng'], p2['lat'], p2['lng'])
+                    overall_speed_kmh = (displacement_m / 1000.0) / (dur_m / 60.0) if dur_m > 0 else 0
+                    if displacement_m > 600.0 and overall_speed_kmh > 4.5 and dur_m < 180.0:
+                        is_movement = True
+
+                if not is_movement:
+                    poi_name = patch_data.get('resolved_poi_name') or 'Recovered Visit'
+                    addr_val = patch_data.get('address') or (poi_name if 'Terrace' in poi_name or 'Street' in poi_name or 'Ave' in poi_name else None)
+                    label, cat = get_date_aware_label(self.db_path, poi_name, lat_val, lng_val, gap['date'])
+                    final_name = label if label else poi_name
+                    v_pid = patch_data.get('place_id')
+                    if not is_valid_20byte_chij(v_pid):
+                        v_pid = mint_canonical_chij(lat_val, lng_val, f"insert_visit|{final_name}|{gap['date']}")
+                    c.execute(
+                        """
+                        INSERT OR IGNORE INTO places (place_id, name, address, category, latitude, longitude, source, business_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL');
+                        """,
+                        (v_pid, final_name, addr_val, cat or 'Other / POI', lat_val, lng_val, prop['source'] or 'USER_ACCEPTED_FIX'),
+                    )
+                    c.execute("""
+                    INSERT INTO segments (
+                        segment_type, place_id, start_time, end_time, start_ts, end_ts,
+                        duration_minutes, date, year, month, day, latitude, longitude,
+                        place_name, place_address, category, hierarchy_level, is_unconfirmed, source
+                    ) VALUES (
+                        'visit', ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, 0, 0, ?
+                    );
+                    """, (
+                        v_pid, gap['start_time'], gap['end_time'], gap['start_ts'], gap['end_ts'],
+                        dur_m, gap['date'], g_yr, g_mo, g_day, lat_val, lng_val,
+                        final_name, addr_val, cat or 'Other / POI', prop['source'] or 'USER_ACCEPTED_FIX'
+                    ))
+                    affected_pids.append(v_pid)
+                else:
+                    avg_speed = sum(p['speed_kmh'] or 0 for p in bc_pts) / len(bc_pts)
+                    mode = 'WALKING' if avg_speed < 6 else ('CYCLING' if avg_speed < 25 else 'IN_PASSENGER_VEHICLE')
+                    pts_coords = [[p['lat'], p['lng']] for p in bc_pts]
+                    path_json = json.dumps(pts_coords)
+                    has_snapped = 1 if len(pts_coords) >= 3 else 0
+                    c.execute("""
+                    INSERT INTO segments (
+                        segment_type, activity_type, start_time, end_time, start_ts, end_ts,
+                        duration_minutes, date, year, month, day, latitude, longitude,
+                        end_lat, end_lng, path_points_json, has_snapped_path, hierarchy_level, source
+                    ) VALUES (
+                        'activity', ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, 0, ?
+                    );
+                    """, (
+                        mode, gap['start_time'], gap['end_time'], gap['start_ts'], gap['end_ts'],
+                        dur_m, gap['date'], g_yr, g_mo, g_day, bc_pts[0]['lat'], bc_pts[0]['lng'],
+                        bc_pts[-1]['lat'], bc_pts[-1]['lng'], path_json, has_snapped, prop['source'] or 'BREADCRUMBS'
+                    ))
+            c.execute("UPDATE gaps SET status = 'RESOLVED' WHERE id = ?;", (gap_id,))
+
+        elif action == 'DOCUMENTED_HIATUS':
+            gap_id = target_id
+            c.execute("UPDATE gaps SET status = 'RESOLVED_HIATUS' WHERE id = ?;", (gap_id,))
+
+        elif action in ('INSERT_ORIGIN_AIRPORT', 'INSERT_DESTINATION_AIRPORT'):
+            flight_id = patch_data.get('flight_id') or target_id
+            c.execute("SELECT * FROM segments WHERE id = ?;", (flight_id,))
+            flight_seg = c.fetchone()
+            if flight_seg:
+                airport_name = patch_data.get('airport_name') or 'Airport'
+                iata = patch_data.get('airport_iata') or patch_data.get('airport_code')
+                full_name = f"{airport_name} ({iata})" if iata and iata not in airport_name else airport_name
+                lat = patch_data.get('lat') or (flight_seg['latitude'] if action == 'INSERT_ORIGIN_AIRPORT' else flight_seg['end_lat'])
+                lng = patch_data.get('lng') or (flight_seg['longitude'] if action == 'INSERT_ORIGIN_AIRPORT' else flight_seg['end_lng'])
+                air_pid = patch_data.get('place_id')
+                if not is_valid_20byte_chij(air_pid):
+                    air_pid = mint_canonical_chij(lat, lng, f"AIRPORT_IATA_{iata or airport_name}")
+                air_city = patch_data.get('city')
+                air_country = patch_data.get('country')
+                f_yr = int(flight_seg['date'][:4]) if flight_seg['date'] else 2026
+                f_mo = int(flight_seg['date'][5:7]) if flight_seg['date'] else 8
+                f_day = int(flight_seg['date'][8:10]) if flight_seg['date'] else 20
+
+                if action == 'INSERT_ORIGIN_AIRPORT':
+                    end_ts = flight_seg['start_ts']
+                    start_ts = end_ts - 2700.0  # 45 min gate boarding dwell
+                    dur_m = 45.0
+                    from enrichment.local_timezone import get_timezone_offset_hours
+                    off1 = get_timezone_offset_hours(flight_seg['latitude'], flight_seg['longitude'], start_ts)
+                    dt_st = datetime.datetime.fromtimestamp(start_ts, tz=datetime.timezone.utc) + datetime.timedelta(hours=off1)
+                    st_iso = dt_st.strftime("%Y-%m-%dT%H:%M:%S") + f"{'+' if off1>=0 else '-'}{abs(int(off1)):02d}:00"
+                    et_iso = flight_seg['start_time']
+                else:
+                    # INSERT_DESTINATION_AIRPORT: Spliced from flight tail before taxi/transit
+                    end_ts = flight_seg['end_ts']
+                    start_ts = end_ts - 1800.0  # 30 mins deplaning dwell
+                    dur_m = 30.0
+
+                    from enrichment.local_timezone import get_timezone_offset_hours
+                    dest_lat = flight_seg['end_lat'] if flight_seg['end_lat'] is not None else lat
+                    dest_lng = flight_seg['end_lng'] if flight_seg['end_lng'] is not None else lng
+                    off2 = get_timezone_offset_hours(dest_lat, dest_lng, start_ts)
+                    dt_st = datetime.datetime.fromtimestamp(start_ts, tz=datetime.timezone.utc) + datetime.timedelta(hours=off2)
+                    st_iso = dt_st.strftime("%Y-%m-%dT%H:%M:%S") + f"{'+' if off2>=0 else '-'}{abs(int(off2)):02d}:00"
+                    et_iso = flight_seg['end_time']
+
+                    # Trim flight end time so flight touches down when airport visit begins
+                    new_flight_dur = (start_ts - flight_seg['start_ts']) / 60.0
+                    c.execute("""
+                    UPDATE segments
+                    SET end_time = ?, end_ts = ?, duration_minutes = ?
+                    WHERE id = ?;
+                    """, (st_iso, start_ts, new_flight_dur, flight_id))
+
+                c.execute(
+                    """
+                    INSERT INTO places (
+                        place_id, name, address, category, city, country,
+                        latitude, longitude, source, business_status
+                    ) VALUES (?, ?, ?, 'Travel & Transit', ?, ?, ?, ?, 'FLIGHT_AIRPORT', 'OPERATIONAL')
+                    ON CONFLICT(place_id) DO UPDATE SET
+                        name = COALESCE(places.name, excluded.name),
+                        city = COALESCE(places.city, excluded.city),
+                        country = COALESCE(places.country, excluded.country);
+                    """,
+                    (air_pid, full_name, full_name, air_city, air_country, lat, lng),
+                )
+
+                c.execute("""
+                SELECT id FROM segments
+                WHERE date = ? AND start_ts = ? AND end_ts = ? AND place_name = ?;
+                """, (flight_seg['date'], start_ts, end_ts, full_name))
+                if not c.fetchone():
+                    c.execute("""
+                    INSERT INTO segments (
+                        segment_type, place_id, place_name, place_address, category, city,
+                        start_time, end_time, start_ts, end_ts,
+                        duration_minutes, date, year, month, day, latitude, longitude,
+                        hierarchy_level, is_unconfirmed, source
+                    ) VALUES (
+                        'visit', ?, ?, ?, 'Travel & Transit', ?,
+                        ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?,
+                        0, 0, 'FLIGHT_AIRPORT'
+                    );
+                    """, (
+                        air_pid, full_name, full_name, air_city,
+                        st_iso, et_iso, start_ts, end_ts,
+                        dur_m, flight_seg['date'], f_yr, f_mo, f_day, lat, lng
+                    ))
+                    affected_pids.append(air_pid)
+
+        elif action == 'SYNTHESIZE_FIT_ACTIVITY':
+            gap_id = target_id
+            c.execute("SELECT * FROM gaps WHERE id = ?;", (gap_id,))
+            gap = c.fetchone()
+            if gap:
+                mode = patch_data.get('activity_type', 'WALKING')
+                dur_m = (gap['end_ts'] - gap['start_ts']) / 60.0
+                g_yr = int(gap['date'][:4]) if gap['date'] else 2026
+                g_mo = int(gap['date'][5:7]) if gap['date'] else 8
+                g_day = int(gap['date'][8:10]) if gap['date'] else 20
+                c.execute("""
+                INSERT INTO segments (
+                    segment_type, activity_type, start_time, end_time, start_ts, end_ts,
+                    duration_minutes, date, year, month, day, latitude, longitude,
+                    end_lat, end_lng, has_snapped_path, hierarchy_level, source
+                ) VALUES (
+                    'activity', ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, 0, 0, 'GOOGLE_FIT'
+                );
+                """, (
+                    mode, gap['start_time'], gap['end_time'], gap['start_ts'], gap['end_ts'],
+                    dur_m, gap['date'], g_yr, g_mo, g_day, gap['prev_lat'], gap['prev_lng'],
+                    gap['next_lat'], gap['next_lng']
+                ))
+                c.execute("UPDATE gaps SET status = 'RESOLVED' WHERE id = ?;", (gap_id,))
+
+        elif action in ('CARVE_PHOTO_VERIFIED_VISIT', 'INSERT_PHOTO_VERIFIED_VISIT', 'RESTORE_REVIEWED_VISIT', 'RESTORE_PLAZES_CHECKIN'):
+            st_ts = float(patch_data.get('start_ts') or 0.0)
+            et_ts = float(patch_data.get('end_ts') or (st_ts + 1800.0))
+            st_iso = patch_data.get('start_time') or f"{prop['date']}T12:00:00Z"
+            et_iso = patch_data.get('end_time') or f"{prop['date']}T13:00:00Z"
+            dur_m = float(patch_data.get('duration_minutes') or round((et_ts - st_ts) / 60.0, 1))
+            d_str = patch_data.get('date') or prop['date']
+            yr = int(d_str[:4]) if d_str else 2026
+            mo = int(d_str[5:7]) if d_str else 1
+            dy = int(d_str[8:10]) if d_str else 1
+            pname = patch_data.get('resolved_poi_name') or patch_data.get('target_place') or 'Verified Place'
+            paddr = patch_data.get('address') or pname
+            pcat = patch_data.get('category') or 'Other / POI'
+            pcity = patch_data.get('city')
+            lat = patch_data.get('latitude') or patch_data.get('centroid_lat')
+            lng = patch_data.get('longitude') or patch_data.get('centroid_lng')
+            pid = patch_data.get('place_id')
+            if not is_valid_20byte_chij(pid):
+                pid = mint_canonical_chij(lat, lng, f"proposal|{pname}|{d_str}")
+
+            c.execute(
+                """
+                INSERT OR IGNORE INTO places (
+                    place_id, name, address, category, city, latitude, longitude, source, business_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL');
+                """,
+                (pid, pname, paddr, pcat, pcity, lat, lng, prop['source'] or 'USER_ACCEPTED_FIX'),
+            )
+
+            # If carving out of an enclosing stay, split or trim the enclosing stay first
+            enc_id = patch_data.get('segment_id') or (target_id if prop['target_type'] == 'segment' else None)
+            if action == 'CARVE_PHOTO_VERIFIED_VISIT' and enc_id:
+                c.execute("SELECT * FROM segments WHERE id = ?;", (enc_id,))
+                ov = c.fetchone()
+                if ov and ov['start_ts'] < st_ts and ov['end_ts'] > et_ts:
+                    affected_pids.append(ov['place_id'])
+                    left_dur = round((st_ts - ov['start_ts']) / 60.0, 2)
+                    right_dur = round((ov['end_ts'] - et_ts) / 60.0, 2)
+                    c.execute(
+                        "UPDATE segments SET end_time = ?, end_ts = ?, duration_minutes = ? WHERE id = ?;",
+                        (st_iso, st_ts, left_dur, ov['id']),
+                    )
+                    if right_dur >= 5.0:
+                        r_date = et_iso[:10]
+                        c.execute(
+                            """
+                            INSERT INTO segments (
+                                segment_type, start_time, end_time, start_ts, end_ts,
+                                duration_minutes, date, year, month, day,
+                                latitude, longitude, place_id, place_name, place_address,
+                                semantic_type, category, city, probability, hierarchy_level, source
+                            ) VALUES (
+                                'visit', ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, 1.0, 0, ?
+                            );
+                            """,
+                            (
+                                et_iso, ov['end_time'], et_ts, ov['end_ts'],
+                                right_dur, r_date, int(r_date[:4]), int(r_date[5:7]), int(r_date[8:10]),
+                                ov['latitude'], ov['longitude'], ov['place_id'], ov['place_name'], ov['place_address'],
+                                ov['semantic_type'], ov['category'], ov['city'], ov['source']
+                            ),
+                        )
+
+            c.execute(
+                """
+                INSERT INTO segments (
+                    segment_type, start_time, end_time, start_ts, end_ts,
+                    duration_minutes, date, year, month, day,
+                    latitude, longitude, place_id, place_name, place_address,
+                    category, city, probability, hierarchy_level, is_unconfirmed, source, evidence_json
+                ) VALUES (
+                    'visit', ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, 1.0, 0, 0, ?, ?
+                );
+                """,
+                (
+                    st_iso, et_iso, st_ts, et_ts,
+                    dur_m, d_str, yr, mo, dy,
+                    lat, lng, pid, pname, paddr,
+                    pcat, pcity, prop['source'], prop['evidence_json'] if 'evidence_json' in prop.keys() else None,
+                ),
+            )
+            affected_pids.append(pid)
+
+        elif action == 'INSERT_LYFT_RIDE':
+            st_ts = float(patch_data.get('start_ts') or 0.0)
+            et_ts = float(patch_data.get('end_ts') or (st_ts + 900.0))
+            st_iso = patch_data.get('start_time') or f"{prop['date']}T12:00:00Z"
+            et_iso = patch_data.get('end_time') or f"{prop['date']}T12:15:00Z"
+            dur_m = float(patch_data.get('duration_minutes') or round((et_ts - st_ts) / 60.0, 1))
+            dist_m = float(patch_data.get('distance_km') or 1.0) * 1000.0
+            d_str = patch_data.get('date') or prop['date']
+            slat, slng = patch_data.get('start_lat'), patch_data.get('start_lng')
+            elat, elng = patch_data.get('end_lat'), patch_data.get('end_lng')
+            path_pts = json.dumps([[slat, slng], [elat, elng]]) if (slat is not None and elat is not None) else None
+            c.execute(
+                """
+                INSERT INTO segments (
+                    segment_type, activity_type, start_time, end_time, start_ts, end_ts,
+                    duration_minutes, distance_meters, date, year, month, day,
+                    latitude, longitude, end_lat, end_lng, path_points_json,
+                    has_snapped_path, hierarchy_level, source
+                ) VALUES (
+                    'activity', 'IN_TAXI', ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    0, 0, 'LYFT_ARCHIVE'
+                );
+                """,
+                (
+                    st_iso, et_iso, st_ts, et_ts,
+                    dur_m, dist_m, d_str, int(d_str[:4]), int(d_str[5:7]), int(d_str[8:10]),
+                    slat, slng, elat, elng, path_pts,
+                ),
+            )
+
+        if affected_pids:
+            recompute_place_aggregates(conn, affected_pids)
+
+        # Record immutable ACCEPT decision in user_decisions
+        try:
+            from enrichment.layered_engine import LayeredTimelineEngine
+            le = LayeredTimelineEngine(self.db_path)
+            le.record_user_decision(
+                conn,
+                decision_type="ACCEPT_PROPOSAL",
+                action=action,
+                date_str=prop["date"],
+                start_ts=patch_data.get("start_ts"),
+                end_ts=patch_data.get("end_ts"),
+                target_place_id=patch_data.get("place_id"),
+                target_place_name=patch_data.get("resolved_poi_name") or patch_data.get("target_place"),
+                source_stream=prop["source"],
+                patch_data=patch_data,
+                decision_key=prop["decision_key"] if "decision_key" in prop.keys() else None,
+            )
+        except Exception:
+            pass
+
+        # Update proposal state
+        c.execute("""
+        UPDATE fix_proposals
+        SET status = 'ACCEPTED', applied_at = datetime('now')
+        WHERE id = ?;
+        """, (proposal_id,))
+
+        conn.commit()
+        conn.close()
+        return True
+
+    def reject_fix_proposal(self, proposal_id: int) -> bool:
+        """Rejects a proposed fix without modifying baseline data and records user_decision."""
+        conn = get_db_connection(self.db_path)
+        try:
+            c = conn.cursor()
+            c.execute("SELECT * FROM fix_proposals WHERE id = ?;", (proposal_id,))
+            prop = c.fetchone()
+            if prop:
+                try:
+                    patch_data = json.loads(prop["patch_data_json"]) if prop["patch_data_json"] else {}
+                    from enrichment.layered_engine import LayeredTimelineEngine
+                    le = LayeredTimelineEngine(self.db_path)
+                    le.record_user_decision(
+                        conn,
+                        decision_type="REJECT_PROPOSAL",
+                        action=prop["proposed_action"],
+                        date_str=prop["date"],
+                        start_ts=patch_data.get("start_ts"),
+                        end_ts=patch_data.get("end_ts"),
+                        target_place_id=patch_data.get("place_id"),
+                        target_place_name=patch_data.get("resolved_poi_name") or patch_data.get("target_place"),
+                        source_stream=prop["source"],
+                        patch_data=patch_data,
+                        decision_key=prop["decision_key"] if "decision_key" in prop.keys() else None,
+                    )
+                except Exception:
+                    pass
+            c.execute("""
+            UPDATE fix_proposals
+            SET status = 'REJECTED'
+            WHERE id = ?;
+            """, (proposal_id,))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+if __name__ == "__main__":
+    engine = TimelineEnrichmentEngine()
+    print("Timeline Enrichment Engine successfully initialized.")

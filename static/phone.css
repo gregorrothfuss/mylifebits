@@ -1,0 +1,285 @@
+@layer reset, tokens, base, components, utilities;
+
+@layer reset {
+  html, body, header, main, nav, div, span, button, input, a, img {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@layer tokens {
+  :root {
+    color-scheme: dark;
+    --bg: #0b0f19;
+    --panel: #131a2a;
+    --border: #243049;
+    --text: #f1f5f9;
+    --muted: #cbd5e1;
+    --accent: #3b82f6;
+    --green: #22c55e;
+  }
+}
+
+@layer base {
+  body {
+    background: radial-gradient(circle at 50% 20%, #172036 0%, #090d16 100%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+}
+
+@layer components {
+  .topbar {
+    height: 48px;
+    background: rgba(19, 26, 42, 0.92);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    backdrop-filter: blur(8px);
+    z-index: 10;
+    gap: 12px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  }
+
+  .status-dot.online {
+    background: var(--green);
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    background: #1e293b;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .btn:hover {
+    background: #28354d;
+    border-color: #3b4d71;
+  }
+
+  .btn:focus-visible,
+  .nav-btn:focus-visible,
+  .date-input:focus-visible,
+  .screen-viewport:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+  }
+
+  .btn.primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #ffffff;
+  }
+
+  .btn.primary:hover {
+    background: #1d4ed8;
+  }
+
+  .date-input {
+    background: #0f172a;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color-scheme: dark;
+  }
+
+  .stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .phone-chassis {
+    position: relative;
+    height: min(calc(100dvh - 78px), 920px);
+    aspect-ratio: 1080 / 2400;
+    background: #05070b;
+    border-radius: 38px;
+    padding: 10px;
+    box-shadow:
+      0 24px 60px rgba(0, 0, 0, 0.75),
+      0 0 0 2px #2b3548,
+      inset 0 0 4px rgba(255, 255, 255, 0.12);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .camera-punch {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #000000;
+    border: 1px solid #1e293b;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  .screen-viewport {
+    flex: 1;
+    width: 100%;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    background: #000000;
+    cursor: pointer;
+    touch-action: none;
+  }
+
+  #screen-img {
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+    display: block;
+    pointer-events: none;
+  }
+
+  .touch-ripple {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(59, 130, 246, 0.9);
+    background: rgba(59, 130, 246, 0.28);
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 6;
+  }
+
+  .touch-ripple.animate {
+    animation: rippleAnim 0.35s ease-out forwards;
+  }
+
+  @keyframes rippleAnim {
+    0% { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1.35); opacity: 0; }
+  }
+
+  .nav-bar {
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding-top: 6px;
+  }
+
+  .nav-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 15px;
+    cursor: pointer;
+    padding: 4px 18px;
+    border-radius: 8px;
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .nav-btn:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .fps-badge {
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn,
+    .nav-btn,
+    .toast {
+      transition: none;
+    }
+    .touch-ripple.animate {
+      animation: none;
+    }
+  }
+}
+
+@layer utilities {
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}

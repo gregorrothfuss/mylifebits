@@ -1,0 +1,61 @@
+[project]
+name = "mylifebits"
+version = "0.1.0"
+description = "A privacy-first personal location timeline viewer, Takeout ingestion engine, and life archive."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "MyLifeBits Contributors" }
+]
+dependencies = [
+    "cramjam>=2.11.0",
+    "numpy>=1.26.0",
+    "pillow>=11.3.0",
+    "playwright>=1.60.0",
+    "s2sphere>=0.2.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*", "enrichment*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+explicit_package_bases = true
+ignore_missing_imports = true
+check_untyped_defs = false
+exclude = [
+    "^backups/",
+    "^scratch/",
+    "^data/",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

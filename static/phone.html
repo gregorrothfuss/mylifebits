@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Android Device Companion — Live ADB Control</title>
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="/phone.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="status-dot" id="status-dot" aria-hidden="true"></span>
+      <span>ADB Live Companion</span>
+      <span class="fps-badge" id="fps-badge">Connecting...</span>
+    </div>
+
+    <div class="toolbar">
+      <label for="jump-date-input" class="visually-hidden">Timeline Date</label>
+      <input type="date" id="jump-date-input" class="date-input">
+      <button type="button" class="btn primary" id="btn-jump-date" title="Navigate Google Maps Timeline to date">
+        <i class="fa-solid fa-calendar-day" aria-hidden="true"></i> Jump Date
+      </button>
+      <button type="button" class="btn" id="btn-open-timeline" title="Launch Google Maps Timeline">
+        <i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> Open Timeline
+      </button>
+      <button type="button" class="btn" id="btn-wake" title="Wake &amp; Unlock Screen">
+        <i class="fa-solid fa-bolt" aria-hidden="true"></i> Wake
+      </button>
+      <button type="button" class="btn" id="btn-Screenshot" title="Force Refresh Frame">
+        <i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh
+      </button>
+      <a href="/" class="btn" style="text-decoration: none;" title="Back to Studio">
+        <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Studio
+      </a>
+    </div>
+  </header>
+
+  <main class="stage">
+    <div class="phone-chassis" id="phone-chassis">
+      <div class="camera-punch" aria-hidden="true"></div>
+      <div class="screen-viewport" id="screen-viewport" tabindex="0" role="application" aria-label="Interactive Android device screen">
+        <img id="screen-img" alt="Device Live Screen" decoding="async" draggable="false">
+        <div class="touch-ripple" id="touch-ripple" aria-hidden="true"></div>
+      </div>
+      <nav class="nav-bar" aria-label="Android system navigation">
+        <button type="button" class="nav-btn" id="nav-back" aria-label="Android Back" title="Android Back (Esc)">
+          <i class="fa-solid fa-caret-left" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="nav-btn" id="nav-home" aria-label="Android Home" title="Android Home">
+          <i class="fa-regular fa-circle" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="nav-btn" id="nav-recents" aria-label="Recent Apps" title="Recent Apps">
+          <i class="fa-regular fa-square" aria-hidden="true"></i>
+        </button>
+      </nav>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">Action dispatched</div>
+
+  <script type="module" src="/js/phone.js"></script>
+</body>
+</html>

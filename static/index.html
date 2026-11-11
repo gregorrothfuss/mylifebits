@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timeline Studio &amp; Health Engine</title>
+
+  <link rel="preload" href="/vendor/fontawesome/webfonts/fa-solid-900.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+      <div class="nav-brand">
+        <div class="logo-icon" aria-hidden="true"><i class="fa-solid fa-compass-drafting"></i></div>
+        <div class="brand-text">
+          <h1>Timeline Studio</h1>
+          <span class="brand-sub">Semantic Location Engine</span>
+        </div>
+      </div>
+
+      <!-- Universal Global Search Bar -->
+      <search class="global-search-container">
+        <div class="global-search-wrapper" id="global-search-anchor">
+          <i class="fa-solid fa-magnifying-glass search-icon" aria-hidden="true"></i>
+          <label for="global-search-input" class="visually-hidden">Search places, dates, and companions</label>
+          <input type="text" id="global-search-input" placeholder="Search places, dates, companions..." autocomplete="off">
+          <span class="search-shortcut-badge" aria-hidden="true"><i class="fa-solid fa-command"></i> ⌘K</span>
+          <button type="button" id="global-search-clear" class="search-clear-btn" aria-label="Clear search" style="display:none;"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+        <div id="global-search-dropdown" class="global-search-dropdown" popover="manual"></div>
+      </search>
+
+      <nav aria-label="Workspace navigation">
+        <div class="nav-tabs" role="tablist" aria-label="Workspace views">
+          <button type="button" role="tab" id="tabbtn-timeline" aria-selected="true" aria-controls="tab-timeline" tabindex="0" class="tab-btn active" data-tab="timeline"><i class="fa-solid fa-route" aria-hidden="true"></i> Timeline</button>
+          <button type="button" role="tab" id="tabbtn-calendar" aria-selected="false" aria-controls="tab-calendar" tabindex="-1" class="tab-btn" data-tab="calendar"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i> Calendar</button>
+          <button type="button" role="tab" id="tabbtn-activities" aria-selected="false" aria-controls="tab-activities" tabindex="-1" class="tab-btn" data-tab="activities"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> Activities</button>
+          <button type="button" role="tab" id="tabbtn-trips" aria-selected="false" aria-controls="tab-trips" tabindex="-1" class="tab-btn" data-tab="trips"><i class="fa-solid fa-plane-departure" aria-hidden="true"></i> Trips <span id="badge-trips" class="pill-badge purple">0</span></button>
+          <button type="button" role="tab" id="tabbtn-places" aria-selected="false" aria-controls="tab-places" tabindex="-1" class="tab-btn" data-tab="places"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Places <span id="badge-places" class="pill-badge blue">0</span></button>
+          <button type="button" role="tab" id="tabbtn-diagnostics" aria-selected="false" aria-controls="tab-diagnostics" tabindex="-1" class="tab-btn" data-tab="diagnostics"><i class="fa-solid fa-stethoscope" aria-hidden="true"></i> Diagnostics</button>
+          <button type="button" role="tab" id="tabbtn-heatmap" aria-selected="false" aria-controls="tab-heatmap" tabindex="-1" class="tab-btn" data-tab="heatmap"><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> Heatmap</button>
+          <button type="button" role="tab" id="tabbtn-fixes" aria-selected="false" aria-controls="tab-fixes" tabindex="-1" class="tab-btn" data-tab="fixes"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Fixes <span id="badge-fixes" class="pill-badge red">0</span></button>
+        </div>
+      </nav>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+
+      <!-- TAB 1: DAILY TIMELINE -->
+      <section id="tab-timeline" role="tabpanel" aria-labelledby="tabbtn-timeline" class="tab-panel active">
+        <div class="timeline-layout">
+          <!-- Left Itinerary Sidebar -->
+          <div class="itinerary-sidebar">
+            <div id="timeline-origin-banner" class="timeline-origin-banner" hidden style="display:none;"></div>
+            <div class="date-navigator card">
+              <div class="date-controls">
+                <button type="button" id="btn-prev-day" class="icon-btn" aria-label="Previous Day" title="Previous Day"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+                <label for="date-picker" class="visually-hidden">Selected Timeline Date</label>
+                <input type="date" id="date-picker">
+                <button type="button" id="btn-next-day" class="icon-btn" aria-label="Next Day" title="Next Day"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+                <button type="button" id="btn-jump-today" class="icon-btn" style="margin-left:4px;" aria-label="Jump to Today" title="Jump to Today"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i></button>
+              </div>
+              <div class="day-stats-bar">
+                <span id="day-summary-text">Loading day itinerary...</span>
+              </div>
+              <!-- 24-Hour Visual Time Scrubber -->
+              <div class="scrubber-container" title="24-Hour Timeline Bar (Visits, Travel, Gaps)">
+                <div class="scrubber-timeline" id="scrubber-bar"></div>
+                <div class="scrubber-labels">
+                  <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Segment Cards List -->
+            <div class="itinerary-cards" id="itinerary-container">
+              <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Loading Itinerary...</div>
+            </div>
+          </div>
+
+          <!-- Right Map Panel -->
+          <div class="map-panel">
+            <div id="map"></div>
+
+            <!-- Map Overlay Controls -->
+            <div class="map-floating-controls">
+              <div class="control-group">
+                <div class="map-style-selector-wrap" title="Change Base Map Style">
+                  <i class="fa-solid fa-layer-group map-style-icon" aria-hidden="true"></i>
+                  <label for="select-map-style" class="visually-hidden">Timeline Map Style</label>
+                  <select class="map-style-select" id="select-map-style" aria-label="Select Map Style">
+                    <option value="google_roads">🗺️ Google Maps</option>
+                    <option value="google_terrain">⛰️ Google Terrain</option>
+                    <option value="google_hybrid">🛰️ Google Hybrid</option>
+                    <option value="google_satellite">🌍 Satellite</option>
+                    <option value="esri_street">🏛️ Esri Street</option>
+                    <option value="osm">📜 Classic OSM</option>
+                  </select>
+                </div>
+              </div>
+              <div class="map-legend">
+                <span class="legend-item"><span class="color-dot visit"></span> Visit</span>
+                <span class="legend-item"><span class="color-dot drive"></span> Drive</span>
+                <span class="legend-item"><span class="color-dot walk"></span> Walk</span>
+                <span class="legend-item"><span class="color-dot cycle"></span> Cycle</span>
+                <span class="legend-item"><span class="color-dot transit"></span> Transit</span>
+                <span class="legend-item"><span class="color-dot flight"></span> Flight</span>
+                <span class="legend-item"><span class="color-dot gap"></span> Gap</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Embedded Android GMM Side-by-Side Comparator Panel -->
+          <div id="gmm-side-panel" class="gmm-comparator-panel" hidden style="display:none;">
+            <div class="gmm-panel-header">
+              <div class="gmm-header-left">
+                <div class="device-status-badge"><span class="device-dot"></span> <span id="gmm-device-name">Android Device (Live ADB)</span></div>
+                <span id="gmm-active-date" class="gmm-date-badge">--</span>
+              </div>
+              <div class="gmm-header-actions">
+                <button type="button" id="btn-gmm-sync-day" class="btn btn-sm btn-primary" title="Intent device straight to active Studio date"><i class="fa-solid fa-bolt" aria-hidden="true"></i> Intent Date</button>
+                <button type="button" id="btn-gmm-refresh" class="icon-btn" aria-label="Refresh Live Screen" title="Refresh Live Screen"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+                <button type="button" id="btn-gmm-close" class="icon-btn" aria-label="Close GMM Panel" title="Close GMM Panel"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+              </div>
+            </div>
+
+            <div class="gmm-panel-body">
+              <div class="gmm-screen-section">
+                <div class="gmm-screen-container" id="gmm-screen-box">
+                  <img id="gmm-screen-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/api/device/screen" alt="Live Android GMM Screen">
+                  <div id="gmm-screen-spinner" class="gmm-spinner" style="display:none;"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></div>
+                </div>
+                <div class="gmm-screen-toolbar">
+                  <button type="button" id="btn-gmm-key-back" class="btn btn-xs btn-secondary" title="Android Back Button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Back</button>
+                  <button type="button" id="btn-gmm-key-home" class="btn btn-xs btn-secondary" title="Android Home Button"><i class="fa-solid fa-house" aria-hidden="true"></i> Home</button>
+                  <button type="button" id="btn-gmm-open-cal" class="btn btn-xs btn-secondary" title="Open GMM Calendar Picker"><i class="fa-solid fa-calendar" aria-hidden="true"></i> Calendar</button>
+                  <label class="stream-toggle-label" for="gmm-auto-refresh">
+                    <input type="checkbox" id="gmm-auto-refresh" checked> Live Stream (2s)
+                  </label>
+                </div>
+              </div>
+
+              <div class="gmm-comparison-section">
+                <div class="gmm-comp-header">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="fa-solid fa-code-compare" style="color:var(--accent-purple);" aria-hidden="true"></i>
+                    <h4 style="margin:0;font-size:14px;font-weight:700;">Studio vs GMM Diff</h4>
+                  </div>
+                  <span id="gmm-discrepancy-badge" class="pill-badge red">0 Issues</span>
+                </div>
+                <p class="gmm-comp-hint">Compare Studio vs on-device GMM segments for the selected day. Select your preferred version to resolve differences.</p>
+                <div id="gmm-comparison-list" class="gmm-comparison-list">
+                  <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Loading comparison...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: MULTI-DAY CALENDAR MATRIX -->
+      <section id="tab-calendar" role="tabpanel" aria-labelledby="tabbtn-calendar" class="tab-panel" hidden>
+        <div class="calendar-layout card">
+          <div class="calendar-header-bar">
+            <div class="cal-nav-group">
+              <button type="button" id="btn-cal-prev-week" class="icon-btn" aria-label="Previous Week" title="Previous Week"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+              <label for="cal-date-picker" class="visually-hidden">Calendar Week Focus Date</label>
+              <input type="date" id="cal-date-picker">
+              <button type="button" id="btn-cal-next-week" class="icon-btn" aria-label="Next Week" title="Next Week"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+              <span id="cal-range-label" class="cal-range-title">Loading Calendar Matrix...</span>
+            </div>
+
+            <div class="cal-quick-jumps" id="cal-quick-jumps">
+              <span class="quick-label">Milestones:</span>
+              <button type="button" class="cal-jump-btn" id="cal-jump-today-btn">Today</button>
+            </div>
+
+            <div class="cal-legend-bar">
+              <div class="cal-legend-pill home"><span class="legend-box"></span> Home</div>
+              <div class="cal-legend-pill work"><span class="legend-box"></span> Work / School</div>
+              <div class="cal-legend-pill poi"><span class="legend-box"></span> Places &amp; POIs</div>
+              <div class="cal-legend-pill transit"><span class="legend-box"></span> Travel &amp; Transit</div>
+              <div class="cal-legend-pill gap-pill"><span class="legend-box gap-box"></span> ⚠️ Gaps</div>
+              <div class="cal-legend-pill anomaly-pill"><span class="legend-box anomaly-box"></span> 🚨 Oddities / Anomalies</div>
+            </div>
+          </div>
+
+          <div class="calendar-matrix-wrapper">
+            <div class="time-axis" id="cal-time-axis"></div>
+            <div class="days-columns-grid" id="cal-days-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: ACTIVITIES & INSIGHTS -->
+      <section id="tab-activities" role="tabpanel" aria-labelledby="tabbtn-activities" class="tab-panel" hidden>
+        <div class="activities-container" style="max-width:1400px;margin:0 auto;padding:20px;">
+          <div class="activities-header card" style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 20px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:40px;height:40px;border-radius:10px;background:rgba(59,130,246,0.15);color:var(--accent-blue);display:flex;align-items:center;justify-content:center;font-size:18px;">
+                <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+              </div>
+              <div>
+                <h2 style="margin:0;font-size:18px;font-weight:700;color:var(--text-main);">Activity Summaries &amp; Insights</h2>
+                <span class="sub-text" id="activities-period-sub">Distance and time breakdowns across your authentic timeline movements</span>
+              </div>
+            </div>
+            <div class="activities-period-pills" id="activities-period-pills-container" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+
+          <div class="activities-hero-grid" id="activities-hero-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:20px;"></div>
+
+          <div class="card" style="margin-bottom:20px;padding:20px;">
+            <h3 style="margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+              <i class="fa-solid fa-route" style="color:var(--accent-blue);" aria-hidden="true"></i> Travel Mode Breakdown
+            </h3>
+            <div class="mode-progress-bar" id="mode-progress-bar" style="display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--bg-main);margin-bottom:16px;"></div>
+            <div class="mode-cards-grid" id="mode-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:12px;"></div>
+          </div>
+
+          <div class="card" style="margin-bottom:20px;padding:20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:36px;height:36px;border-radius:8px;background:rgba(245,158,11,0.15);color:#b45309;display:flex;align-items:center;justify-content:center;font-size:16px;">
+                  <i class="fa-solid fa-gem" aria-hidden="true"></i>
+                </div>
+                <h3 style="margin:0;font-size:15px;font-weight:700;color:var(--text-main);">Milestones &amp; Highlights</h3>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-refresh-activity-nuggets">
+                <i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh Nuggets
+              </button>
+            </div>
+            <div class="nuggets-grid" id="activities-nuggets-container" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:14px;"></div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(360px, 1fr));gap:20px;">
+            <div class="card" style="padding:20px;">
+              <h3 style="margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-star" style="color:#d97706;" aria-hidden="true"></i> Top Visited Venues
+              </h3>
+              <div id="activities-top-places" style="display:flex;flex-direction:column;gap:8px;"></div>
+            </div>
+
+            <div class="card" style="padding:20px;">
+              <h3 style="margin:0 0 12px 0;font-size:15px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-person-snowboarding" style="color:#7e22ce;" aria-hidden="true"></i> Rare &amp; Exotic Micro-Adventures
+              </h3>
+              <div id="activities-rare-modes" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: TRIPS & 3D FLYTHROUGH -->
+      <section id="tab-trips" role="tabpanel" aria-labelledby="tabbtn-trips" class="tab-panel" hidden>
+        <div class="trips-container">
+          <div class="passport-banner card">
+            <div class="passport-hero-row">
+              <div class="passport-title-box">
+                <div class="passport-icon"><i class="fa-solid fa-passport" aria-hidden="true"></i></div>
+                <h2 style="margin:0;">Travel Passport</h2>
+              </div>
+              <div class="passport-pills-row">
+                <div class="stat-pill" title="Total equivalent orbits around Earth">
+                  <span class="stat-lbl">Earth Orbits</span>
+                  <span id="stat-earth-orbits" class="stat-val purple">0x</span>
+                </div>
+                <div class="stat-pill" title="Total commercial flights taken">
+                  <span class="stat-lbl">Total Flights</span>
+                  <span id="stat-total-flights" class="stat-val blue">0</span>
+                </div>
+                <div class="stat-pill" title="Total distinct countries and sovereign territories">
+                  <span class="stat-lbl">Countries</span>
+                  <span id="stat-total-countries" class="stat-val green">0</span>
+                </div>
+                <div class="stat-pill" title="Total multi-day expeditions away from home">
+                  <span class="stat-lbl">Expeditions</span>
+                  <span id="stat-total-trips" class="stat-val yellow">0</span>
+                </div>
+              </div>
+            </div>
+            <div class="country-pills-scroll" id="country-pills-container"></div>
+          </div>
+
+          <div class="nuggets-section card" style="margin-bottom: 20px;">
+            <div class="nuggets-header-row" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:36px;height:36px;border-radius:10px;background:rgba(245,158,11,0.15);color:#b45309;display:flex;align-items:center;justify-content:center;font-size:18px;">
+                  <i class="fa-solid fa-gem" aria-hidden="true"></i>
+                </div>
+                <h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);">Milestones &amp; Highlights</h3>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-refresh-nuggets" title="Re-scan database for new curiosities">
+                <i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh Nuggets
+              </button>
+            </div>
+
+            <div class="nuggets-grid" id="nuggets-grid-container" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:14px;">
+              <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Mining Archive Nuggets...</div>
+            </div>
+
+            <div class="rare-modes-strip" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-color);">
+              <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:8px;">
+                <i class="fa-solid fa-person-snowboarding" aria-hidden="true"></i> Rare &amp; Exotic Micro-Adventures Recorded in Archive
+              </div>
+              <div class="rare-modes-row" id="rare-modes-container" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+            </div>
+          </div>
+
+          <div class="trips-header card">
+            <div class="trips-title-row">
+              <div>
+                <h3 id="trips-filter-heading" style="margin:0 0 4px 0;font-size:16px;"><i class="fa-solid fa-earth-americas" style="color:var(--accent-purple);" aria-hidden="true"></i> All Expeditions &amp; Journeys</h3>
+                <span class="sub-text" id="trips-count-sub">Loading trips...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="trips-grid" id="trips-grid-container">
+            <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Loading Trips &amp; Expeditions...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: PLACES CATALOG & INTERACTIVE MAP -->
+      <section id="tab-places" role="tabpanel" aria-labelledby="tabbtn-places" class="tab-panel" hidden>
+        <div class="places-container">
+          <div class="places-map-card card" id="places-map-section" style="margin-bottom:14px;padding:12px;">
+            <div class="places-map-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+              <div class="places-map-title" style="display:flex;align-items:center;gap:8px;">
+                <i class="fa-solid fa-map-location-dot" style="color:var(--accent-blue);font-size:16px;" aria-hidden="true"></i>
+                <h3 style="font-size:13px;font-weight:600;margin:0;color:var(--text-main);">Places Map</h3>
+              </div>
+              <div class="places-map-actions" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <div class="map-style-selector-wrap" title="Change Base Map Style">
+                  <i class="fa-solid fa-layer-group map-style-icon" aria-hidden="true"></i>
+                  <label for="select-places-map-style" class="visually-hidden">Places Map Style</label>
+                  <select class="map-style-select" id="select-places-map-style" aria-label="Select Places Map Style">
+                    <option value="google_roads">🗺️ Google Maps</option>
+                    <option value="google_terrain">⛰️ Google Terrain</option>
+                    <option value="google_hybrid">🛰️ Google Hybrid</option>
+                    <option value="google_satellite">🌍 Satellite</option>
+                    <option value="esri_street">🏛️ Esri Street</option>
+                    <option value="osm">📜 Classic OSM</option>
+                  </select>
+                </div>
+                <button type="button" id="btn-places-map-reset" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Reset to global view"><i class="fa-solid fa-earth-americas" aria-hidden="true"></i> World</button>
+                <button type="button" id="btn-places-map-nyc" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Focus on East Coast"><i class="fa-solid fa-city" aria-hidden="true"></i> East Coast</button>
+                <button type="button" id="btn-places-map-ch" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Focus on Europe"><i class="fa-solid fa-mountain" aria-hidden="true"></i> Europe</button>
+                <button type="button" id="btn-places-map-ca" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 8px;" title="Focus on West Coast"><i class="fa-solid fa-sun" aria-hidden="true"></i> West Coast</button>
+              </div>
+            </div>
+            <div class="places-map-canvas-wrapper" style="position:relative;height:380px;border-radius:8px;overflow:hidden;border:1px solid var(--border-color);">
+              <div id="places-map" style="width:100%;height:100%;"></div>
+              <div id="places-map-badge" class="places-map-floating-badge" style="position:absolute;bottom:10px;left:10px;z-index:1000;background:rgba(15,23,42,0.88);color:#fff;padding:4px 10px;border-radius:20px;font-size:11.5px;font-weight:600;backdrop-filter:blur(4px);pointer-events:none;">
+                <i class="fa-solid fa-location-dot" style="color:#60a5fa;" aria-hidden="true"></i> <span id="places-map-count-label">Loading places...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="places-toolbar card">
+            <div class="category-pills-row" id="category-pills-container">
+              <button type="button" class="cat-pill active" data-cat="ALL">All Categories</button>
+            </div>
+
+            <div class="places-filters-secondary">
+              <div class="filter-group">
+                <label for="places-city-select"><i class="fa-solid fa-city" aria-hidden="true"></i> City:</label>
+                <select id="places-city-select">
+                  <option value="ALL">All Cities &amp; Regions</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="places-era-select"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Era:</label>
+                <select id="places-era-select">
+                  <option value="ALL">All Time</option>
+                  <option value="2025-2026">2025–Present (On-Device)</option>
+                  <option value="2020-2024">2020–2024 (Late Cloud)</option>
+                  <option value="2013-2019">2013–2019 (Classic Takeout)</option>
+                  <option value="2008-2012">2008–2012 (Early Latitude)</option>
+                  <option value="2000-2007">2000–2007 (Early Web)</option>
+                  <option value="1900-1999">Pre-2000 Archive</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="places-cadence-select"><i class="fa-solid fa-repeat" aria-hidden="true"></i> Cadence:</label>
+                <select id="places-cadence-select">
+                  <option value="ALL">All Cadences</option>
+                  <option value="haunts">★ Haunts (5+ visits)</option>
+                  <option value="dormant">🌙 Dormant (&gt;1 yr ago)</option>
+                  <option value="one_off">✨ One-Offs (1 visit)</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="places-dwell-select"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Dwell:</label>
+                <select id="places-dwell-select">
+                  <option value="ALL">Any Dwell</option>
+                  <option value="quick">☕ Quick Stop (≤30m)</option>
+                  <option value="deep">💻 Deep Dwell (≥1h)</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="places-sort-select"><i class="fa-solid fa-arrow-down-wide-short" aria-hidden="true"></i> Sort by:</label>
+                <select id="places-sort-select">
+                  <option value="visits">Most Visited</option>
+                  <option value="rating">Highest Rated (Reviews)</option>
+                  <option value="name">Name (A-Z)</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label class="checkbox-label" for="places-reviewed-only" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;">
+                  <input type="checkbox" id="places-reviewed-only">
+                  <span>Reviewed Only</span>
+                </label>
+              </div>
+
+              <div class="filter-group" style="margin-left:auto;">
+                <button type="button" id="btn-toggle-places-map" class="btn btn-sm btn-secondary" style="font-size:11px;padding:4px 10px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;" title="Toggle Places Map"><i class="fa-solid fa-map" aria-hidden="true"></i> Map</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="places-grid" id="places-grid-container">
+            <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Loading Places Catalog...</div>
+          </div>
+
+          <div class="life-periods-container card" id="life-periods-section" style="margin-top:24px;">
+            <div class="life-periods-header">
+              <div class="life-periods-title">
+                <i class="fa-solid fa-timeline" style="color:var(--accent-purple);font-size:18px;" aria-hidden="true"></i>
+                <h3 id="life-periods-heading" style="font-size:14px;font-weight:600;margin:0;">Life Chronology</h3>
+              </div>
+            </div>
+            <div class="life-periods-track" id="life-periods-track-container">
+              <div class="loading-spinner"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Loading Chronology...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: GPS OUTLIERS & BREADCRUMBS -->
+      <section id="tab-outliers" role="tabpanel" aria-label="GPS Outliers" class="tab-panel" hidden>
+        <div class="outliers-container">
+          <div class="outliers-header card">
+            <div class="outliers-title-row">
+              <div>
+                <h2 style="margin:0;"><i class="fa-solid fa-satellite-dish" aria-hidden="true"></i> GPS Outliers &amp; Anomalies</h2>
+              </div>
+              <div class="outliers-header-actions">
+                <button type="button" id="btn-re-evaluate-outliers" class="action-btn" title="Refresh outlier evaluation"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh Anomalies</button>
+              </div>
+            </div>
+
+            <div class="outlier-metric-cards">
+              <div class="outlier-card red">
+                <div class="outlier-icon"><i class="fa-solid fa-bolt-lightning" aria-hidden="true"></i></div>
+                <div class="outlier-info">
+                  <span class="outlier-num" id="metric-teleport">0</span>
+                  <span class="outlier-lbl">Teleportation Jumps (&gt;950 km/h)</span>
+                </div>
+              </div>
+              <div class="outlier-card orange">
+                <div class="outlier-icon"><i class="fa-solid fa-gauge-simple-high" aria-hidden="true"></i></div>
+                <div class="outlier-info">
+                  <span class="outlier-num" id="metric-velocity">0</span>
+                  <span class="outlier-lbl">Extreme Velocity Spikes (&gt;180 km/h)</span>
+                </div>
+              </div>
+              <div class="outlier-card yellow">
+                <div class="outlier-icon"><i class="fa-solid fa-arrows-split-up-and-left" aria-hidden="true"></i></div>
+                <div class="outlier-info">
+                  <span class="outlier-num" id="metric-multipath">0</span>
+                  <span class="outlier-lbl">Multipath Ping-Pong Bounces</span>
+                </div>
+              </div>
+              <div class="outlier-card purple">
+                <div class="outlier-icon"><i class="fa-solid fa-arrows-to-dot" aria-hidden="true"></i></div>
+                <div class="outlier-info">
+                  <span class="outlier-num" id="metric-scatter">0</span>
+                  <span class="outlier-lbl">Dwell Cluster Drift</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="outliers-table-card card">
+            <div class="table-toolbar">
+              <div class="filter-row">
+                <label for="outlier-filter-type">Filter Type:
+                  <select id="outlier-filter-type">
+                    <option value="ALL">All Anomalies</option>
+                    <option value="TELEPORTATION">Teleportation (&gt;950 km/h)</option>
+                    <option value="EXTREME_VELOCITY">Extreme Velocity (&gt;180 km/h)</option>
+                    <option value="MULTIPATH_BOUNCE">Multipath Ping-Pong Bounce</option>
+                    <option value="DWELL_SCATTER">Dwell Cluster Scatter</option>
+                  </select>
+                </label>
+                <span class="toolbar-hint">Click "Inspect on Map" to navigate to that day and inspect raw sensor breadcrumbs.</span>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Time</th>
+                    <th scope="col">Anomaly Type</th>
+                    <th scope="col">Velocity Spike</th>
+                    <th scope="col">Reason / Diagnosis</th>
+                    <th scope="col">Coordinates</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="outliers-table-body">
+                  <tr><td colspan="7" class="text-center">Loading GPS anomalies...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: TIMELINE DIAGNOSTICS & HEALTH -->
+      <section id="tab-diagnostics" role="tabpanel" aria-labelledby="tabbtn-diagnostics" class="tab-panel" hidden>
+        <div class="diagnostics-container">
+          <div class="diag-header-cards">
+            <div class="diag-card amber">
+              <div class="diag-icon"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></div>
+              <div class="diag-info">
+                <h3>Timeline Gaps</h3>
+                <span class="diag-num" id="diag-post-gaps">0</span>
+                <p>Missing intervals &gt; 15m where tracking dropped</p>
+              </div>
+            </div>
+            <div class="diag-card blue">
+              <div class="diag-icon"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></div>
+              <div class="diag-info">
+                <h3>Places Hydrated</h3>
+                <span class="diag-num">100%</span>
+                <p>All visits linked with verified names &amp; addresses</p>
+              </div>
+            </div>
+            <div class="diag-card purple">
+              <div class="diag-icon"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i></div>
+              <div class="diag-info">
+                <h3>Speed &amp; Teleportation Outliers</h3>
+                <span class="diag-num" id="diag-speed-outliers">0</span>
+                <p>Movement segments exceeding physical velocity limits</p>
+              </div>
+            </div>
+            <div class="diag-card green">
+              <div class="diag-icon"><i class="fa-solid fa-sitemap" aria-hidden="true"></i></div>
+              <div class="diag-info">
+                <h3>Nested Child Visits</h3>
+                <span class="diag-num" id="diag-child-visits">0</span>
+                <p>Stores/POIs validly nested in parent locations</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="diag-subtabs">
+            <button type="button" class="subtab-btn active" data-subtab="gaps-table">Timeline Gaps</button>
+            <button type="button" class="subtab-btn" data-subtab="speed-table">Speed Outliers</button>
+            <button type="button" class="subtab-btn" data-subtab="unconf-table">Unconfirmed Visits</button>
+          </div>
+
+          <div class="diag-table-card card">
+            <div id="gaps-table-view" class="subtab-content active">
+              <div class="table-toolbar">
+                <label for="gap-filter-duration">Filter by Duration:
+                  <select id="gap-filter-duration">
+                    <option value="0">All Gaps (&gt;15m)</option>
+                    <option value="1">Gaps &gt; 1 Hour</option>
+                    <option value="6">Gaps &gt; 6 Hours</option>
+                    <option value="24">Gaps &gt; 24 Hours</option>
+                  </select>
+                </label>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Duration</th>
+                      <th scope="col">Time Window</th>
+                      <th scope="col">Previous Location</th>
+                      <th scope="col">Next Location</th>
+                      <th scope="col">Distance Jump</th>
+                      <th scope="col">Raw Pings</th>
+                      <th scope="col">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="gaps-table-body">
+                    <tr><td colspan="8" class="text-center">Loading gaps...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="speed-table-view" class="subtab-content">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Activity Type</th>
+                      <th scope="col">Calculated Speed</th>
+                      <th scope="col">Distance</th>
+                      <th scope="col">Duration</th>
+                      <th scope="col">Description</th>
+                      <th scope="col">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="speed-table-body">
+                    <tr><td colspan="7" class="text-center">Loading speed anomalies...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="unconf-table-view" class="subtab-content">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Time</th>
+                      <th scope="col">Place ID</th>
+                      <th scope="col">Category</th>
+                      <th scope="col">City</th>
+                      <th scope="col">Probability</th>
+                      <th scope="col">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="unconf-table-body">
+                    <tr><td colspan="7" class="text-center">Loading unconfirmed places...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: WORLD HEATMAP -->
+      <section id="tab-heatmap" role="tabpanel" aria-labelledby="tabbtn-heatmap" class="tab-panel" hidden>
+        <div class="heatmap-container">
+          <div id="heatmap-map"></div>
+          <div class="heatmap-floating-info" style="display:flex;align-items:center;gap:12px;">
+            <h3 style="margin:0;"><i class="fa-solid fa-fire" aria-hidden="true"></i> Travel Heatmap</h3>
+            <div class="map-style-selector-wrap" title="Change Base Map Style">
+              <i class="fa-solid fa-layer-group map-style-icon" aria-hidden="true"></i>
+              <label for="select-heatmap-map-style" class="visually-hidden">Heatmap Base Map Style</label>
+              <select class="map-style-select" id="select-heatmap-map-style" aria-label="Select Heatmap Map Style">
+                <option value="google_roads">🗺️ Google Maps</option>
+                <option value="google_terrain">⛰️ Google Terrain</option>
+                <option value="google_hybrid">🛰️ Google Hybrid</option>
+                <option value="google_satellite">🌍 Satellite</option>
+                <option value="esri_street">🏛️ Esri Street</option>
+                <option value="osm">📜 Classic OSM</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: FIX PROPOSALS -->
+      <section id="tab-fixes" role="tabpanel" aria-labelledby="tabbtn-fixes" class="tab-panel" hidden>
+        <div class="fixes-split-container">
+          <div class="fixes-left-pane">
+            <div class="fixes-header-bar">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h2 style="margin:0;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;">
+                  <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--accent-blue);" aria-hidden="true"></i> Fix Proposals
+                </h2>
+                <span id="fixes-queue-count" class="tag-badge" style="font-weight:700;font-size:11px;">0 items</span>
+              </div>
+              <div class="fixes-toolbar" id="fixes-toolbar-container" style="margin-top:10px;"></div>
+            </div>
+            <div class="fixes-list-queue" id="fixes-list-container">
+              <div class="empty-state" style="padding:40px 20px;text-align:center;">
+                <i class="fa-solid fa-circle-notch fa-spin" style="font-size:24px;color:var(--accent-blue);" aria-hidden="true"></i>
+                <h4 style="margin-top:12px;color:var(--text-muted);">Loading proposals...</h4>
+              </div>
+            </div>
+            <div class="fixes-shortcuts-bar">
+              <span><kbd>▲</kbd><kbd>▼</kbd> Navigate</span>
+              <span><kbd>A</kbd> Accept</span>
+              <span><kbd>R</kbd> Reject</span>
+              <span><kbd>E</kbd> Edit</span>
+            </div>
+          </div>
+
+          <div class="fixes-right-pane" id="fixes-detail-pane">
+            <div class="fixes-detail-empty">
+              <div style="width:64px;height:64px;border-radius:50%;background:var(--bg-card);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;box-shadow:var(--shadow-sm);border:1px solid var(--border-subtle);">
+                <i class="fa-solid fa-hand-pointer" style="font-size:24px;color:var(--accent-blue);" aria-hidden="true"></i>
+              </div>
+              <h3 style="color:var(--text-main);font-size:16px;font-weight:600;margin-bottom:6px;">Select a Proposal</h3>
+              <p style="color:var(--text-muted);font-size:13px;max-width:340px;line-height:1.5;">Review timeline gap context, surrounding visits, and map previews instantly without leaving this view.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- DIALOG 1: Generic Segment Edit / Re-Infer Modal -->
+    <dialog id="modal-container" class="studio-dialog studio-dialog-medium" aria-labelledby="modal-title" closedby="any">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-title">Edit Details</h3>
+          <button type="button" id="modal-close-btn" class="icon-btn" aria-label="Close modal"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+        <div class="modal-body" id="modal-content"></div>
+      </div>
+    </dialog>
+
+    <!-- DIALOG 2: 3D Earth Route Ride-Along Player Modal -->
+    <dialog id="flythrough-modal" class="studio-dialog studio-dialog-fullscreen" aria-labelledby="earth-tour-location-title" closedby="closerequest">
+      <div class="earth-tour-modal-box">
+        <div class="earth-tour-top-bar">
+          <div class="earth-tour-title-wrap">
+            <span class="earth-kml-pill"><i class="fa-solid fa-earth-americas" aria-hidden="true"></i> 3D Earth Tour</span>
+            <span id="earth-tour-location-title" class="earth-tour-location-title">3D Route Tour</span>
+          </div>
+          <div class="earth-tour-top-actions">
+            <button type="button" id="btn-export-earth-kml" class="btn-earth-kml" title="Download Google Earth KML Tour">
+              <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Open in Google Earth (.kml)
+            </button>
+            <button type="button" id="btn-fly-close" class="btn-earth-close" aria-label="Close 3D Tour" title="Close 3D Tour"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+          </div>
+        </div>
+
+        <div class="earth-tour-viewport">
+          <div id="earth-tour-map" style="width:100%;height:100%;"></div>
+
+          <div id="earth-hud-card" class="earth-hud-card">
+            <div class="earth-hud-header">
+              <div class="earth-hud-mode-row">
+                <span id="hud-mode-icon" class="hud-mode-icon"><i class="fa-solid fa-route" aria-hidden="true"></i></span>
+                <h3 id="hud-activity-title" class="hud-title">Route Preview</h3>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <button type="button" id="btn-hud-replay" class="hud-replay-btn" aria-label="Replay route" title="Replay route from start">
+                  <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                </button>
+                <button type="button" id="btn-hud-close" class="hud-replay-btn" style="background:#fee2e2;color:#b91c1c;" aria-label="Exit 3D Mode" title="Exit 3D Mode (Esc)">
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+            <p id="hud-activity-desc" class="hud-desc">Select a day or trip to play 3D flythrough</p>
+
+            <div class="hud-metrics-strip">
+              <div class="hud-metric-pill">
+                <span class="hud-metric-label">SPEED</span>
+                <span id="hud-speed-val" class="hud-metric-value">0.0 <small>km/h</small></span>
+              </div>
+              <div class="hud-metric-pill">
+                <span class="hud-metric-label">PROGRESS</span>
+                <span id="hud-progress-val" class="hud-metric-value">0.0 / 0.0 <small>km</small></span>
+              </div>
+              <div class="hud-metric-pill">
+                <span class="hud-metric-label">BEARING</span>
+                <span id="hud-bearing-val" class="hud-metric-value">000° <small>N</small></span>
+              </div>
+            </div>
+
+            <div id="hud-waypoints-row" class="hud-waypoints-row">
+              <div class="hud-waypoint"><i class="fa-solid fa-location-dot" style="color:#ef4444;" aria-hidden="true"></i> <span id="hud-origin-name">Origin</span></div>
+              <i class="fa-solid fa-arrow-right hud-arrow" aria-hidden="true"></i>
+              <div class="hud-waypoint"><i class="fa-solid fa-flag-checkered" style="color:#22c55e;" aria-hidden="true"></i> <span id="hud-dest-name">Destination</span></div>
+            </div>
+          </div>
+
+          <div id="floating-hotspot-card" class="floating-hotspot-card hidden">
+            <div class="hotspot-badge"><i class="fa-solid fa-location-dot" aria-hidden="true"></i> <span id="hotspot-category">Place Stop</span></div>
+            <h4 id="hotspot-title" style="margin:4px 0 2px 0;font-size:15px;color:#1e293b;">Location Stop</h4>
+            <p id="hotspot-address" style="font-size:11px;color:#475569;margin:2px 0;"></p>
+            <p id="hotspot-time" style="font-size:10px;color:#475569;margin:2px 0;"></p>
+            <div id="hotspot-review-box" class="review-snippet-box hidden"></div>
+            <div style="margin-top:8px;display:flex;gap:8px;">
+              <a id="hotspot-streetview-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="font-size:11px;padding:4px 10px;text-decoration:none;border-radius:4px;display:inline-flex;align-items:center;gap:4px;">
+                <i class="fa-solid fa-street-view" aria-hidden="true"></i> Street View 360°
+              </a>
+            </div>
+          </div>
+
+          <div class="earth-tour-bottom-bar">
+            <div class="earth-tour-playback-controls">
+              <button type="button" id="btn-fly-play" class="btn-earth-play">
+                <i class="fa-solid fa-play" aria-hidden="true"></i> Play Ride
+              </button>
+
+              <div class="earth-camera-selector">
+                <label for="fly-camera-mode"><i class="fa-solid fa-video" aria-hidden="true"></i> View:</label>
+                <select id="fly-camera-mode" class="earth-select">
+                  <option value="chase" selected>🚁 3D Drone Follow (65°)</option>
+                  <option value="oblique">🏢 3D Earth Oblique (45°)</option>
+                  <option value="cockpit">🚴 First-Person Ride (75°)</option>
+                  <option value="topdown">🛰️ Satellite 2D (0°)</option>
+                </select>
+              </div>
+
+              <div class="earth-speed-selector">
+                <label for="fly-speed-select"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Speed:</label>
+                <select id="fly-speed-select" class="earth-select">
+                  <option value="1">1x Realtime</option>
+                  <option value="3" selected>3x Speed</option>
+                  <option value="6">6x Speed</option>
+                  <option value="12">12x Speed</option>
+                  <option value="25">25x Fast</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="earth-scrubber-wrap">
+              <label for="fly-scrubber-range" class="visually-hidden">3D Tour Progress</label>
+              <input type="range" id="fly-scrubber-range" min="0" max="100" value="0">
+              <span id="fly-progress-text" class="earth-progress-pct">0%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </dialog>
+  </div>
+
+  <!-- DIALOG 3: PHOTO LIGHTBOX MODAL -->
+  <dialog id="photo-lightbox-modal" class="studio-dialog photo-lightbox-dialog" aria-labelledby="lightbox-place-title" closedby="any">
+    <div class="lightbox-content-wrapper">
+      <button type="button" class="lightbox-close-btn" aria-label="Close photo lightbox" title="Close (Esc)"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      <button type="button" class="lightbox-nav-btn prev" id="lightbox-prev-btn" aria-label="Previous photo" title="Previous Photo (Left Arrow)"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+      <button type="button" class="lightbox-nav-btn next" id="lightbox-next-btn" aria-label="Next photo" title="Next Photo (Right Arrow)"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+
+      <div class="lightbox-image-box">
+        <img id="lightbox-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Timeline photo full resolution">
+      </div>
+
+      <div class="lightbox-caption-bar">
+        <div class="lightbox-info">
+          <h4 id="lightbox-place-title">Place Name</h4>
+          <p id="lightbox-review-text"></p>
+        </div>
+        <div class="lightbox-counter" id="lightbox-counter">1 / 1</div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- DIALOG 4: DUPLICATE PLACE COMPARISON MODAL -->
+  <dialog id="duplicate-compare-modal" class="studio-dialog studio-dialog-wide" aria-labelledby="dupe-modal-title" closedby="closerequest">
+    <div class="card studio-dialog-surface">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border-color);background:var(--bg-subtle);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(59,130,246,0.15);color:var(--accent-blue);display:flex;align-items:center;justify-content:center;font-size:18px;">
+            <i class="fa-solid fa-code-compare" aria-hidden="true"></i>
+          </div>
+          <div>
+            <h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);" id="dupe-modal-title">Duplicate Place Comparison</h3>
+            <span style="font-size:12px;color:var(--text-muted);" id="dupe-modal-subtitle">Review side-by-side attributes, map locations, and merge into canonical place</span>
+          </div>
+        </div>
+        <button type="button" class="btn-secondary" id="btn-close-dupe-modal" aria-label="Close comparison modal" style="width:32px;height:32px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;padding:20px;overflow-y:auto;flex:1;">
+        <div id="dupe-compare-columns" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;"></div>
+
+        <div style="border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:var(--bg-subtle);">
+          <div style="padding:8px 14px;background:var(--bg-subtle);border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:12px;font-weight:600;color:var(--text-main);"><i class="fa-solid fa-map-location-dot" style="color:var(--accent-blue);margin-right:6px;" aria-hidden="true"></i> Spatial Location &amp; Pin Comparison</span>
+            <span id="dupe-map-distance-badge" class="tag-badge" style="font-size:11px;font-family:var(--font-mono);">0m distance</span>
+          </div>
+          <div id="dupe-compare-map" style="height:260px;width:100%;"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 24px;border-top:1px solid var(--border-color);background:var(--bg-subtle);">
+        <button type="button" class="btn-secondary" id="btn-cancel-dupe-modal" style="font-size:12px;padding:8px 16px;cursor:pointer;">Keep Both as Separate</button>
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="btn-primary" id="btn-merge-dupe-action" style="background:var(--accent-green);font-size:12px;padding:8px 20px;cursor:pointer;font-weight:700;">
+            <i class="fa-solid fa-code-merge" aria-hidden="true"></i> Merge Duplicates into Canonical Place
+          </button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- DIALOG 5: EDIT PLACE & ASSIGN PLACE ID MODAL -->
+  <dialog id="edit-place-modal" class="studio-dialog studio-dialog-medium" aria-labelledby="edit-place-modal-title" closedby="closerequest">
+    <div class="card studio-dialog-surface">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-color);background:var(--bg-subtle);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(245,158,11,0.15);color:#b45309;display:flex;align-items:center;justify-content:center;font-size:18px;">
+            <i class="fa-solid fa-location-pen" aria-hidden="true"></i>
+          </div>
+          <div>
+            <h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);" id="edit-place-modal-title">Edit Place &amp; Assign Place ID</h3>
+            <span style="font-size:12px;color:var(--text-muted);">Update authentic Google Place ID, lat/lng coordinates, and address</span>
+          </div>
+        </div>
+        <button type="button" class="btn-secondary" id="btn-close-edit-place-modal" aria-label="Close edit place modal" style="width:32px;height:32px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      </div>
+
+      <form id="edit-place-form" style="padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;flex:1;">
+        <input type="hidden" id="edit-place-original-id" value="">
+        <input type="hidden" id="edit-place-proposal-id" value="">
+
+        <div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.3);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label for="edit-place-deeplink" style="font-size:12px;font-weight:700;color:var(--accent-blue);margin:0;display:flex;align-items:center;gap:6px;">
+              <i class="fa-solid fa-link" aria-hidden="true"></i> Paste Google Maps Link or Deep Link
+            </label>
+            <span id="deep-link-status" style="font-size:11px;font-weight:600;display:none;"></span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="edit-place-deeplink" class="input-field" placeholder="e.g. https://maps.app.goo.gl/..." style="flex:1;font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-main);">
+            <button type="button" id="btn-resolve-deeplink" class="btn-primary" style="padding:8px 14px;font-size:12px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px;" title="Resolve link, extract Place ID &amp; Coordinates">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Auto-Fill
+            </button>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);">Paste short links or full Google Maps URLs to extract the authentic Place ID, coordinates, and address automatically.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="edit-place-new-id" style="font-size:12px;font-weight:600;color:var(--text-main);margin-bottom:4px;display:block;">
+            <i class="fa-solid fa-fingerprint" style="color:var(--accent-blue);" aria-hidden="true"></i> Google Place ID (ChIJ...)
+          </label>
+          <input type="text" id="edit-place-new-id" class="input-field" placeholder="e.g. ChIJ..." style="width:100%;font-family:var(--font-mono);font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-subtle);color:var(--text-main);">
+        </div>
+
+        <div class="form-group">
+          <label for="edit-place-name" style="font-size:12px;font-weight:600;color:var(--text-main);margin-bottom:4px;display:block;">Place Name</label>
+          <input type="text" id="edit-place-name" class="input-field" placeholder="Venue or landmark name" required style="width:100%;font-size:13px;padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-subtle);color:var(--text-main);">
+        </div>
+
+        <div class="form-group">
+          <label for="edit-place-address" style="font-size:12px;font-weight:600;color:var(--text-main);margin-bottom:4px;display:block;">Full Address</label>
+          <input type="text" id="edit-place-address" class="input-field" placeholder="Street, City, Country" style="width:100%;font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-subtle);color:var(--text-main);">
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label for="edit-place-lat" style="font-size:12px;font-weight:600;color:var(--text-main);margin-bottom:4px;display:block;">Latitude</label>
+            <input type="number" step="any" id="edit-place-lat" class="input-field" placeholder="40.7128" style="width:100%;font-family:var(--font-mono);font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-subtle);color:var(--text-main);">
+          </div>
+          <div class="form-group">
+            <label for="edit-place-lng" style="font-size:12px;font-weight:600;color:var(--text-main);margin-bottom:4px;display:block;">Longitude</label>
+            <input type="number" step="any" id="edit-place-lng" class="input-field" placeholder="-74.0060" style="width:100%;font-family:var(--font-mono);font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-subtle);color:var(--text-main);">
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label for="edit-place-category" style="font-size:12px;font-weight:600;color:var(--text-main);margin-bottom:4px;display:block;">Category</label>
+            <select id="edit-place-category" style="width:100%;font-size:12px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-subtle);color:var(--text-main);">
+              <option value="Food & Drink">Food &amp; Drink</option>
+              <option value="Home & Residence">Home &amp; Residence</option>
+              <option value="Work & Office">Work &amp; Office</option>
+              <option value="Shopping">Shopping</option>
+              <option value="Travel & Transit">Travel &amp; Transit</option>
+              <option value="Services & Civic">Services &amp; Civic</option>
+              <option value="Arts & Entertainment">Arts &amp; Entertainment</option>
+              <option value="Health & Wellness">Health &amp; Wellness</option>
+              <option value="Education">Education</option>
+              <option value="Outdoors & Nature">Outdoors &amp; Nature</option>
+              <option value="Other / POI">Other / POI</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="edit-place-city" style="font-size:12px;font-weight:600;color:var(--text-main);margin-bottom:4px;display:block;">City</label>
+            <input type="text" id="edit-place-city" class="input-field" placeholder="City" style="width:100%;font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-subtle);color:var(--text-main);">
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:10px 14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2);border-radius:8px;">
+          <input type="checkbox" id="edit-place-relink" checked style="cursor:pointer;width:16px;height:16px;">
+          <label for="edit-place-relink" style="font-size:12px;color:var(--text-main);cursor:pointer;font-weight:500;">
+            Re-link all past timeline segments with this name to this Place ID &amp; coordinates
+          </label>
+        </div>
+      </form>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-top:1px solid var(--border-color);background:var(--bg-subtle);">
+        <button type="button" class="btn-secondary" id="btn-cancel-edit-place-modal" style="font-size:12px;padding:8px 16px;cursor:pointer;">Cancel</button>
+        <button type="button" class="btn-primary" id="btn-save-edit-place" style="background:var(--accent-green);font-size:12px;padding:8px 20px;cursor:pointer;font-weight:700;">
+          <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save &amp; Resolve Proposal
+        </button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- DIALOG 6: Place Full Visits History Modal -->
+  <dialog id="place-visits-modal" class="studio-dialog studio-dialog-medium" aria-labelledby="place-visits-title" closedby="any">
+    <div class="modal-card studio-dialog-surface">
+      <div class="modal-header" style="padding:16px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;background:var(--bg-subtle);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(59,130,246,0.15);color:var(--accent-blue);display:flex;align-items:center;justify-content:center;font-size:16px;">
+            <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+          </div>
+          <div>
+            <h3 id="place-visits-title" style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);">Place Visits</h3>
+            <span id="place-visits-subtitle" class="sub-text" style="font-size:12px;color:var(--text-muted);">All recorded visits from your authentic timeline</span>
+          </div>
+        </div>
+        <button type="button" id="btn-close-place-visits" class="icon-btn" aria-label="Close place visits" style="background:transparent;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      </div>
+      <div id="place-visits-body" style="padding:16px 20px;overflow-y:auto;flex:1;"></div>
+      <div class="modal-footer" style="padding:12px 20px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;background:var(--bg-subtle);">
+        <button type="button" id="btn-done-place-visits" class="btn btn-secondary" style="padding:6px 16px;font-size:13px;cursor:pointer;">Done</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- DIALOG 7: Person Full Visits History Modal -->
+  <dialog id="person-visits-modal" class="studio-dialog studio-dialog-medium" aria-labelledby="person-visits-title" closedby="any">
+    <div class="modal-card studio-dialog-surface">
+      <div class="modal-header" style="padding:16px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;background:var(--bg-subtle);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(168,85,247,0.15);color:var(--accent-purple);display:flex;align-items:center;justify-content:center;font-size:16px;">
+            <i class="fa-solid fa-user-group" aria-hidden="true"></i>
+          </div>
+          <div>
+            <h3 id="person-visits-title" style="margin:0;font-size:16px;font-weight:700;color:var(--text-main);">Person Visits</h3>
+            <span id="person-visits-subtitle" class="sub-text" style="font-size:12px;color:var(--text-muted);">All recorded visits with this person</span>
+          </div>
+        </div>
+        <button type="button" id="btn-close-person-visits" class="icon-btn" aria-label="Close person visits" style="background:transparent;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      </div>
+      <div id="person-visits-body" style="padding:16px 20px;overflow-y:auto;flex:1;"></div>
+      <div class="modal-footer" style="padding:12px 20px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;background:var(--bg-subtle);">
+        <span id="person-visits-footer-count" style="font-size:12px;color:var(--text-muted);"></span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" id="btn-person-view-places" class="btn btn-secondary" style="padding:6px 14px;font-size:12px;cursor:pointer;display:none;"><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i> View Places in Catalog</button>
+          <button type="button" id="btn-done-person-visits" class="btn btn-secondary" style="padding:6px 16px;font-size:13px;cursor:pointer;">Done</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <script defer src="/vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1684 @@
+"""
+High-performance Multi-Source Fusion Importer.
+Fuses 2024 Cloud Takeout Backups, 2026 On-Device Timeline Exports, and Contributor Reviews GeoJSON into SQLite.
+"""
+
+import json
+import zipfile
+import glob
+import argparse
+import re
+import os
+import time
+import math
+import datetime
+from typing import Dict, Any, List, Optional, Tuple
+import sqlite3
+
+from db import DEFAULT_DB_PATH, get_db_connection, get_db_path, init_db
+from enrichment.place_aggregates import mint_canonical_chij, recompute_place_aggregates
+
+
+def parse_latlng_str(s: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
+    """Parses '47.3597948°, 8.5583026°' into (47.3597948, 8.5583026)."""
+    if not s:
+        return None, None
+    m = re.findall(r'([-+]?\d*\.\d+|\d+)', s)
+    if len(m) >= 2:
+        try:
+            return float(m[0]), float(m[1])
+        except ValueError:
+            return None, None
+    return None, None
+
+
+def parse_iso_timestamp(ts_str: Optional[str]) -> Tuple[Optional[float], Optional[str], Optional[int], Optional[int], Optional[int]]:
+    """
+    Parses ISO 8601 string into (unix_ts_utc, date_str, year, month, day).
+    Example: '2024-10-01T00:03:26.000Z' or '2018-06-15T07:00:00.000-04:00'.
+    """
+    if not ts_str:
+        return None, None, None, None, None
+    
+    clean_ts = ts_str.strip()
+    try:
+        dt = datetime.datetime.fromisoformat(clean_ts.replace('Z', '+00:00'))
+        utc_ts = dt.timestamp()
+        date_str = clean_ts[:10]
+        year = dt.year
+        month = dt.month
+        day = dt.day
+        return utc_ts, date_str, year, month, day
+    except Exception:
+        try:
+            date_str = clean_ts[:10]
+            parts = date_str.split('-')
+            year = int(parts[0])
+            month = int(parts[1])
+            day = int(parts[2])
+            dt = datetime.datetime(year, month, day, tzinfo=datetime.timezone.utc)
+            return dt.timestamp(), date_str, year, month, day
+        except Exception:
+            return None, None, None, None, None
+
+
+def parse_iso_with_tz_offset(ts_str: Optional[str], offset_minutes: Optional[int]) -> Tuple[Optional[float], Optional[str], Optional[int], Optional[int], Optional[int], Optional[str]]:
+    """
+    Parses ISO 8601 timestamp and applies true local timezone offset from Takeout metadata.
+    Returns: (utc_ts, local_date_str, year, month, day, local_iso_str)
+    """
+    if not ts_str:
+        return None, None, None, None, None, None
+    try:
+        clean_ts = ts_str.strip().replace('Z', '+00:00')
+        dt = datetime.datetime.fromisoformat(clean_ts)
+        utc_ts = dt.timestamp()
+
+        if offset_minutes is not None:
+            tz = datetime.timezone(datetime.timedelta(minutes=offset_minutes))
+            local_dt = datetime.datetime.fromtimestamp(utc_ts, tz=tz)
+        else:
+            local_dt = dt
+
+        local_date = local_dt.strftime('%Y-%m-%d')
+        local_iso = local_dt.isoformat()
+        return utc_ts, local_date, local_dt.year, local_dt.month, local_dt.day, local_iso
+    except Exception:
+        return None, None, None, None, None, None
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates great-circle distance in kilometers between two points."""
+    r = 6371.0  # Earth's radius in km
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_phi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return r * c
+
+
+def synthesize_place_name(name: Optional[str], address: Optional[str], semantic_type: Optional[str]) -> str:
+    """Synthesizes human-readable names for homes, offices, and saved locations."""
+    if name and name.strip() and name.strip().upper() not in ('UNKNOWN', 'UNKNOWN_LOCATION', 'NONE'):
+        return name.strip()
+    
+    addr_short = address.split(',')[0].strip() if address else ''
+    sem = (semantic_type or '').upper()
+
+    if 'HOME' in sem:
+        if addr_short:
+            return f'Home ({addr_short})'
+        return 'Home'
+
+    if 'WORK' in sem:
+        if addr_short:
+            return f'Work ({addr_short})'
+        return 'Work'
+
+    if addr_short:
+        return addr_short
+
+    return name.strip() if name and name.strip() else ""
+
+
+def classify_category(name: Optional[str], address: Optional[str], semantic_type: Optional[str]) -> str:
+    """Classifies places into standard broad categories."""
+    try:
+        from enrichment.contacts_and_categories import classify_advanced_category
+        return classify_advanced_category(name, address, semantic_type)
+    except Exception:
+        text = f"{name or ''} {address or ''} {semantic_type or ''}".lower()
+        if 'home' in text:
+            return 'Home & Residence'
+        if 'work' in text or 'office' in text:
+            return 'Work & Office'
+        if any(k in text for k in ['bakery', 'cafe', 'coffee', 'bar', 'restaurant', 'pizza', 'deli', 'ramen']):
+            return 'Food & Drink'
+        if any(k in text for k in ['station', 'subway', 'airport', 'terminal', 'train', 'tram', 'bus', 'grand central']):
+            return 'Travel & Transit'
+        if any(k in text for k in ['market', 'supermarket', 'mall', 'shop', 'store']):
+            return 'Shopping & Retail'
+        if any(k in text for k in ['hotel', 'motel', 'resort', 'inn', 'riad']):
+            return 'Hotels & Lodging'
+        if any(k in text for k in ['park', 'museum', 'theater', 'theater', 'garden']):
+            return 'Arts & Entertainment'
+        if any(k in text for k in ['spa', 'baths', 'gym', 'hospital', 'clinic']):
+            return 'Health & Services'
+        return 'Other / POI'
+
+
+def extract_city_country(address: Optional[str], lat: Optional[float] = None, lng: Optional[float] = None) -> Tuple[str, str]:
+    """Extracts city and country from address or coordinates."""
+    if not address and lat is None:
+        return 'Unknown', 'Unknown'
+
+    addr = (address or '').lower()
+
+    # US Major Cities
+    if 'new york' in addr or 'brooklyn' in addr or 'manhattan' in addr or 'queens' in addr or 'bronx' in addr or 'ny ' in addr or ', ny' in addr:
+        return 'New York', 'United States'
+    if 'san francisco' in addr or 'oakland' in addr or 'berkeley' in addr or ', ca' in addr or 'california' in addr:
+        if 'mountain view' in addr: return 'Mountain View', 'United States'
+        if 'palo alto' in addr: return 'Palo Alto', 'United States'
+        if 'sunnyvale' in addr: return 'Sunnyvale', 'United States'
+        if 'san jose' in addr: return 'San Jose', 'United States'
+        if 'san francisco' in addr: return 'San Francisco', 'United States'
+        return 'California', 'United States'
+    if 'chicago' in addr or ', il' in addr: return 'Chicago', 'United States'
+    if 'boston' in addr or 'cambridge' in addr or ', ma' in addr: return 'Boston', 'United States'
+    if 'los angeles' in addr: return 'Los Angeles', 'United States'
+    if 'seattle' in addr or ', wa' in addr: return 'Seattle', 'United States'
+    if 'reno' in addr or ', nv' in addr: return 'Reno', 'United States'
+
+    # International Cities
+    if 'zürich' in addr or 'zurich' in addr or 'schweiz' in addr or 'switzerland' in addr:
+        return 'Zürich', 'Switzerland'
+    if 'münchen' in addr or 'munich' in addr or 'germany' in addr or 'deutschland' in addr or 'berlin' in addr:
+        if 'berlin' in addr: return 'Berlin', 'Germany'
+        return 'Munich', 'Germany'
+    if 'london' in addr or 'united kingdom' in addr or 'england' in addr:
+        return 'London', 'United Kingdom'
+    if 'paris' in addr or 'france' in addr:
+        return 'Paris', 'France'
+    if 'tokyo' in addr or 'japan' in addr:
+        return 'Tokyo', 'Japan'
+
+    # Coordinate fallback
+    if lat and lng:
+        if 40.5 <= lat <= 40.9 and -74.2 <= lng <= -73.7:
+            return 'New York', 'United States'
+        if 47.3 <= lat <= 47.5 and 8.4 <= lng <= 8.7:
+            return 'Zürich', 'Switzerland'
+        if 48.0 <= lat <= 48.3 and 11.4 <= lng <= 11.7:
+            return 'Munich', 'Germany'
+        if 37.6 <= lat <= 37.9 and -122.5 <= lng <= -122.2:
+            return 'San Francisco', 'United States'
+
+    # Fallback to comma token
+    if address:
+        parts = [p.strip() for p in address.split(',')]
+        if len(parts) >= 2:
+            return parts[-2], parts[-1]
+
+    return 'Other', 'Other'
+
+
+class TimelineFusionImporter:
+    """Orchestrates multi-source ingestion and semantic data fusion."""
+
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        self.db_path = get_db_path(db_path)
+        init_db(self.db_path)
+        self.conn = get_db_connection(self.db_path)
+
+    def import_takeout_zip(self, zip_path: str, import_segments: bool = True, include_records: bool = False, records_sample_stride: int = 1) -> Dict[str, Any]:
+        """
+        Extracts places catalog, road-snapped activity polylines, visits, and activities from Takeout zip.
+        Works across classic Takeouts, modern on-device exports, GeoJSON, and multilingual archives.
+        """
+        zip_path = os.path.expanduser(zip_path)
+        if not os.path.exists(zip_path):
+            raise FileNotFoundError(f"Takeout archive not found: {zip_path}")
+
+        print(f"[*] Importing Takeout archive: {zip_path}...")
+        t0 = time.time()
+
+        places_dict: Dict[str, Dict[str, Any]] = {}
+        paths_by_time: Dict[int, List[List[float]]] = {}
+        parsed_segments: List[Dict[str, Any]] = []
+        total_semantic_files = 0
+        total_takeout_objects = 0
+
+        with zipfile.ZipFile(zip_path, 'r') as z:
+            all_files = [f for f in z.namelist() if not f.startswith('__MACOSX')]
+            semantic_files = [
+                f for f in all_files
+                if f.endswith('.json')
+                and ('Semantic Location History' in f or 'Location History' in f or re.search(r'\d{4}_\w+\.json', f))
+                and not f.endswith('Records.json')
+                and not f.endswith('Settings.json')
+                and not f.endswith('Timeline.json')
+            ]
+            total_semantic_files = len(semantic_files)
+            if total_semantic_files > 0:
+                print(f"    Found {total_semantic_files} monthly semantic files in Takeout archive.")
+
+            for sf in semantic_files:
+                try:
+                    with z.open(sf) as f:
+                        data = json.load(f)
+                    timeline_objects = data.get('timelineObjects', [])
+                    total_takeout_objects += len(timeline_objects)
+                    segs, places, paths = self.parse_timeline_objects(timeline_objects, source_tag='TAKEOUT_CLOUD')
+                    for pid, p in places.items():
+                        if pid not in places_dict:
+                            places_dict[pid] = p
+                        else:
+                            places_dict[pid]['visit_count'] += p['visit_count']
+                    paths_by_time.update(paths)
+                    if import_segments:
+                        parsed_segments.extend(segs)
+                except Exception as e:
+                    print(f"    [!] Error reading {sf}: {e}")
+
+            # Check if there is an on-device Timeline JSON in the zip
+            if not semantic_files:
+                timeline_files = [f for f in all_files if f.endswith('.json') and 'Timeline' in f]
+                for tf in timeline_files:
+                    try:
+                        with z.open(tf) as f:
+                            sample = f.read(2048).decode('utf-8', errors='ignore')
+                        if 'semanticSegments' in sample:
+                            import tempfile
+                            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as tmp:
+                                tmp.write(z.read(tf))
+                                tmp_path = tmp.name
+                            try:
+                                return self.import_on_device_json(tmp_path)
+                            finally:
+                                if os.path.exists(tmp_path):
+                                    os.unlink(tmp_path)
+                    except Exception as e:
+                        print(f"    [!] Error checking {tf}: {e}")
+
+        # Batch insert/upsert places into DB
+        if places_dict:
+            print(f"[*] Upserting {len(places_dict)} places from Takeout...")
+            place_rows = []
+            for p in places_dict.values():
+                place_rows.append((
+                    p['place_id'], p['name'], p['address'], p['semantic_type'],
+                    p['category'], p['city'], p['country'],
+                    p['user_confirmed'], p['latitude'], p['longitude'],
+                    0, 'TAKEOUT_CLOUD'
+                ))
+
+            self.conn.executemany("""
+            INSERT INTO places (place_id, name, address, semantic_type, category, city, country, user_confirmed, latitude, longitude, visit_count, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(place_id) DO UPDATE SET
+                name = COALESCE(excluded.name, places.name),
+                address = COALESCE(excluded.address, places.address),
+                semantic_type = COALESCE(excluded.semantic_type, places.semantic_type),
+                category = excluded.category,
+                city = COALESCE(excluded.city, places.city),
+                country = COALESCE(excluded.country, places.country),
+                user_confirmed = MAX(places.user_confirmed, excluded.user_confirmed);
+            """, place_rows)
+            self.conn.commit()
+
+        # Batch insert segments into DB if present
+        if import_segments and parsed_segments:
+            print(f"[*] Inserting {len(parsed_segments)} segments from Takeout...")
+            parsed_segments.sort(key=lambda x: (x['start_ts'], x['end_ts']))
+            segment_rows = [
+                (
+                    s['segment_type'], s['start_time'], s['end_time'], s['start_ts'], s['end_ts'],
+                    s['duration_minutes'], s['date'], s['year'], s['month'], s['day'],
+                    s['latitude'], s['longitude'], s['end_lat'], s['end_lng'],
+                    s['place_id'], s['place_name'], s['place_address'], s['semantic_type'],
+                    s['category'], s['city'], s['activity_type'], s['distance_meters'],
+                    s['probability'], s['hierarchy_level'], s['parent_segment_id'],
+                    s['path_points_json'], s['has_snapped_path'], s['is_unconfirmed'], s['source']
+                ) for s in parsed_segments
+            ]
+            self.conn.executemany("""
+            INSERT INTO segments (
+                segment_type, start_time, end_time, start_ts, end_ts, duration_minutes,
+                date, year, month, day, latitude, longitude, end_lat, end_lng,
+                place_id, place_name, place_address, semantic_type, category, city,
+                activity_type, distance_meters, probability, hierarchy_level,
+                parent_segment_id, path_points_json, has_snapped_path, is_unconfirmed, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, segment_rows)
+            recompute_place_aggregates(self.conn)
+            self.conn.commit()
+
+        # Import Records.json if requested
+        records_count = 0
+        if include_records:
+            records_count = self._stream_records_json(zip_path, stride=records_sample_stride)
+
+        # Record Source metadata
+        self.conn.execute("""
+        INSERT INTO sources (source_name, file_path, imported_at, record_count, metadata_json)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(source_name) DO UPDATE SET
+            imported_at = excluded.imported_at,
+            record_count = excluded.record_count,
+            metadata_json = excluded.metadata_json;
+        """, (
+            "TAKEOUT_ZIP",
+            zip_path,
+            datetime.datetime.now().isoformat(),
+            total_takeout_objects,
+            json.dumps({
+                "semantic_files": total_semantic_files,
+                "places_extracted": len(places_dict),
+                "segments_imported": len(parsed_segments),
+                "snapped_paths_extracted": len(paths_by_time),
+                "raw_records_imported": records_count
+            })
+        ))
+        self.conn.commit()
+
+        elapsed = time.time() - t0
+        print(f"[✓] Takeout archive ingested in {elapsed:.2f}s ({len(places_dict)} places, {len(parsed_segments)} segments).")
+        return {
+            "places_extracted": len(places_dict),
+            "segments_imported": len(parsed_segments),
+            "snapped_paths_extracted": len(paths_by_time),
+            "paths_map": paths_by_time,
+            "places_map": places_dict,
+            "raw_records": records_count,
+            "elapsed_sec": elapsed
+        }
+
+    def _stream_records_json(self, source_path: str, stride: int = 1) -> int:
+        """
+        Streams Google Takeout Records.json (from a .zip archive or standalone .json file)
+        in bounded 64 KiB chunks so multi-GB raw GPS histories never exhaust memory.
+        """
+        source_path = os.path.expanduser(source_path)
+        stride = max(1, int(stride))
+        decoder = json.JSONDecoder()
+        batch: List[Tuple[Any, ...]] = []
+        total_inserted = 0
+        seen_records = 0
+
+        def _flush_batch() -> None:
+            nonlocal total_inserted
+            if not batch:
+                return
+            self.conn.executemany(
+                """
+                INSERT INTO raw_signals (
+                    timestamp, ts, latitude, longitude, accuracy_meters,
+                    altitude_meters, speed_mps, source, date, year
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                batch,
+            )
+            self.conn.commit()
+            total_inserted += len(batch)
+            batch.clear()
+
+        def _consume_stream(text_iter: Any) -> None:
+            nonlocal seen_records
+            buf = ""
+            in_array = False
+            for chunk in text_iter:
+                buf += chunk
+                if not in_array:
+                    m = re.search(r'"locations"\s*:\s*\[', buf)
+                    if not m:
+                        if len(buf) > 128:
+                            buf = buf[-128:]
+                        continue
+                    buf = buf[m.end() :]
+                    in_array = True
+
+                pos = 0
+                buf_len = len(buf)
+                while pos < buf_len:
+                    while pos < buf_len and buf[pos] in " \t\r\n,":
+                        pos += 1
+                    if pos >= buf_len:
+                        break
+                    if buf[pos] == "]":
+                        return
+                    try:
+                        rec, next_pos = decoder.raw_decode(buf, pos)
+                    except json.JSONDecodeError:
+                        break
+                    pos = next_pos
+                    seen_records += 1
+                    if (seen_records - 1) % stride != 0 or not isinstance(rec, dict):
+                        continue
+
+                    lat_e7 = rec.get("latitudeE7")
+                    lng_e7 = rec.get("longitudeE7")
+                    lat = (float(lat_e7) / 1e7) if lat_e7 is not None else rec.get("latitude")
+                    lng = (float(lng_e7) / 1e7) if lng_e7 is not None else rec.get("longitude")
+                    if lat is None or lng is None:
+                        continue
+
+                    ts_iso = rec.get("timestamp")
+                    u_ts: Optional[float] = None
+                    d_str: Optional[str] = None
+                    yr: Optional[int] = None
+                    if ts_iso:
+                        u_ts, d_str, yr, _, _ = parse_iso_timestamp(str(ts_iso))
+                    elif rec.get("timestampMs") is not None:
+                        u_ts = float(rec["timestampMs"]) / 1000.0
+                        dt_utc = datetime.datetime.fromtimestamp(u_ts, tz=datetime.timezone.utc)
+                        ts_iso = dt_utc.isoformat().replace("+00:00", "Z")
+                        d_str = dt_utc.strftime("%Y-%m-%d")
+                        yr = dt_utc.year
+
+                    if u_ts is None:
+                        continue
+
+                    batch.append((
+                        ts_iso,
+                        u_ts,
+                        float(lat),
+                        float(lng),
+                        rec.get("accuracy"),
+                        rec.get("altitude"),
+                        rec.get("velocity"),
+                        str(rec.get("source") or "GPS").upper(),
+                        d_str,
+                        yr,
+                    ))
+                    if len(batch) >= 5000:
+                        _flush_batch()
+
+                buf = buf[pos:]
+
+        def _iter_chunks(binary_stream: Any) -> Any:
+            import codecs
+
+            inc_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            while True:
+                raw = binary_stream.read(65536)
+                if not raw:
+                    tail = inc_decoder.decode(b"", final=True)
+                    if tail:
+                        yield tail
+                    break
+                yield inc_decoder.decode(raw, final=False)
+
+        if zipfile.is_zipfile(source_path):
+            with zipfile.ZipFile(source_path, "r") as zf:
+                rec_members = [n for n in zf.namelist() if n.lower().endswith("records.json")]
+                for member in rec_members:
+                    with zf.open(member, "r") as zstream:
+                        _consume_stream(_iter_chunks(zstream))
+        elif os.path.isfile(source_path):
+            with open(source_path, "rb") as fstream:
+                _consume_stream(_iter_chunks(fstream))
+
+        _flush_batch()
+        return total_inserted
+
+    def import_on_device_json(self, json_path: str, paths_map: Optional[Dict[int, List[List[float]]]] = None) -> Dict[str, Any]:
+        """
+        Ingests the on-device Timeline-*.json export, hydrating visits with verified place names/categories and Takeout polylines.
+        """
+        json_path = os.path.expanduser(json_path)
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(f"On-device Timeline JSON not found: {json_path}")
+
+        print(f"[*] Ingesting on-device export: {json_path}...")
+        t0 = time.time()
+
+        # Load known verified places from DB for instant hydration
+        c = self.conn.cursor()
+        c.execute("SELECT place_id, name, address, semantic_type, category, city, country, latitude, longitude FROM places;")
+        known_places = {r['place_id']: dict(r) for r in c.fetchall()}
+        print(f"    Loaded {len(known_places)} verified places for hydration.")
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        semantic_segments = data.get('semanticSegments', [])
+        raw_signals = data.get('rawSignals', [])
+        print(f"    Found {len(semantic_segments)} semantic segments and {len(raw_signals)} raw signals.")
+
+        parsed_segments = []
+        for s in semantic_segments:
+            st_str = s.get('startTime')
+            et_str = s.get('endTime')
+            st_off = s.get('startTimeTimezoneUtcOffsetMinutes')
+            et_off = s.get('endTimeTimezoneUtcOffsetMinutes')
+
+            st_ts, d_str, yr, mo, dy, local_st = parse_iso_with_tz_offset(st_str, st_off)
+            et_ts, _, _, _, _, local_et = parse_iso_with_tz_offset(et_str, et_off)
+
+            if not st_ts or not et_ts:
+                continue
+
+            dur_min = max(0.0, (et_ts - st_ts) / 60.0)
+
+            if 'visit' in s:
+                v = s['visit']
+                top = v.get('topCandidate', {})
+                pid = top.get('placeId')
+                sem_type = top.get('semanticType')
+                prob = top.get('probability', 1.0)
+                # Correctly parse coordinates from placeLocation
+                lat, lng = parse_latlng_str(
+                    top.get('placeLocation', {}).get('latLng') or
+                    v.get('hierarchy', {}).get('latLng') or
+                    top.get('latLng')
+                )
+                h_level = 1 if (v.get('hierarchyLevel') == 1 or v.get('hierarchy', {}).get('hierarchyLevel') == 1) else 0
+
+                # Hydrate place details from known places
+                p_name, p_addr = None, None
+                p_cat, p_city, p_country = 'Other / POI', 'Unknown', 'Unknown'
+                if pid and pid in known_places:
+                    p_info = known_places[pid]
+                    p_name = p_info.get('name')
+                    p_addr = p_info.get('address')
+                    p_cat = p_info.get('category') or 'Other / POI'
+                    p_city = p_info.get('city') or 'Unknown'
+                    p_country = p_info.get('country') or 'Unknown'
+                    if not lat and p_info.get('latitude'):
+                        lat, lng = p_info['latitude'], p_info['longitude']
+
+                # Synthesize residential / work names if still None
+                p_name = synthesize_place_name(p_name, p_addr, sem_type)
+                if not p_name and pid:
+                    p_name = f"Google POI ({pid[:12]}...)" if not lat else None
+                if p_cat == 'Other / POI':
+                    p_cat = classify_category(p_name, p_addr, sem_type)
+                if p_city == 'Unknown' and lat and lng:
+                    p_city, p_country = extract_city_country(p_addr, lat, lng)
+
+                parsed_segments.append({
+                    'segment_type': 'visit',
+                    'start_time': local_st or st_str,
+                    'end_time': local_et or et_str,
+                    'start_ts': st_ts,
+                    'end_ts': et_ts,
+                    'duration_minutes': dur_min,
+                    'date': d_str,
+                    'year': yr,
+                    'month': mo,
+                    'day': dy,
+                    'latitude': lat,
+                    'longitude': lng,
+                    'end_lat': None,
+                    'end_lng': None,
+                    'place_id': pid,
+                    'place_name': p_name or ("Confirmed POI" if pid else "Dwell Location"),
+                    'place_address': p_addr,
+                    'semantic_type': sem_type or ('CONFIRMED_PLACE' if pid else 'UNKNOWN'),
+                    'category': p_cat,
+                    'city': p_city,
+                    'activity_type': None,
+                    'distance_meters': 0.0,
+                    'probability': prob,
+                    'hierarchy_level': h_level,
+                    'parent_segment_id': None,
+                    'path_points_json': None,
+                    'has_snapped_path': 0,
+                    'is_unconfirmed': 1 if not pid and sem_type in (None, 'UNKNOWN', 'UNKNOWN_LOCATION') else 0,
+                    'source': 'ON_DEVICE_2026'
+                })
+
+            elif 'activity' in s:
+                act = s['activity']
+                top = act.get('topCandidate', {})
+                act_type = top.get('type')
+                if act_type == 'IN_PASSENGER_VEHICLE':
+                    act_type = 'DRIVING'
+                prob = top.get('probability', 1.0)
+                dist = act.get('distanceMeters', 0.0)
+                s_lat, s_lng = parse_latlng_str(act.get('start', {}).get('latLng'))
+                e_lat, e_lng = parse_latlng_str(act.get('end', {}).get('latLng'))
+
+                # Calculate distance if 0.0 and coordinates exist
+                if (
+                    (not dist or dist == 0.0)
+                    and s_lat is not None
+                    and s_lng is not None
+                    and e_lat is not None
+                    and e_lng is not None
+                ):
+                    dist = haversine_km(s_lat, s_lng, e_lat, e_lng) * 1000.0
+
+                # Match snapped polyline from Takeout by UTC epoch minute
+                path_pts = None
+                has_snapped = 0
+                if paths_map and st_ts:
+                    ep_min = int(st_ts // 60)
+                    path_pts = paths_map.get(ep_min) or paths_map.get(ep_min - 1) or paths_map.get(ep_min + 1)
+                    if path_pts:
+                        has_snapped = 1
+
+                if (
+                    not path_pts
+                    and s_lat is not None
+                    and s_lng is not None
+                    and e_lat is not None
+                    and e_lng is not None
+                ):
+                    path_pts = [[s_lat, s_lng], [e_lat, e_lng]]
+
+                parsed_segments.append({
+                    'segment_type': 'activity',
+                    'start_time': local_st or st_str,
+                    'end_time': local_et or et_str,
+                    'start_ts': st_ts,
+                    'end_ts': et_ts,
+                    'duration_minutes': dur_min,
+                    'date': d_str,
+                    'year': yr,
+                    'month': mo,
+                    'day': dy,
+                    'latitude': s_lat,
+                    'longitude': s_lng,
+                    'end_lat': e_lat,
+                    'end_lng': e_lng,
+                    'place_id': None,
+                    'place_name': None,
+                    'place_address': None,
+                    'semantic_type': None,
+                    'category': 'Travel & Transit',
+                    'city': None,
+                    'activity_type': act_type,
+                    'distance_meters': dist,
+                    'probability': prob,
+                    'hierarchy_level': 0,
+                    'parent_segment_id': None,
+                    'path_points_json': json.dumps(path_pts) if path_pts else None,
+                    'has_snapped_path': has_snapped,
+                    'is_unconfirmed': 1 if act_type in (None, 'UNKNOWN', 'UNKNOWN_ACTIVITY_TYPE') else 0,
+                    'source': 'ON_DEVICE_2026'
+                })
+
+        # Deduplicate and upsert places from on-device segments
+        new_places_dict = {}
+        for s in parsed_segments:
+            pid = s['place_id']
+            if pid and pid not in known_places:
+                if pid not in new_places_dict:
+                    new_places_dict[pid] = (
+                        pid, s['place_name'], s['place_address'], s['semantic_type'],
+                        s['category'], s['city'], 'United States',
+                        0, s['latitude'], s['longitude'], 1, 'ON_DEVICE_2026'
+                    )
+                else:
+                    old = new_places_dict[pid]
+                    new_places_dict[pid] = (
+                        old[0], old[1] or s['place_name'], old[2] or s['place_address'],
+                        old[3] or s['semantic_type'], old[4] or s['category'], old[5] or s['city'], old[6],
+                        old[7], old[8] or s['latitude'], old[9] or s['longitude'], old[10] + 1, old[11]
+                    )
+
+        if new_places_dict:
+            self.conn.executemany("""
+            INSERT INTO places (place_id, name, address, semantic_type, category, city, country, user_confirmed, latitude, longitude, visit_count, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(place_id) DO UPDATE SET
+                name = COALESCE(places.name, excluded.name),
+                category = COALESCE(places.category, excluded.category),
+                city = COALESCE(places.city, excluded.city);
+            """, list(new_places_dict.values()))
+            self.conn.commit()
+
+        # Sort segments chronologically and scope deletion strictly to on-device range
+        parsed_segments.sort(key=lambda x: (x['start_ts'], x['end_ts']))
+        print(f"[*] Batch inserting {len(parsed_segments)} unified timeline segments...")
+        self.conn.execute("PRAGMA foreign_keys = OFF;")
+        if parsed_segments:
+            min_seg_ts = min(float(s['start_ts']) for s in parsed_segments)
+            max_seg_ts = max(float(s['end_ts']) for s in parsed_segments)
+            self.conn.execute(
+                "DELETE FROM segments WHERE source = 'ON_DEVICE_2026' OR (start_ts >= ? AND end_ts <= ?);",
+                (min_seg_ts, max_seg_ts),
+            )
+        row_max = self.conn.execute("SELECT COALESCE(MAX(id), 0) FROM segments;").fetchone()
+        base_id = int(row_max[0]) if row_max and row_max[0] else 0
+        for idx, s in enumerate(parsed_segments, start=base_id + 1):
+            s['id'] = idx
+
+        # Link parent/child visit hierarchy in memory
+        print("[*] Linking parent/child visit hierarchy in memory...")
+        parents = [s for s in parsed_segments if s['segment_type'] == 'visit' and s['hierarchy_level'] == 0]
+        linked_count = 0
+        for s in parsed_segments:
+            if s['segment_type'] == 'visit' and s['hierarchy_level'] == 1:
+                for p in parents:
+                    if p['start_ts'] <= s['start_ts'] and p['end_ts'] >= s['end_ts']:
+                        s['parent_segment_id'] = p['id']
+                        linked_count += 1
+                        break
+        print(f"    Linked {linked_count} child visits to enclosing parent visits.")
+
+        segment_rows = []
+        for s in parsed_segments:
+            segment_rows.append((
+                s['id'], s['segment_type'], s['start_time'], s['end_time'], s['start_ts'], s['end_ts'],
+                s['duration_minutes'], s['date'], s['year'], s['month'], s['day'],
+                s['latitude'], s['longitude'], s['end_lat'], s['end_lng'],
+                s['place_id'], s['place_name'], s['place_address'], s['semantic_type'],
+                s['category'], s['city'],
+                s['activity_type'], s['distance_meters'], s['probability'],
+                s['hierarchy_level'], s['parent_segment_id'], s['path_points_json'],
+                s['has_snapped_path'], s['is_unconfirmed'], s['source']
+            ))
+
+        self.conn.executemany("""
+        INSERT INTO segments (
+            id, segment_type, start_time, end_time, start_ts, end_ts,
+            duration_minutes, date, year, month, day,
+            latitude, longitude, end_lat, end_lng,
+            place_id, place_name, place_address, semantic_type,
+            category, city,
+            activity_type, distance_meters, probability,
+            hierarchy_level, parent_segment_id, path_points_json,
+            has_snapped_path, is_unconfirmed, source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, segment_rows)
+        recompute_place_aggregates(self.conn)
+        self.conn.commit()
+        self.conn.execute("PRAGMA foreign_keys = ON;")
+
+        # Ingest 30-day Raw Signals Buffer idempotently
+        print(f"[*] Ingesting {len(raw_signals)} raw signals from mobile buffer...")
+        raw_rows = []
+        for sig in raw_signals:
+            pos = sig.get('position')
+            if pos:
+                ts_str = pos.get('timestamp')
+                u_ts, d_str, yr, mo, dy = parse_iso_timestamp(ts_str)
+                lat, lng = parse_latlng_str(pos.get('LatLng'))
+                acc = pos.get('accuracyMeters')
+                alt = pos.get('altitudeMeters')
+                spd = pos.get('speedMetersPerSecond')
+                src = pos.get('source', 'WIFI').upper()
+                if u_ts and lat is not None and lng is not None:
+                    raw_rows.append((ts_str, u_ts, lat, lng, acc, alt, spd, src, d_str, yr))
+
+        if raw_rows:
+            min_raw_ts = min(float(r[1]) for r in raw_rows)
+            max_raw_ts = max(float(r[1]) for r in raw_rows)
+            raw_sources = tuple(sorted({str(r[7]) for r in raw_rows}))
+            placeholders = ",".join("?" for _ in raw_sources)
+            self.conn.execute(
+                f"DELETE FROM raw_signals WHERE ts >= ? AND ts <= ? AND source IN ({placeholders});",
+                (min_raw_ts, max_raw_ts, *raw_sources),
+            )
+            self.conn.executemany("""
+            INSERT INTO raw_signals (timestamp, ts, latitude, longitude, accuracy_meters, altitude_meters, speed_mps, source, date, year)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, raw_rows)
+            self.conn.commit()
+
+        # Record Source
+        self.conn.execute("""
+        INSERT INTO sources (source_name, file_path, imported_at, record_count, metadata_json)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(source_name) DO UPDATE SET
+            imported_at = excluded.imported_at,
+            record_count = excluded.record_count,
+            metadata_json = excluded.metadata_json;
+        """, (
+            "ON_DEVICE_2026",
+            json_path,
+            datetime.datetime.now().isoformat(),
+            len(parsed_segments),
+            json.dumps({
+                "segments": len(parsed_segments),
+                "raw_signals": len(raw_rows),
+                "visits": sum(1 for s in parsed_segments if s['segment_type'] == 'visit'),
+                "activities": sum(1 for s in parsed_segments if s['segment_type'] == 'activity'),
+                "snapped_paths_hydrated": sum(1 for s in parsed_segments if s['has_snapped_path'] == 1),
+                "places_hydrated": sum(1 for s in parsed_segments if s['place_name'] is not None)
+            })
+        ))
+        self.conn.commit()
+
+        elapsed = time.time() - t0
+        print(f"[✓] On-device Timeline imported and fused in {elapsed:.2f}s.")
+        return {
+            "total_segments": len(parsed_segments),
+            "raw_signals_count": len(raw_rows),
+            "snapped_paths_hydrated": sum(1 for s in parsed_segments if s['has_snapped_path'] == 1),
+            "places_hydrated": sum(1 for s in parsed_segments if s['place_name'] is not None),
+            "elapsed_sec": elapsed
+        }
+
+    def import_reviews_geojson(self, geojson_path: str) -> Dict[str, Any]:
+        """
+        Ingests Google Contributor Reviews, links them to visited POIs by proximity/name, and hydrates ratings & review text.
+        """
+        geojson_path = os.path.expanduser(geojson_path)
+        if not os.path.exists(geojson_path):
+            raise FileNotFoundError(f"Reviews GeoJSON not found: {geojson_path}")
+
+        print(f"[*] Importing Google Contributor Reviews from: {geojson_path}...")
+        t0 = time.time()
+
+        with open(geojson_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        features = data.get('features', [])
+        print(f"    Found {len(features)} review records.")
+
+        # Fetch visited places
+        c = self.conn.cursor()
+        c.execute("SELECT place_id, name, latitude, longitude FROM places WHERE latitude IS NOT NULL;")
+        places = [dict(r) for r in c.fetchall()]
+
+        # Pre-index places into spatial hash grid for instant O(1) matching (<0.05s)
+        grid_map: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+        for p in places:
+            if p['latitude'] is not None and p['longitude'] is not None:
+                cell = (int(round(p['latitude'] * 50)), int(round(p['longitude'] * 50)))
+                grid_map.setdefault(cell, []).append(p)
+
+        review_rows = []
+        matched_updates = []
+        matched_count = 0
+
+        for feat in features:
+            props = feat.get('properties') or {}
+            geom = feat.get('geometry') or {}
+            coords = geom.get('coordinates') or []
+            loc = props.get('Location') or props.get('location') or {}
+            rev = props.get('Review') or props.get('review') or {}
+            geo_coords = loc.get('Geo Coordinates') or {}
+
+            r_lat = coords[1] if len(coords) >= 2 else (geo_coords.get('Latitude') or props.get('latitude'))
+            r_lng = coords[0] if len(coords) >= 2 else (geo_coords.get('Longitude') or props.get('longitude'))
+
+            p_name = props.get('place_name') or loc.get('Business Name') or loc.get('name') or props.get('name') or ''
+            r_date = props.get('date') or rev.get('Time') or rev.get('time') or props.get('Published') or ''
+            raw_rating = props.get('rating') if props.get('rating') is not None else (props.get('five_star_rating_published') or rev.get('Star Rating') or rev.get('star_rating'))
+            try:
+                r_rating = int(round(float(raw_rating))) if raw_rating is not None else None
+            except (ValueError, TypeError):
+                r_rating = None
+
+            r_text = (props.get('review_text') or props.get('review_text_published') or rev.get('Text') or rev.get('text') or '').strip() or None
+            r_url = props.get('review_direct_url') or props.get('google_maps_url') or rev.get('Review URL') or rev.get('review_url') or props.get('Google Maps URL') or ''
+            r_pid = props.get('place_id')
+
+            raw_photos = props.get('photo_urls') or []
+            if isinstance(raw_photos, str):
+                try:
+                    raw_photos = json.loads(raw_photos)
+                except Exception:
+                    raw_photos = [raw_photos] if raw_photos.startswith('http') else []
+            photo_urls_list = [u for u in raw_photos if isinstance(u, str) and u.startswith('http')]
+            photo_count = props.get('photo_count') or len(photo_urls_list)
+            photo_urls_json = json.dumps(photo_urls_list) if photo_urls_list else None
+
+            # Fast candidate lookup: direct place_id or spatial grid (skip residential homes)
+            matched_pid = None
+            target_place = next((p for p in places if p['place_id'] == r_pid), None) if r_pid else None
+            if target_place:
+                if target_place.get('category') != 'Home & Residence' and not (target_place.get('name') or '').startswith('Home'):
+                    matched_pid = r_pid
+            elif r_lat is not None and r_lng is not None:
+                cell = (int(round(r_lat * 50)), int(round(r_lng * 50)))
+                candidates = list(grid_map.get(cell, []))
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if (dx, dy) != (0, 0):
+                            candidates.extend(grid_map.get((cell[0] + dx, cell[1] + dy), []))
+                best_cand = None
+                best_d = 0.25  # 250m max spatial distance
+                for cand in candidates:
+                    if cand.get('category') == 'Home & Residence' or (cand.get('name') or '').startswith('Home'):
+                        continue
+                    c_lat, c_lng = cand.get('latitude'), cand.get('longitude')
+                    if c_lat is not None and c_lng is not None:
+                        d = haversine_km(r_lat, r_lng, c_lat, c_lng)
+                        if d < best_d:
+                            best_d = d
+                            best_cand = cand
+                if best_cand:
+                    matched_pid = best_cand['place_id']
+
+            if matched_pid:
+                matched_count += 1
+                matched_updates.append((
+                    r_rating,
+                    r_text,
+                    p_name,
+                    photo_urls_json,
+                    photo_count,
+                    matched_pid
+                ))
+
+            review_rows.append((
+                p_name, r_date, r_rating, r_text, r_url, r_lat, r_lng, matched_pid, photo_urls_json, photo_count
+            ))
+
+        # Insert reviews table
+        self.conn.execute("DELETE FROM poi_reviews;")
+        self.conn.executemany("""
+        INSERT INTO poi_reviews (place_name, date, rating, review_text, google_maps_url, latitude, longitude, matched_place_id, photo_urls, photo_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, review_rows)
+
+        # Hydrate matched places
+        if matched_updates:
+            self.conn.executemany("""
+            UPDATE places
+            SET review_rating = ?,
+                review_text = ?,
+                name = COALESCE(name, ?),
+                has_review = 1,
+                review_photos = COALESCE(?, review_photos),
+                review_photo_count = MAX(COALESCE(review_photo_count, 0), ?),
+                review_count = review_count + 1
+            WHERE place_id = ?;
+            """, matched_updates)
+
+            # Also update segments with review rating
+            self.conn.execute("""
+            UPDATE segments
+            SET review_rating = (SELECT p.review_rating FROM places p WHERE p.place_id = segments.place_id)
+            WHERE place_id IS NOT NULL;
+            """)
+
+        self.conn.commit()
+        elapsed = time.time() - t0
+        print(f"[✓] Contributor Reviews imported in {elapsed:.2f}s ({len(features)} reviews, {matched_count} linked to timeline POIs).")
+        return {
+            "total_reviews": len(features),
+            "matched_pois": matched_count,
+            "elapsed_sec": elapsed
+        }
+
+    def import_saved_places_json(self, json_path: str) -> Dict[str, Any]:
+        """
+        Ingests Google Maps Saved Places (Saved Places.json from Google Takeout).
+        Parses custom lists (Want to go, Starred places, Favorites, custom notes),
+        populating custom_labeled_places and places catalogs.
+        """
+        json_path = os.path.expanduser(json_path)
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(f"Saved Places JSON not found: {json_path}")
+
+        print(f"[*] Importing Google Maps Saved Places from: {json_path}...")
+        t0 = time.time()
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        features = data.get('features', [])
+        if not features and isinstance(data, list):
+            features = data
+
+        saved_rows = []
+        places_rows = []
+        for feat in features:
+            props = feat.get('properties') or {}
+            geom = feat.get('geometry') or {}
+            coords = geom.get('coordinates') or []
+            loc = props.get('Location') or props.get('location') or {}
+            geo_coords = loc.get('Geo Coordinates') or {}
+
+            lat = coords[1] if len(coords) >= 2 else (geo_coords.get('Latitude') or props.get('latitude'))
+            lng = coords[0] if len(coords) >= 2 else (geo_coords.get('Longitude') or props.get('longitude'))
+            if lat is None or lng is None:
+                continue
+
+            name = loc.get('Business Name') or props.get('Title') or props.get('name') or 'Saved Place'
+            addr = loc.get('Address') or props.get('address') or ''
+            list_title = props.get('Title') or 'Saved Places'
+            comment = props.get('Comment') or props.get('note') or ''
+            url = props.get('Google Maps URL') or props.get('URL') or ''
+
+            saved_rows.append((name, addr, comment or list_title, float(lat), float(lng), "TAKEOUT_SAVED", list_title))
+
+            cid_match = re.search(r'cid=(\d+)', url)
+            seed_key = f"saved|{cid_match.group(1)}" if cid_match else f"saved|{name}|{round(float(lat), 5)}|{round(float(lng), 5)}"
+            place_id = mint_canonical_chij(float(lat), float(lng), seed_key)
+            places_rows.append((place_id, name, addr, float(lat), float(lng), "Saved Places", list_title, 1, "TAKEOUT_SAVED"))
+
+        c = self.conn.cursor()
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS custom_labeled_places (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            address TEXT,
+            description TEXT,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            source_map TEXT,
+            source_type TEXT
+        );
+        """)
+        if saved_rows:
+            c.executemany("""
+            INSERT INTO custom_labeled_places (name, address, description, latitude, longitude, source_map, source_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+            """, saved_rows)
+
+        if places_rows:
+            c.executemany("""
+            INSERT INTO places (place_id, name, address, latitude, longitude, category, semantic_type, user_confirmed, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(place_id) DO UPDATE SET
+                name = COALESCE(places.name, excluded.name),
+                address = COALESCE(places.address, excluded.address);
+            """, places_rows)
+
+        self.conn.commit()
+        elapsed = time.time() - t0
+        print(f"[✓] Saved Places imported in {elapsed:.2f}s ({len(saved_rows)} places stored).")
+        return {"total_saved": len(saved_rows), "elapsed_sec": elapsed}
+
+    def import_photos(self, path: str, limit: Optional[int] = None, generate_previews: bool = True) -> Dict[str, Any]:
+        """
+        Ingests Google Photos Takeout (streaming ZIP archive or loose directory tree).
+        Extracts metadata from JSON sidecars and EXIF, generates WebP previews,
+        matches photos to visited timeline places, and indexes into SQLite.
+        """
+        from enrichment.photo_corpus import PhotoCorpusEngine
+        engine = PhotoCorpusEngine(self.conn)
+        path = os.path.expanduser(path)
+        if os.path.isdir(path):
+            return engine.ingest_directory(path, limit=limit, generate_previews=generate_previews)
+        elif zipfile.is_zipfile(path):
+            return engine.ingest_zip(path, limit=limit, generate_previews=generate_previews)
+        else:
+            raise ValueError(f"Expected photos directory or ZIP archive: {path}")
+
+    def import_embeddings(self, vault_db_path: str) -> Dict[str, Any]:
+        """Imports precomputed visual vector embeddings and OCR records from a photo vault database."""
+        from enrichment.photo_corpus import PhotoCorpusEngine
+        engine = PhotoCorpusEngine(self.conn)
+        return engine.import_embeddings_from_vault(vault_db_path)
+
+
+
+
+
+    def parse_timeline_objects(
+        self,
+        timeline_objects: List[Dict[str, Any]],
+        known_places: Optional[Dict[str, Dict[str, Any]]] = None,
+        paths_map: Optional[Dict[int, List[List[float]]]] = None,
+        source_tag: str = "TAKEOUT_SEMANTIC"
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], Dict[int, List[List[float]]]]:
+        """Parses Takeout timelineObjects into segments, places dictionary, and waypoint paths."""
+        places_dict: Dict[str, Dict[str, Any]] = {}
+        paths_by_time: Dict[int, List[List[float]]] = {}
+        parsed_segments: List[Dict[str, Any]] = []
+
+        for obj in timeline_objects:
+            if "placeVisit" in obj:
+                pv = obj["placeVisit"]
+                dur = pv.get("duration", {})
+                st_str = dur.get("startTimestamp")
+                et_str = dur.get("endTimestamp")
+                loc = pv.get("location", {})
+                pid = loc.get("placeId")
+                raw_name = loc.get("name")
+                addr = loc.get("address")
+                sem_type = loc.get("semanticType")
+                synth_name = synthesize_place_name(raw_name, addr, sem_type)
+                lat = loc.get("latitudeE7") / 1e7 if "latitudeE7" in loc else None
+                lng = loc.get("longitudeE7") / 1e7 if "longitudeE7" in loc else None
+                is_conf = 1 if loc.get("locationConfidence", 0) > 80 or pv.get("editConfirmationStatus") == "USER_CONFIRMED" else 0
+                cat = classify_category(synth_name, addr, sem_type)
+                city, country = extract_city_country(addr, lat, lng)
+
+                if pid:
+                    if pid not in places_dict:
+                        places_dict[pid] = {
+                            "place_id": pid,
+                            "name": synth_name,
+                            "address": addr,
+                            "semantic_type": sem_type,
+                            "category": cat,
+                            "city": city,
+                            "country": country,
+                            "user_confirmed": is_conf,
+                            "latitude": lat,
+                            "longitude": lng,
+                            "visit_count": 1
+                        }
+                    else:
+                        p = places_dict[pid]
+                        p["visit_count"] += 1
+                        if not p["name"] and synth_name:
+                            p["name"] = synth_name
+                        if not p["address"] and addr:
+                            p["address"] = addr
+                        if not p["latitude"] and lat:
+                            p["latitude"] = lat
+                            p["longitude"] = lng
+
+                if st_str and et_str:
+                    st_ts, d_str, yr, mo, dy = parse_iso_timestamp(st_str)
+                    et_ts, _, _, _, _ = parse_iso_timestamp(et_str)
+                    if st_ts and et_ts:
+                        dur_min = max(0.0, (et_ts - st_ts) / 60.0)
+                        parsed_segments.append({
+                            "segment_type": "visit",
+                            "start_time": st_str,
+                            "end_time": et_str,
+                            "start_ts": st_ts,
+                            "end_ts": et_ts,
+                            "duration_minutes": dur_min,
+                            "date": d_str,
+                            "year": yr,
+                            "month": mo,
+                            "day": dy,
+                            "latitude": lat,
+                            "longitude": lng,
+                            "end_lat": None,
+                            "end_lng": None,
+                            "place_id": pid,
+                            "place_name": synth_name or ("Confirmed POI" if pid else "Dwell Location"),
+                            "place_address": addr,
+                            "semantic_type": sem_type or ("CONFIRMED_PLACE" if pid else "UNKNOWN"),
+                            "category": cat,
+                            "city": city,
+                            "activity_type": None,
+                            "distance_meters": 0.0,
+                            "probability": 1.0,
+                            "hierarchy_level": 0,
+                            "parent_segment_id": None,
+                            "path_points_json": None,
+                            "has_snapped_path": 0,
+                            "is_unconfirmed": 0 if pid else 1,
+                            "source": source_tag
+                        })
+
+            elif "activitySegment" in obj:
+                act = obj["activitySegment"]
+                dur = act.get("duration", {})
+                st = dur.get("startTimestamp")
+                et = dur.get("endTimestamp")
+
+                pts: List[List[float]] = []
+                if "waypointPath" in act:
+                    wpts = act["waypointPath"].get("waypoints", [])
+                    for wp in wpts:
+                        if "latE7" in wp and "lngE7" in wp:
+                            pts.append([wp["latE7"] / 1e7, wp["lngE7"] / 1e7])
+                elif "simplifiedRawPath" in act:
+                    spts = act["simplifiedRawPath"].get("points", [])
+                    for sp in spts:
+                        if "latE7" in sp and "lngE7" in sp:
+                            pts.append([sp["latE7"] / 1e7, sp["lngE7"] / 1e7])
+                elif "transitPath" in act:
+                    tstops = act["transitPath"].get("transitStops", [])
+                    for ts in tstops:
+                        if "latitudeE7" in ts and "longitudeE7" in ts:
+                            pts.append([ts["latitudeE7"] / 1e7, ts["longitudeE7"] / 1e7])
+
+                if pts and st:
+                    u_ts = parse_iso_timestamp(st)[0]
+                    if u_ts:
+                        ep_min = int(u_ts // 60)
+                        paths_by_time[ep_min] = pts
+
+                if st and et:
+                    st_ts, d_str, yr, mo, dy = parse_iso_timestamp(st)
+                    et_ts, _, _, _, _ = parse_iso_timestamp(et)
+                    if st_ts and et_ts:
+                        dur_min = max(0.0, (et_ts - st_ts) / 60.0)
+                        s_loc = act.get("startLocation", {})
+                        e_loc = act.get("endLocation", {})
+                        s_lat = s_loc.get("latitudeE7") / 1e7 if "latitudeE7" in s_loc else (pts[0][0] if pts else None)
+                        s_lng = s_loc.get("longitudeE7") / 1e7 if "longitudeE7" in s_loc else (pts[0][1] if pts else None)
+                        e_lat = e_loc.get("latitudeE7") / 1e7 if "latitudeE7" in e_loc else (pts[-1][0] if pts else None)
+                        e_lng = e_loc.get("longitudeE7") / 1e7 if "longitudeE7" in e_loc else (pts[-1][1] if pts else None)
+                        act_type = act.get("activityType")
+                        if act_type == "IN_PASSENGER_VEHICLE":
+                            act_type = "DRIVING"
+                        dist = float(act.get("distance", 0.0))
+                        has_snapped = 1 if len(pts) > 2 else 0
+                        parsed_segments.append({
+                            "segment_type": "activity",
+                            "start_time": st,
+                            "end_time": et,
+                            "start_ts": st_ts,
+                            "end_ts": et_ts,
+                            "duration_minutes": dur_min,
+                            "date": d_str,
+                            "year": yr,
+                            "month": mo,
+                            "day": dy,
+                            "latitude": s_lat,
+                            "longitude": s_lng,
+                            "end_lat": e_lat,
+                            "end_lng": e_lng,
+                            "place_id": None,
+                            "place_name": None,
+                            "place_address": None,
+                            "semantic_type": None,
+                            "category": "Travel & Transit",
+                            "city": None,
+                            "activity_type": act_type or "MOVING",
+                            "distance_meters": dist,
+                            "probability": 1.0,
+                            "hierarchy_level": 0,
+                            "parent_segment_id": None,
+                            "path_points_json": json.dumps(pts) if pts else None,
+                            "has_snapped_path": has_snapped,
+                            "is_unconfirmed": 0,
+                            "source": source_tag
+                        })
+
+        return parsed_segments, places_dict, paths_by_time
+
+    def import_semantic_json(self, json_path: str, import_segments: bool = True) -> Dict[str, Any]:
+        """Ingests a single monthly Google Takeout JSON file (e.g. 2024_OCTOBER.json)."""
+        json_path = os.path.expanduser(json_path)
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        timeline_objects = data.get("timelineObjects", [])
+        parsed_segs, places_dict, paths_map = self.parse_timeline_objects(timeline_objects, source_tag="TAKEOUT_MONTHLY")
+
+        # Upsert places
+        if places_dict:
+            place_rows = [
+                (
+                    p["place_id"], p["name"], p["address"], p["semantic_type"],
+                    p["category"], p["city"], p["country"],
+                    p["user_confirmed"], p["latitude"], p["longitude"],
+                    0, "TAKEOUT_MONTHLY"
+                ) for p in places_dict.values()
+            ]
+            self.conn.executemany("""
+            INSERT INTO places (place_id, name, address, semantic_type, category, city, country, user_confirmed, latitude, longitude, visit_count, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(place_id) DO UPDATE SET
+                name = COALESCE(excluded.name, places.name),
+                address = COALESCE(excluded.address, places.address),
+                category = excluded.category;
+            """, place_rows)
+            self.conn.commit()
+
+        # Insert segments
+        if import_segments and parsed_segs:
+            parsed_segs.sort(key=lambda x: (x["start_ts"], x["end_ts"]))
+            segment_rows = [
+                (
+                    s["segment_type"], s["start_time"], s["end_time"], s["start_ts"], s["end_ts"],
+                    s["duration_minutes"], s["date"], s["year"], s["month"], s["day"],
+                    s["latitude"], s["longitude"], s["end_lat"], s["end_lng"],
+                    s["place_id"], s["place_name"], s["place_address"], s["semantic_type"],
+                    s["category"], s["city"], s["activity_type"], s["distance_meters"],
+                    s["probability"], s["hierarchy_level"], s["parent_segment_id"],
+                    s["path_points_json"], s["has_snapped_path"], s["is_unconfirmed"], s["source"]
+                ) for s in parsed_segs
+            ]
+            self.conn.executemany("""
+            INSERT INTO segments (
+                segment_type, start_time, end_time, start_ts, end_ts, duration_minutes,
+                date, year, month, day, latitude, longitude, end_lat, end_lng,
+                place_id, place_name, place_address, semantic_type, category, city,
+                activity_type, distance_meters, probability, hierarchy_level,
+                parent_segment_id, path_points_json, has_snapped_path, is_unconfirmed, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, segment_rows)
+            recompute_place_aggregates(self.conn)
+            self.conn.commit()
+
+        return {
+            "places_extracted": len(places_dict),
+            "segments_imported": len(parsed_segs) if import_segments else 0,
+            "paths_map": paths_map
+        }
+
+    def import_geojson(self, geojson_path: str) -> Dict[str, Any]:
+        """Ingests a GeoJSON FeatureCollection export from Google Takeout or Timeline."""
+        geojson_path = os.path.expanduser(geojson_path)
+        with open(geojson_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        features = data.get("features", [])
+        if not features and isinstance(data, list):
+            features = data
+
+        parsed_segs: List[Dict[str, Any]] = []
+        places_dict: Dict[str, Dict[str, Any]] = {}
+
+        for feat in features:
+            props = feat.get("properties", {})
+            geom = feat.get("geometry", {})
+            g_type = geom.get("type")
+            coords = geom.get("coordinates", [])
+
+            st_str = props.get("startTime") or props.get("startTimestamp")
+            et_str = props.get("endTime") or props.get("endTimestamp")
+            if not st_str or not et_str:
+                continue
+
+            st_ts, d_str, yr, mo, dy = parse_iso_timestamp(st_str)
+            et_ts, _, _, _, _ = parse_iso_timestamp(et_str)
+            if not st_ts or not et_ts:
+                continue
+
+            dur_min = max(0.0, (et_ts - st_ts) / 60.0)
+            pid = props.get("placeId")
+            p_name = props.get("name") or props.get("place_name")
+            p_addr = props.get("address")
+            sem_type = props.get("semanticType")
+            act_type = props.get("activityType")
+
+            if g_type == "Point" or pid or (not act_type and p_name):
+                lat = coords[1] if len(coords) >= 2 else None
+                lng = coords[0] if len(coords) >= 2 else None
+                cat = classify_category(p_name, p_addr, sem_type)
+                city, country = extract_city_country(p_addr, lat, lng)
+                if pid:
+                    places_dict[pid] = {
+                        "place_id": pid, "name": p_name, "address": p_addr,
+                        "semantic_type": sem_type, "category": cat, "city": city,
+                        "country": country, "user_confirmed": 1, "latitude": lat,
+                        "longitude": lng, "visit_count": 0
+                    }
+                parsed_segs.append({
+                    "segment_type": "visit", "start_time": st_str, "end_time": et_str,
+                    "start_ts": st_ts, "end_ts": et_ts, "duration_minutes": dur_min,
+                    "date": d_str, "year": yr, "month": mo, "day": dy,
+                    "latitude": lat, "longitude": lng, "end_lat": None, "end_lng": None,
+                    "place_id": pid, "place_name": p_name or "Visited Location",
+                    "place_address": p_addr, "semantic_type": sem_type or "CONFIRMED_PLACE",
+                    "category": cat, "city": city, "activity_type": None,
+                    "distance_meters": 0.0, "probability": 1.0, "hierarchy_level": 0,
+                    "parent_segment_id": None, "path_points_json": None,
+                    "has_snapped_path": 0, "is_unconfirmed": 0 if pid else 1,
+                    "source": "GEOJSON"
+                })
+            elif g_type == "LineString" or act_type:
+                pts = [[c[1], c[0]] for c in coords if len(c) >= 2] if g_type == "LineString" else None
+                s_lat = pts[0][0] if pts else None
+                s_lng = pts[0][1] if pts else None
+                e_lat = pts[-1][0] if pts else None
+                e_lng = pts[-1][1] if pts else None
+                dist = float(props.get("distance", 0.0))
+                parsed_segs.append({
+                    "segment_type": "activity", "start_time": st_str, "end_time": et_str,
+                    "start_ts": st_ts, "end_ts": et_ts, "duration_minutes": dur_min,
+                    "date": d_str, "year": yr, "month": mo, "day": dy,
+                    "latitude": s_lat, "longitude": s_lng, "end_lat": e_lat, "end_lng": e_lng,
+                    "place_id": None, "place_name": None, "place_address": None,
+                    "semantic_type": None, "category": "Travel & Transit", "city": None,
+                    "activity_type": act_type or "MOVING", "distance_meters": dist,
+                    "probability": 1.0, "hierarchy_level": 0, "parent_segment_id": None,
+                    "path_points_json": json.dumps(pts) if pts else None,
+                    "has_snapped_path": 1 if pts and len(pts) > 2 else 0,
+                    "is_unconfirmed": 0, "source": "GEOJSON"
+                })
+
+        if places_dict:
+            self.conn.executemany("""
+            INSERT INTO places (place_id, name, address, semantic_type, category, city, country, user_confirmed, latitude, longitude, visit_count, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(place_id) DO UPDATE SET
+                name = COALESCE(excluded.name, places.name);
+            """, [
+                (p["place_id"], p["name"], p["address"], p["semantic_type"], p["category"], p["city"], p["country"], p["user_confirmed"], p["latitude"], p["longitude"], 0, "GEOJSON")
+                for p in places_dict.values()
+            ])
+            self.conn.commit()
+
+        if parsed_segs:
+            parsed_segs.sort(key=lambda x: (x["start_ts"], x["end_ts"]))
+            self.conn.executemany("""
+            INSERT INTO segments (
+                segment_type, start_time, end_time, start_ts, end_ts, duration_minutes,
+                date, year, month, day, latitude, longitude, end_lat, end_lng,
+                place_id, place_name, place_address, semantic_type, category, city,
+                activity_type, distance_meters, probability, hierarchy_level,
+                parent_segment_id, path_points_json, has_snapped_path, is_unconfirmed, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """, [
+                (
+                    s["segment_type"], s["start_time"], s["end_time"], s["start_ts"], s["end_ts"],
+                    s["duration_minutes"], s["date"], s["year"], s["month"], s["day"],
+                    s["latitude"], s["longitude"], s["end_lat"], s["end_lng"],
+                    s["place_id"], s["place_name"], s["place_address"], s["semantic_type"],
+                    s["category"], s["city"], s["activity_type"], s["distance_meters"],
+                    s["probability"], s["hierarchy_level"], s["parent_segment_id"],
+                    s["path_points_json"], s["has_snapped_path"], s["is_unconfirmed"], s["source"]
+                ) for s in parsed_segs
+            ])
+            recompute_place_aggregates(self.conn)
+            self.conn.commit()
+
+        print(f"[✓] Imported GeoJSON: {geojson_path} ({len(places_dict)} places, {len(parsed_segs)} segments).")
+        return {"places": len(places_dict), "segments": len(parsed_segs)}
+
+    def import_takeout_directory(self, dir_path: str, include_records: bool = False, records_sample_stride: int = 1) -> Dict[str, Any]:
+        """Walks an extracted Google Takeout directory and imports all monthly files, Timeline.json, and reviews."""
+        dir_path = os.path.expanduser(dir_path)
+        if not os.path.isdir(dir_path):
+            raise NotADirectoryError(f"Directory not found: {dir_path}")
+
+        print(f"[*] Scanning Takeout directory: {dir_path}...")
+        results = {"files_processed": 0, "places": 0, "segments": 0}
+
+        # 1. Look for on-device or unified Timeline.json
+        timeline_files = glob.glob(os.path.join(dir_path, "**", "Timeline*.json"), recursive=True)
+        for tf in timeline_files:
+            try:
+                with open(tf, "r", encoding="utf-8") as f:
+                    sample = f.read(1024)
+                if "semanticSegments" in sample:
+                    print(f"    Found on-device Timeline JSON: {tf}")
+                    res = self.import_on_device_json(tf)
+                    results["segments"] += res.get("total_segments", 0)
+                    results["files_processed"] += 1
+            except Exception as e:
+                print(f"    [!] Error parsing {tf}: {e}")
+
+        # 2. Look for monthly semantic files
+        monthly_files = []
+        for root, _, files in os.walk(dir_path):
+            for file in sorted(files):
+                if file.endswith(".json") and re.search(r"\d{4}_\w+\.json", file):
+                    monthly_files.append(os.path.join(root, file))
+
+        if monthly_files:
+            print(f"    Found {len(monthly_files)} monthly semantic files.")
+            for mf in monthly_files:
+                try:
+                    res = self.import_semantic_json(mf, import_segments=True)
+                    results["places"] += res.get("places_extracted", 0)
+                    results["segments"] += res.get("segments_imported", 0)
+                    results["files_processed"] += 1
+                except Exception as e:
+                    print(f"    [!] Error parsing {mf}: {e}")
+
+        # 3. Look for reviews
+        review_files = glob.glob(os.path.join(dir_path, "**", "*review*.geojson"), recursive=True) + \
+                       glob.glob(os.path.join(dir_path, "**", "*review*.json"), recursive=True)
+        for rf in review_files:
+            try:
+                self.import_reviews_geojson(rf)
+                results["files_processed"] += 1
+            except Exception:
+                pass
+
+        # 4. Look for saved places
+        saved_files = glob.glob(os.path.join(dir_path, "**", "*saved*.json"), recursive=True) + \
+                      glob.glob(os.path.join(dir_path, "**", "*Saved*.json"), recursive=True)
+        for sf in saved_files:
+            try:
+                self.import_saved_places_json(sf)
+                results["files_processed"] += 1
+            except Exception:
+                pass
+
+        # 5. Look for Google Photos
+        photos_dirs = [
+            os.path.join(dir_path, "Google Photos"),
+            os.path.join(dir_path, "Photos"),
+        ]
+        for pdir in photos_dirs:
+            if os.path.isdir(pdir):
+                try:
+                    self.import_photos(pdir)
+                    results["files_processed"] += 1
+                except Exception as e:
+                    print(f"    [!] Error importing photos from {pdir}: {e}")
+
+        print(f"[✓] Takeout directory import complete: {results['files_processed']} files, {results['segments']} segments.")
+        return results
+
+    def import_any(
+        self,
+        path: str,
+        include_records: bool = False,
+        records_sample_stride: int = 1,
+        is_photos: bool = False,
+        is_reviews: bool = False,
+        is_saved: bool = False,
+        is_embeddings: bool = False,
+    ) -> Dict[str, Any]:
+        """Universal entrypoint that detects file type (ZIP, Directory, JSON, GeoJSON, Photos, Reviews, Embeddings) and imports cleanly."""
+        path = os.path.expanduser(path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Path does not exist: {path}")
+
+        if is_embeddings:
+            return self.import_embeddings(path)
+        if is_photos:
+            return self.import_photos(path)
+        if is_reviews:
+            return self.import_reviews_geojson(path)
+        if is_saved:
+            return self.import_saved_places_json(path)
+
+        if os.path.isdir(path):
+            folder_name = os.path.basename(path.rstrip("/\\")).lower()
+            if "photo" in folder_name:
+                return self.import_photos(path)
+            return self.import_takeout_directory(path, include_records=include_records, records_sample_stride=records_sample_stride)
+
+        if zipfile.is_zipfile(path):
+            # Check what's inside the ZIP
+            try:
+                with zipfile.ZipFile(path, "r") as z:
+                    names = z.namelist()
+                    has_semantic = any(
+                        "Semantic Location History" in n or "Location History" in n
+                        or re.search(r'\d{4}_\w+\.json', n) or "Timeline.json" in n
+                        for n in names
+                    )
+                    from enrichment.photo_corpus import IMAGE_EXTENSIONS
+                    has_photos = any(os.path.splitext(n)[1].lower() in IMAGE_EXTENSIONS for n in names)
+            except Exception:
+                has_semantic = True
+                has_photos = False
+
+            if has_photos and not has_semantic:
+                return self.import_photos(path)
+            
+            res = self.import_takeout_zip(path, import_segments=True, include_records=include_records, records_sample_stride=records_sample_stride)
+            if has_photos:
+                try:
+                    res["photos"] = self.import_photos(path)
+                except Exception as e:
+                    print(f"    [!] Error importing photos from zip: {e}")
+            return res
+
+        fname = os.path.basename(path).lower()
+        if fname.endswith(".geojson") or fname.endswith(".json"):
+            with open(path, "r", encoding="utf-8") as f:
+                header = f.read(4096)
+            if "semanticSegments" in header:
+                return self.import_on_device_json(path)
+            elif "timelineObjects" in header:
+                return self.import_semantic_json(path, import_segments=True)
+            elif "Star Rating" in header or "five_star_rating" in header or "review_text" in header or "review" in fname:
+                return self.import_reviews_geojson(path)
+            elif "Saved Places" in header or "saved" in fname:
+                return self.import_saved_places_json(path)
+            elif "FeatureCollection" in header or '"type": "Feature"' in header:
+                return self.import_geojson(path)
+            elif "locations" in header:
+                return {"records_imported": self._stream_records_json(path, stride=records_sample_stride)}
+            else:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    if "features" in data:
+                        return self.import_geojson(path)
+                    elif "semanticSegments" in data:
+                        return self.import_on_device_json(path)
+                    elif "timelineObjects" in data:
+                        return self.import_semantic_json(path, import_segments=True)
+                except Exception as e:
+                    raise ValueError(f"Unrecognized Takeout JSON format: {path} ({e})")
+
+        raise ValueError(f"Unsupported file type: {path}. Expected .zip, .json, .geojson, or directory.")
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Universal Google Takeout & Life Archive Importer (Location History, Google Photos, Maps Reviews, Saved Places)."
+    )
+    parser.add_argument(
+        "inputs",
+        nargs="+",
+        help="Path(s) to Takeout archive (.zip), directory, Timeline JSON, Google Photos, Reviews, or GeoJSON",
+    )
+    parser.add_argument(
+        "--db",
+        type=str,
+        default=None,
+        help="Target SQLite database path (default: TIMELINE_DB_PATH or ./timeline.db)",
+    )
+    parser.add_argument(
+        "--photos",
+        action="store_true",
+        help="Import input explicitly as Google Photos Takeout (directory or zip)",
+    )
+    parser.add_argument(
+        "--reviews",
+        action="store_true",
+        help="Import input explicitly as Google Maps Reviews (JSON or GeoJSON)",
+    )
+    parser.add_argument(
+        "--saved",
+        action="store_true",
+        help="Import input explicitly as Google Maps Saved Places (JSON)",
+    )
+    parser.add_argument(
+        "--embeddings",
+        action="store_true",
+        help="Import precomputed visual vector embeddings and OCR from a photo vault database (.db)",
+    )
+    parser.add_argument(
+        "--include-records",
+        action="store_true",
+        help="Also stream and index raw GPS fixes from Records.json",
+    )
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=1,
+        help="Sampling stride when importing raw Records.json (default 1 = every record)",
+    )
+    args = parser.parse_args()
+
+    db_path = get_db_path(args.db)
+    importer = TimelineFusionImporter(db_path=db_path)
+
+    for target in args.inputs:
+        print(f"\n=======================================================")
+        print(f"[*] Processing: {target}")
+        print(f"=======================================================")
+        try:
+            importer.import_any(
+                target,
+                include_records=args.include_records,
+                records_sample_stride=args.stride,
+                is_photos=args.photos,
+                is_reviews=args.reviews,
+                is_saved=args.saved,
+                is_embeddings=args.embeddings,
+            )
+        except Exception as e:
+            print(f"[!] Error importing {target}: {e}")
+
+    print("\n[✓] All imports completed successfully.")
+
+
+if __name__ == "__main__":
+    main()
+
