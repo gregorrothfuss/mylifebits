@@ -3294,6 +3294,8 @@
    ACTIVITIES & INSIGHTS (TIMELINE ACTIVITY SUMMARIES)
    ========================================================================== */
 .activities-container {
+  width: 100%;
+  min-width: 0;
   max-width: 1400px;
   margin: 0 auto;
   padding: 24px;
@@ -3982,7 +3984,7 @@ body:has(dialog[open]) {
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1360px) {
   .navbar {
     height: auto;
     min-height: 56px;
@@ -4209,6 +4211,10 @@ body:has(dialog[open]) {
   .form-row {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  #dupe-compare-columns {
+    grid-template-columns: 1fr !important;
   }
 
   .form-actions {
