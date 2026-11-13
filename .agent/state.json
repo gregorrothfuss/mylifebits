@@ -1,58 +1,29 @@
 {
-  "goal": "Holistic upstreamable full-stack modernization across toolchain, HTTP security, SQLite FTS5, enrichment physics, PII isolation, and modern web frontend",
-  "active_step_id": 8,
+  "goal": "Make Timeline Studio UI mobile-friendly across all tabs, modals, and touch viewports, verify all gates, and push to GitHub",
+  "active_step_id": 2,
   "steps": [
     {
       "id": 1,
-      "description": "Fix .venv workspace isolation, migrate dev toolchain to PEP 735 dependency-groups (ruff, mypy, pytest), and build hermetic E2E SQLite test harness",
+      "description": "Implement responsive mobile-first CSS rules, touch targets, dynamic viewport sizing, and viewport-fit=cover in static/index.html and static/style.css",
       "status": "completed"
     },
     {
       "id": 2,
-      "description": "Fix backend runtime NameErrors/AttributeErrors, add /api/trips/export.kml, and harden HTTP server security (path traversal, SSRF, ADB input, loopback/CORS/Sec-Fetch-Site, ETag/bfcache, CSP/CORP)",
-      "status": "completed"
-    },
-    {
-      "id": 3,
-      "description": "Unify tracked schema.sql + migrations, thread-local SQLite read/write pool, index pruning, external-content FTS5 search, N+1 elimination, and thread-safe NumPy CLIP vector search",
-      "status": "completed"
-    },
-    {
-      "id": 4,
-      "description": "Enforce enrichment pipeline physics, canonical GMS activity enums, Layer-2 user_decisions consistency, modular passes, and strict API/dominance verification gates",
-      "status": "completed"
-    },
-    {
-      "id": 5,
-      "description": "Sanitize all PII, personal addresses, Gaia IDs, and host filesystem paths across git-tracked code and documentation for clean upstreaming",
-      "status": "completed"
-    },
-    {
-      "id": 6,
-      "description": "Vendor frontend subresources locally, modularize static/app.js into native ES modules, fix 7 runtime bugs + 10 WCAG AA contrast violations + XSS/IME issues, and adopt native dialog/popover/tabs/@layer/content-visibility",
-      "status": "completed"
-    },
-    {
-      "id": 7,
-      "description": "Archive root binary/DB backups, purge live E2E test artifact row, document Baseline Browser Support Policy in AGENTS.md, and pass all 5 end-to-end verification gates",
-      "status": "completed"
-    },
-    {
-      "id": 8,
-      "description": "Archive pre-sanitization git history locally, configure privacy-safe GitHub noreply identity, replace main with a single zero-PII root commit, and upstream to origin/main",
+      "description": "Verify E2E server tests, API contract audit, ruff, mypy, commit changes, and push to origin/main",
       "status": "completed"
     }
   ],
   "context_cache": {
     "target_files": [
-      ".agent/state.json"
+      "static/index.html",
+      "static/style.css"
     ],
     "test_files": [
       "tests/test_e2e_server.py",
       "tests/test_clean_api.py"
     ],
     "scratch_logs": [
-      ".agent/scratch/e2e_verification_artifact.json"
+      ".agent/scratch/unittest.log"
     ]
   }
 }
